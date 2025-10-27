@@ -285,7 +285,7 @@ export default function SubAdminDashboardPage() {
         <h3 className="font-semibold mb-4 text-lg">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <button 
-            onClick={() => router.push('/sub-admin/geofences')}
+            onClick={() => router.push('/sub-admin/geofences?create=true')}
             className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
           >
             <span className="material-icons-outlined text-primary mb-2" style={{ fontSize: '32px' }}>
@@ -294,7 +294,7 @@ export default function SubAdminDashboardPage() {
             <span className="text-sm font-medium">Create Geofence</span>
           </button>
           <button 
-            onClick={() => router.push('/sub-admin/officers')}
+            onClick={() => router.push('/sub-admin/officers?add=true')}
             className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
           >
             <span className="material-icons-outlined text-blue-600 mb-2" style={{ fontSize: '32px' }}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Table,
@@ -26,6 +27,7 @@ type SortField = 'name' | 'contact' | 'email' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 export default function SecurityOfficersPage() {
+  const searchParams = useSearchParams();
   const { searchQuery } = useSearch();
   const [officers, setOfficers] = useState<SecurityOfficer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,6 +56,13 @@ export default function SecurityOfficersPage() {
     fetchOfficers();
     fetchGeofences();
   }, []);
+
+  // Open modal if URL parameter is set
+  useEffect(() => {
+    if (searchParams.get('add') === 'true') {
+      handleAddOfficer();
+    }
+  }, [searchParams]);
 
   const fetchGeofences = async () => {
     try {

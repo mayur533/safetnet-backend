@@ -6,6 +6,7 @@ export interface SecurityOfficer {
   contact: string;
   email?: string;
   assigned_geofence?: number;
+  geofence_name?: string;
   organization: number;
   is_active: boolean;
   created_by?: number;
