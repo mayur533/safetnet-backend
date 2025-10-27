@@ -47,13 +47,14 @@ build/
 .env.test.local
 .env.production.local
 
-# Documentation files (as requested)
-*.md
+# Documentation files (as requested) - but keep README.md
 IMPROVEMENTS.md
 COMPLETE_STATUS_REPORT.md
 IMPLEMENTATION_STATUS_REPORT.md
 STATUS.md
 SUMMARY.md
+*.md
+!README.md
 
 # Test files
 coverage/
