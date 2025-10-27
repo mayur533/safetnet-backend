@@ -41,6 +41,7 @@ import {
 import { toast } from 'sonner';
 import { organizationsService, Organization, OrganizationCreateData } from '@/lib/services/organizations';
 import { ContentLoading, CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { useSearch } from '@/lib/contexts/search-context';
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -69,6 +70,8 @@ export default function OrganizationsPage() {
     description: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  const { searchQuery } = useSearch();
 
   useEffect(() => {
     fetchOrganizations();
@@ -165,6 +168,19 @@ export default function OrganizationsPage() {
 
   // Filter
   let filteredOrgs = organizations.filter((org) => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !org.name.toLowerCase().includes(query) &&
+        !org.description?.toLowerCase().includes(query) &&
+        !org.id.toString().includes(query)
+      ) {
+        return false;
+      }
+    }
+    
+    // Status filter
     if (filterStatus === 'all') return true;
     
     const createdDate = new Date(org.created_at);

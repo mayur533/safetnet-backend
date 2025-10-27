@@ -19,13 +19,23 @@ import { Search, Notifications, Person, Settings, Logout, ExpandMore } from '@mu
 
 const searchPlaceholders: Record<string, string> = {
   '/': 'Search dashboard...',
+  '/organizations': 'Search organizations...',
   '/sub-admins': 'Search sub-admins by name, email, or area...',
-  '/geofences': 'Search geofences...',
   '/users': 'Search users...',
+  '/geofences': 'Search geofences...',
+  '/alerts': 'Search alerts by type, severity, or status...',
+  '/incidents': 'Search incidents by type, severity, or status...',
   '/notifications': 'Search notifications...',
+  '/promocodes': 'Search promocodes by code or description...',
+  '/discount-emails': 'Search discount emails...',
   '/analytics': 'Search analytics...',
   '/settings': 'Search settings...',
   '/profile': 'Search profile...',
+  '/sub-admin/dashboard': 'Search dashboard...',
+  '/sub-admin/geofences': 'Search geofences...',
+  '/sub-admin/officers': 'Search officers by name, contact, or geofence...',
+  '/sub-admin/incidents': 'Search incidents by type, severity, or status...',
+  '/sub-admin/notifications': 'Search notifications...',
 };
 
 export function Header() {

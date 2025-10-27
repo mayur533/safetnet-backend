@@ -39,6 +39,7 @@ import {
 import { toast } from 'sonner';
 import { alertsService, Alert } from '@/lib/services/alerts';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { useSearch } from '@/lib/contexts/search-context';
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -49,6 +50,7 @@ export default function AlertsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
+  const { searchQuery } = useSearch();
   
   // Dropdown menus
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -146,6 +148,23 @@ export default function AlertsPage() {
 
   // Filter
   let filteredAlerts = alerts.filter((alert) => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !alert.title?.toLowerCase().includes(query) &&
+        !alert.description?.toLowerCase().includes(query) &&
+        !alert.alert_type?.toLowerCase().includes(query) &&
+        !alert.severity?.toLowerCase().includes(query) &&
+        !alert.location?.toLowerCase().includes(query) &&
+        !alert.geofence_name?.toLowerCase().includes(query) &&
+        !alert.user_username?.toLowerCase().includes(query) &&
+        !alert.id.toString().includes(query)
+      ) {
+        return false;
+      }
+    }
+    
     const statusMatch = filterStatus === 'all' || 
       (filterStatus === 'resolved' && alert.is_resolved) ||
       (filterStatus === 'pending' && !alert.is_resolved);
