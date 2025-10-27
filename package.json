@@ -3,24 +3,26 @@
   "version": "1.0.0",
   "description": "Safe T Net - Security Management System",
   "scripts": {
-    "postinstall": "npm run setup",
-    "setup": "npm run setup:frontend && npm run setup:backend",
+    "postinstall": "node setup.js",
+    "setup": "node setup.js",
     "setup:frontend": "cd safe-fleet-admin && npm install",
-    "setup:backend": "if [ ! -d 'SafeTNet/venv' ]; then cd SafeTNet && python3 -m venv venv; fi && cd SafeTNet && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt",
-    "start": "npm run start:backend & npm run start:frontend",
-    "start:backend": "cd SafeTNet && source venv/bin/activate && python manage.py runserver 8000",
+    "setup:backend": "node setup-backend.js",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "node start-backend.js",
     "start:frontend": "cd safe-fleet-admin && npm run dev",
     "dev": "npm run start",
-    "clean": "rm -rf SafeTNet/venv safe-fleet-admin/node_modules"
+    "clean": "rimraf SafeTNet/venv SafeTNet/__pycache__ safe-fleet-admin/node_modules safe-fleet-admin/.next"
   },
   "keywords": [
     "security",
     "management",
     "admin"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "mayur533",
+  "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "rimraf": "^5.0.10"
   }
 }

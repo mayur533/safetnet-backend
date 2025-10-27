@@ -11,6 +11,8 @@ A comprehensive security management platform with Admin and Sub-Admin portals fo
 
 ### Installation
 
+The setup is **fully cross-platform** and works on Windows, Mac, and Linux automatically!
+
 1. **Clone the repository**
    ```bash
    git clone git@github.com:mayur533/safetnet.git
@@ -21,10 +23,10 @@ A comprehensive security management platform with Admin and Sub-Admin portals fo
    ```bash
    npm install
    ```
-   This will automatically:
+   This will automatically detect your OS and:
    - Install frontend dependencies
-   - Create Python virtual environment
-   - Install backend requirements
+   - Create Python virtual environment (works on Windows/Mac/Linux)
+   - Install backend Python requirements
 
 3. **Configure environment**
    
