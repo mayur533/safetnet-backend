@@ -243,7 +243,7 @@ export default function IncidentLogsPage() {
   });
 
   // Sort
-  filteredIncidents = [...filteredIncidents].sort((a, b) => {
+  const sortedIncidents = [...filteredIncidents].sort((a, b) => {
     let aValue: string | number;
     let bValue: string | number;
 
@@ -283,10 +283,10 @@ export default function IncidentLogsPage() {
   });
 
   // Pagination
-  const totalPages = Math.ceil(filteredIncidents.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedIncidents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedIncidents = filteredIncidents.slice(startIndex, endIndex);
+  const paginatedIncidents = sortedIncidents.slice(startIndex, endIndex);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -880,7 +880,7 @@ export default function IncidentLogsPage() {
         {/* Table Info */}
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <p>
-            Showing {startIndex + 1}-{Math.min(endIndex, filteredIncidents.length)} of {filteredIncidents.length} incidents
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedIncidents.length)} of {sortedIncidents.length} incidents
             {(filterStatus !== 'all' || filterGeofence !== 'all') && (
               <span className="ml-2 text-indigo-600 font-medium">
                 (Filtered)
