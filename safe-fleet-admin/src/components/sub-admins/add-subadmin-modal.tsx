@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { getAuthHeaders } from '@/lib/config/api';
+import { toast } from 'sonner';
 
 interface AddSubAdminModalProps {
   isOpen: boolean;
@@ -97,11 +99,36 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
 
     setIsSubmitting(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      console.log('New sub-admin:', formData);
-      setIsSubmitting(false);
-      
+    try {
+      // Create sub-admin user via registration API
+      // Split name into first and last name
+      const nameParts = formData.name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          username: formData.email.split('@')[0], // Use email prefix as username
+          email: formData.email,
+          password: formData.password,
+          password_confirm: formData.confirmPassword,
+          role: 'SUB_ADMIN',
+          first_name: firstName,
+          last_name: lastName,
+          organization: null, // Will be assigned later or based on context
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(JSON.stringify(error));
+      }
+
       // Reset form
       setFormData({
         name: '',
@@ -110,12 +137,15 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
         confirmPassword: '',
         assignedArea: '',
       });
-      
+
+      toast.success('Sub-admin created successfully!');
       onClose();
-      
-      // Show success toast (you can implement this with your toast library)
-      alert('Sub-admin created successfully!');
-    }, 1000);
+    } catch (error) {
+      console.error('Sub-admin creation error:', error);
+      toast.error('Failed to create sub-admin');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
