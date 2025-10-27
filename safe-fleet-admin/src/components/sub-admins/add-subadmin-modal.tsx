@@ -110,6 +110,10 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
       newErrors.assignedArea = 'Please select an area';
     }
 
+    if (!formData.organization) {
+      newErrors.organization = 'Please select an organization';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
