@@ -34,7 +34,7 @@ export default function SubAdminGeofencesPage() {
     try {
       setIsLoading(true);
       const data = await geofencesService.getAll();
-      // TODO: Filter by Sub-Admin's organization if backend doesn't already
+      // Backend automatically filters geofences by Sub-Admin's organization
       setGeofences(data);
     } catch (error: any) {
       console.error('Error fetching geofences:', error);
