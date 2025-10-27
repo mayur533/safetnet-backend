@@ -359,6 +359,54 @@ export default function RegisterPage() {
               </div>
             )}
 
+            {/* Error Summary - Shows all validation errors above button */}
+            {(errors.username || errors.fullName || errors.email || errors.password || errors.confirmPassword || errors.role || errors.assignedGeofence) && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 space-y-1">
+                {errors.username && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.username}
+                  </p>
+                )}
+                {errors.fullName && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.fullName}
+                  </p>
+                )}
+                {errors.email && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.email}
+                  </p>
+                )}
+                {errors.password && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.password}
+                  </p>
+                )}
+                {errors.confirmPassword && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.confirmPassword}
+                  </p>
+                )}
+                {errors.role && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.role}
+                  </p>
+                )}
+                {errors.assignedGeofence && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <span className="material-icons text-xs">error</span>
+                    {errors.assignedGeofence}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Register Button */}
             <Button
               type="submit"

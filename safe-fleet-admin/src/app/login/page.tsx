@@ -168,6 +168,24 @@ export default function LoginPage() {
               </a>
             </div>
 
+            {/* Error Summary - Shows all validation errors above button */}
+            {(errors.username || errors.password) && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-3 space-y-1">
+                {errors.username && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <Error className="w-3 h-3" />
+                    {errors.username}
+                  </p>
+                )}
+                {errors.password && (
+                  <p className="text-xs text-red-400 flex items-center gap-2">
+                    <Error className="w-3 h-3" />
+                    {errors.password}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Login Button */}
             <Button
               type="submit"
