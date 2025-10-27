@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { GeofencesMap } from '@/components/dashboard/geofences-map';
 import { DailyAlertsChart } from '@/components/dashboard/daily-alerts-chart';
@@ -19,6 +20,7 @@ interface SubAdminKPIs {
 }
 
 export default function SubAdminDashboardPage() {
+  const router = useRouter();
   const [kpis, setKpis] = useState<SubAdminKPIs>({
     active_geofences: 0,
     total_officers: 0,
