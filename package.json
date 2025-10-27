@@ -1,0 +1,26 @@
+{
+  "name": "safetnet-monorepo",
+  "version": "1.0.0",
+  "description": "Safe T Net - Security Management System",
+  "scripts": {
+    "postinstall": "npm run setup",
+    "setup": "npm run setup:frontend && npm run setup:backend",
+    "setup:frontend": "cd safe-fleet-admin && npm install",
+    "setup:backend": "if [ ! -d 'SafeTNet/venv' ]; then cd SafeTNet && python3 -m venv venv; fi && cd SafeTNet && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt",
+    "start": "npm run start:backend & npm run start:frontend",
+    "start:backend": "cd SafeTNet && source venv/bin/activate && python manage.py runserver 8000",
+    "start:frontend": "cd safe-fleet-admin && npm run dev",
+    "dev": "npm run start",
+    "clean": "rm -rf SafeTNet/venv safe-fleet-admin/node_modules"
+  },
+  "keywords": [
+    "security",
+    "management",
+    "admin"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
