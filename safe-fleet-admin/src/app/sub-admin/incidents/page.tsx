@@ -205,15 +205,20 @@ export default function IncidentLogsPage() {
   };
 
   // Filter
-  let filteredIncidents = incidents.filter((incident) => {
+  const filteredIncidents = incidents.filter((incident) => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
+      const locationString = typeof incident.location === 'object' 
+        ? JSON.stringify(incident.location) 
+        : (incident.location || '');
+      
       if (
         !incident.title?.toLowerCase().includes(query) &&
         !incident.details?.toLowerCase().includes(query) &&
         !incident.incident_type?.toLowerCase().includes(query) &&
         !incident.severity?.toLowerCase().includes(query) &&
+        !locationString.toLowerCase().includes(query) &&
         !incident.geofence_name?.toLowerCase().includes(query) &&
         !incident.officer_name?.toLowerCase().includes(query) &&
         !incident.id.toString().includes(query)
