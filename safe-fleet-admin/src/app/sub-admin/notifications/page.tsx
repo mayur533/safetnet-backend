@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ListLoading, FormLoading, ContentLoading } from '@/components/ui/content-loading';
 import { notificationsService, type Notification as BackendNotification } from '@/lib/services/notifications';
+import { useSearch } from '@/lib/contexts/search-context';
 
 type NotificationType = 'NORMAL' | 'EMERGENCY';
 
 export default function SubAdminNotificationsPage() {
+  const { searchQuery } = useSearch();
   const [notifications, setNotifications] = useState<BackendNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notificationType, setNotificationType] = useState<NotificationType>('NORMAL');
@@ -213,15 +215,33 @@ export default function SubAdminNotificationsPage() {
           <h3 className="text-lg font-semibold">Notification History</h3>
         </div>
         <div className="divide-y">
-          {notifications.length === 0 ? (
-            <div className="p-12 text-center">
-              <span className="material-icons text-6xl text-muted-foreground mb-2">
-                notifications_none
-              </span>
-              <p className="text-muted-foreground">No notifications yet</p>
-            </div>
-          ) : (
-            notifications.map((notification) => (
+          {(() => {
+            // Filter notifications by search query
+            const filteredNotifications = searchQuery
+              ? notifications.filter((notification) => {
+                  const query = searchQuery.toLowerCase();
+                  return (
+                    notification.title?.toLowerCase().includes(query) ||
+                    notification.message?.toLowerCase().includes(query) ||
+                    notification.notification_type?.toLowerCase().includes(query) ||
+                    notification.target_type?.toLowerCase().includes(query) ||
+                    notification.target_geofence?.toString().includes(query) ||
+                    notification.id.toString().includes(query)
+                  );
+                })
+              : notifications;
+
+            return filteredNotifications.length === 0 ? (
+              <div className="p-12 text-center">
+                <span className="material-icons text-6xl text-muted-foreground mb-2">
+                  notifications_none
+                </span>
+                <p className="text-muted-foreground">
+                  {searchQuery ? 'No matching notifications found' : 'No notifications yet'}
+                </p>
+              </div>
+            ) : (
+              filteredNotifications.map((notification) => (
               <div key={notification.id} className="p-6 hover:bg-muted/30 transition-colors">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-4 flex-1">
@@ -274,8 +294,9 @@ export default function SubAdminNotificationsPage() {
                   </button>
                 </div>
               </div>
-            ))
-          )}
+              ))
+            );
+          })()}
         </div>
       </div>
     </div>
