@@ -38,12 +38,14 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { promocodesService, Promocode } from '@/lib/services/promocodes';
+import { useSearch } from '@/lib/contexts/search-context';
 
 type SortField = 'code' | 'discount_percentage' | 'expiry_date' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 export default function PromocodesPage() {
   const router = useRouter();
+  const { searchQuery } = useSearch();
   const [promocodes, setPromocodes] = useState<Promocode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,8 +85,21 @@ export default function PromocodesPage() {
     }
   };
 
-  // Filter by status
+  // Filter by status and search
   let filteredPromocodes = promocodes.filter((promo) => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !promo.code.toLowerCase().includes(query) &&
+        !promo.description?.toLowerCase().includes(query) &&
+        !promo.discount_percentage.toString().includes(query) &&
+        !promo.id.toString().includes(query)
+      ) {
+        return false;
+      }
+    }
+    
     const isExpired = new Date(promo.expiry_date) < new Date();
     const status = isExpired ? 'expired' : promo.is_active ? 'active' : 'inactive';
     const matchesFilter = filterStatus === 'all' || status === filterStatus;
