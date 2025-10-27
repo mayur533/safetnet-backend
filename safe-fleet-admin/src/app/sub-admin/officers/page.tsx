@@ -26,6 +26,7 @@ type SortField = 'name' | 'contact' | 'email' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 export default function SecurityOfficersPage() {
+  const { searchQuery } = useSearch();
   const [officers, setOfficers] = useState<SecurityOfficer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
