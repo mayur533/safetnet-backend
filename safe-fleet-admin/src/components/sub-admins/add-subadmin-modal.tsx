@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getAuthHeaders } from '@/lib/config/api';
+import { getAuthHeaders, API_ENDPOINTS } from '@/lib/config/api';
 import { toast } from 'sonner';
+import { organizationsService } from '@/lib/services/organizations';
 
 interface AddSubAdminModalProps {
   isOpen: boolean;
@@ -37,6 +38,11 @@ const geofenceAreas = [
   'Entertainment Zone',
 ];
 
+interface Organization {
+  id: number;
+  name: string;
+}
+
 export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
   const [formData, setFormData] = useState({
     name: '',
@@ -44,10 +50,28 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
     password: '',
     confirmPassword: '',
     assignedArea: '',
+    organization: '',
   });
 
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      try {
+        const orgs = await organizationsService.getAll();
+        setOrganizations(orgs);
+      } catch (error) {
+        console.error('Failed to fetch organizations:', error);
+      }
+    };
+    
+    if (isOpen) {
+      fetchOrganizations();
+    }
+  }, [isOpen]);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -120,7 +144,7 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
           role: 'SUB_ADMIN',
           first_name: firstName,
           last_name: lastName,
-          organization: null, // Will be assigned later or based on context
+          organization: formData.organization ? parseInt(formData.organization) : null,
         }),
       });
 
@@ -155,6 +179,7 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
       password: '',
       confirmPassword: '',
       assignedArea: '',
+      organization: '',
     });
     setErrors({});
     onClose();
