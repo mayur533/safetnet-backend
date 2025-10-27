@@ -282,25 +282,37 @@ export default function SubAdminDashboardPage() {
       <div className="bg-card p-6 rounded-lg shadow-md border">
         <h3 className="font-semibold mb-4 text-lg">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+          <button 
+            onClick={() => router.push('/sub-admin/geofences')}
+            className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
             <span className="material-icons-outlined text-primary mb-2" style={{ fontSize: '32px' }}>
               add_location
             </span>
             <span className="text-sm font-medium">Create Geofence</span>
           </button>
-          <button className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+          <button 
+            onClick={() => router.push('/sub-admin/officers')}
+            className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
             <span className="material-icons-outlined text-blue-600 mb-2" style={{ fontSize: '32px' }}>
               person_add
             </span>
             <span className="text-sm font-medium">Add Officer</span>
           </button>
-          <button className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+          <button 
+            onClick={() => router.push('/sub-admin/notifications')}
+            className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
             <span className="material-icons-outlined text-orange-600 mb-2" style={{ fontSize: '32px' }}>
               notifications_active
             </span>
             <span className="text-sm font-medium">Send Alert</span>
           </button>
-          <button className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+          <button 
+            onClick={() => router.push('/sub-admin/incidents')}
+            className="flex flex-col items-center justify-center p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+          >
             <span className="material-icons-outlined text-green-600 mb-2" style={{ fontSize: '32px' }}>
               assessment
             </span>
