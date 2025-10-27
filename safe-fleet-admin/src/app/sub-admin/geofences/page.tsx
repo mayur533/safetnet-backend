@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { GeofencesMap } from '@/components/geofences/geofences-map';
 import { GeofencesSidebar } from '@/components/geofences/geofences-sidebar';
@@ -13,6 +13,7 @@ import { geofencesService, type Geofence } from '@/lib/services/geofences';
 
 export default function SubAdminGeofencesPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedGeofence, setSelectedGeofence] = useState<number | null>(null);
   const [geofences, setGeofences] = useState<Geofence[]>([]);
@@ -24,8 +25,10 @@ export default function SubAdminGeofencesPage() {
     // Check if we should open create modal
     if (searchParams.get('create') === 'true') {
       setIsCreateModalOpen(true);
+      // Remove the parameter from URL
+      router.replace('/sub-admin/geofences');
     }
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   const fetchGeofences = async () => {
     try {

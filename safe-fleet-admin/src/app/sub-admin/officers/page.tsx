@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Table,
@@ -28,6 +28,7 @@ type SortOrder = 'asc' | 'desc';
 
 export default function SecurityOfficersPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { searchQuery } = useSearch();
   const [officers, setOfficers] = useState<SecurityOfficer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,8 +62,10 @@ export default function SecurityOfficersPage() {
   useEffect(() => {
     if (searchParams.get('add') === 'true') {
       handleAddOfficer();
+      // Remove the parameter from URL
+      router.replace('/sub-admin/officers');
     }
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   const fetchGeofences = async () => {
     try {
