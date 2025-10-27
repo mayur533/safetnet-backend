@@ -40,10 +40,9 @@ import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { incidentsService, type Incident as BackendIncident } from '@/lib/services/incidents';
 import { useSearch } from '@/lib/contexts/search-context';
 
-interface Incident extends BackendIncident {
-  // Local interface extends backend interface
-}
+type Incident = BackendIncident;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockIncidents: Incident[] = [
   {
     id: 1,
@@ -164,6 +163,7 @@ export default function IncidentLogsPage() {
   const [filterGeofence, setFilterGeofence] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [dateRange, setDateRange] = useState<string>('all');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [viewDetailsIncident, setViewDetailsIncident] = useState<Incident | null>(null);
   const [deleteIncidentId, setDeleteIncidentId] = useState<number | null>(null);
@@ -235,9 +235,9 @@ export default function IncidentLogsPage() {
   });
 
   // Sort
-  filteredIncidents = [...filteredIncidents].sort((a, b) => {
-    let aValue = a[sortField];
-    let bValue = b[sortField];
+  const sortedIncidents = [...filteredIncidents].sort((a, b) => {
+    const aValue = a[sortField as keyof Incident];
+    const bValue = b[sortField as keyof Incident];
 
     if (sortOrder === 'asc') {
       return aValue > bValue ? 1 : -1;
@@ -247,11 +247,12 @@ export default function IncidentLogsPage() {
   });
 
   // Pagination
-  const totalPages = Math.ceil(filteredIncidents.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedIncidents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedIncidents = filteredIncidents.slice(startIndex, endIndex);
+  const paginatedIncidents = sortedIncidents.slice(startIndex, endIndex);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'emergency': return 'emergency';
@@ -264,6 +265,7 @@ export default function IncidentLogsPage() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'emergency': return 'bg-red-100 text-red-800';
@@ -883,7 +885,7 @@ export default function IncidentLogsPage() {
         {/* Table Info */}
         <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <p>
-            Showing {startIndex + 1}-{Math.min(endIndex, filteredIncidents.length)} of {filteredIncidents.length} incidents
+            Showing {startIndex + 1}-{Math.min(endIndex, sortedIncidents.length)} of {sortedIncidents.length} incidents
             {(filterStatus !== 'all' || filterGeofence !== 'all') && (
               <span className="ml-2 text-indigo-600 font-medium">
                 (Filtered)

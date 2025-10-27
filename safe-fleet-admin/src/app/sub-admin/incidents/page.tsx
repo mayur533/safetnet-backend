@@ -53,6 +53,7 @@ const mapIncidentToDisplay = (incident: Incident): Incident => {
   };
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockIncidents: Incident[] = [
   {
     id: 1,
@@ -196,7 +197,7 @@ export default function IncidentLogsPage() {
       // Map API response to display format
       const mappedData = data.map(mapIncidentToDisplay);
       setIncidents(mappedData);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to fetch incidents:', error);
       toast.error('Failed to load incidents');
     } finally {
@@ -243,8 +244,8 @@ export default function IncidentLogsPage() {
 
   // Sort
   filteredIncidents = [...filteredIncidents].sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
+    let aValue: string | number;
+    let bValue: string | number;
 
     // Map display fields to API fields
     switch (sortField) {
