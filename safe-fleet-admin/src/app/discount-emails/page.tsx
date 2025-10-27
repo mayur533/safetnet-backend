@@ -28,7 +28,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useSearch } from '@/lib/contexts/search-context';
-import { CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { TableLoading } from '@/components/ui/content-loading';
 import { discountEmailsService, type DiscountEmail } from '@/lib/services/discount-emails';
 import { promocodesService, type Promocode } from '@/lib/services/promocodes';
 
@@ -72,7 +72,7 @@ export default function DiscountEmailsPage() {
       ]);
       setEmails(emailsData);
       setPromocodes(promocodesData.filter(p => p.is_active)); // Only active promocodes
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load discount emails');
     } finally {
@@ -98,7 +98,7 @@ export default function DiscountEmailsPage() {
       setIsSendModalOpen(false);
       setSendFormData({ email: '', discount_code: '' });
       fetchData(); // Refresh list
-    } catch (error: any) {
+    } catch (error) {
       console.error('Send error:', error);
       toast.error('Failed to send discount email');
     } finally {
@@ -146,8 +146,8 @@ export default function DiscountEmailsPage() {
 
   // Sort
   filteredEmails = [...filteredEmails].sort((a, b) => {
-    let aValue: any = a[sortField as keyof DiscountEmail];
-    let bValue: any = b[sortField as keyof DiscountEmail];
+    const aValue = a[sortField as keyof DiscountEmail];
+    const bValue = b[sortField as keyof DiscountEmail];
 
     if (sortOrder === 'asc') {
       return aValue > bValue ? 1 : -1;
@@ -441,7 +441,7 @@ export default function DiscountEmailsPage() {
                     </span>
                     <p className="text-muted-foreground">No discount emails sent yet</p>
                     <p className="text-sm text-muted-foreground mt-2">
-                      Click "Send Discount Email" to send your first promotional email
+                      Click &quot;Send Discount Email&quot; to send your first promotional email
                     </p>
                   </TableCell>
                 </TableRow>
