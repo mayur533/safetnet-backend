@@ -28,12 +28,20 @@ interface AddUserModalProps {
   onUserUpdated?: () => void;
 }
 
+const roles = ['USER', 'SUB_ADMIN', 'SUPER_ADMIN'];
+const geofences = ['Downtown Area', 'University Campus', 'Residential Zone', 'Commercial District'];
+
 export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: AddUserModalProps) {
   const [formData, setFormData] = useState({
     username: '',
     firstName: '',
     lastName: '',
     email: '',
+    password: '',
+    confirmPassword: '',
+    role: 'USER',
+    assignedGeofence: '',
+    fullName: '',
     isActive: true,
   });
 
@@ -53,6 +61,11 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         firstName: '',
         lastName: '',
         email: '',
+        password: '',
+        confirmPassword: '',
+        role: 'USER',
+        assignedGeofence: '',
+        fullName: '',
         isActive: true,
       });
       setErrors({});
@@ -169,12 +182,16 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
 
   const handleClose = () => {
     setFormData({
-      fullName: '',
+      username: '',
+      firstName: '',
+      lastName: '',
       email: '',
-      role: '',
       password: '',
       confirmPassword: '',
+      role: 'USER',
       assignedGeofence: '',
+      fullName: '',
+      isActive: true,
     });
     setErrors({});
     onClose();
