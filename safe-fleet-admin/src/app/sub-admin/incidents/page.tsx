@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { incidentsService, type Incident as BackendIncident } from '@/lib/services/incidents';
+import { useSearch } from '@/lib/contexts/search-context';
 
 interface Incident extends BackendIncident {
   // Local interface extends backend interface
@@ -167,6 +168,7 @@ type SortField = 'incident_type' | 'severity' | 'geofence' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 export default function IncidentLogsPage() {
+  const { searchQuery } = useSearch();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterGeofence, setFilterGeofence] = useState<string>('all');
@@ -204,6 +206,22 @@ export default function IncidentLogsPage() {
 
   // Filter
   let filteredIncidents = incidents.filter((incident) => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !incident.title?.toLowerCase().includes(query) &&
+        !incident.details?.toLowerCase().includes(query) &&
+        !incident.incident_type?.toLowerCase().includes(query) &&
+        !incident.severity?.toLowerCase().includes(query) &&
+        !incident.geofence_name?.toLowerCase().includes(query) &&
+        !incident.officer_name?.toLowerCase().includes(query) &&
+        !incident.id.toString().includes(query)
+      ) {
+        return false;
+      }
+    }
+    
     const matchesGeofence = filterGeofence === 'all' || incident.geofence.toString() === filterGeofence;
     
     // Convert is_resolved to status for filtering

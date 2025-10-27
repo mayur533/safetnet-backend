@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { officersService, type SecurityOfficer } from '@/lib/services/officers';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
+import { useSearch } from '@/lib/contexts/search-context';
 
 type SortField = 'name' | 'contact' | 'email' | 'created_at';
 type SortOrder = 'asc' | 'desc';
@@ -77,8 +78,23 @@ export default function SecurityOfficersPage() {
     }
   };
 
-  // Filter by status
+  // Filter by search and status
   let filteredOfficers = officers.filter((officer) => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (
+        !officer.name?.toLowerCase().includes(query) &&
+        !officer.contact?.toLowerCase().includes(query) &&
+        !officer.email?.toLowerCase().includes(query) &&
+        !officer.geofence_name?.toLowerCase().includes(query) &&
+        !officer.id.toString().includes(query)
+      ) {
+        return false;
+      }
+    }
+    
+    // Status filter
     if (filterStatus === 'all') return true;
     if (filterStatus === 'Active') return officer.is_active;
     if (filterStatus === 'Inactive') return !officer.is_active;
