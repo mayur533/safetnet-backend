@@ -39,8 +39,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { organizationsService, Organization, OrganizationCreateData } from '@/lib/services/organizations';
-import { ContentLoading, CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { organizationsService, Organization } from '@/lib/services/organizations';
+import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { useSearch } from '@/lib/contexts/search-context';
 
 export default function OrganizationsPage() {
@@ -167,7 +167,7 @@ export default function OrganizationsPage() {
   };
 
   // Filter
-  let filteredOrgs = organizations.filter((org) => {
+  const filteredOrgs = organizations.filter((org) => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -197,7 +197,7 @@ export default function OrganizationsPage() {
   });
 
   // Sort
-  let sortedOrgs = [...filteredOrgs].sort((a, b) => {
+  const sortedOrgs = [...filteredOrgs].sort((a, b) => {
     let comparison = 0;
     
     switch (sortBy) {

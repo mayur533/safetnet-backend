@@ -147,7 +147,7 @@ export default function AlertsPage() {
   };
 
   // Filter
-  let filteredAlerts = alerts.filter((alert) => {
+  const filteredAlerts = alerts.filter((alert) => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -175,7 +175,7 @@ export default function AlertsPage() {
   });
 
   // Sort
-  let sortedAlerts = [...filteredAlerts].sort((a, b) => {
+  const sortedAlerts = [...filteredAlerts].sort((a, b) => {
     let comparison = 0;
     
     switch (sortBy) {
