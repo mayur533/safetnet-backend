@@ -103,7 +103,7 @@ export default function DashboardPage() {
         <StatsCards />
       
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-2 bg-card rounded-lg shadow-md border overflow-hidden" style={{ height: '500px' }}>
+        <div className="lg:col-span-2" style={{ height: '500px' }}>
           <GeofencesMap />
         </div>
         <div className="bg-card p-6 rounded-lg shadow-md border">
