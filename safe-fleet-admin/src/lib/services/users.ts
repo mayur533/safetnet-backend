@@ -28,6 +28,14 @@ export interface UserUpdateData {
   organization?: number | null;
 }
 
+export interface UserCreateData {
+  username: string;
+  email: string;
+  password: string;
+  full_name?: string;
+  role?: string;
+}
+
 export const usersService = {
   /**
    * Get all users
@@ -58,6 +66,24 @@ export const usersService = {
 
     if (!response.ok) {
       throw new Error('Failed to fetch user');
+    }
+
+    return await response.json();
+  },
+
+  /**
+   * Create a new user
+   */
+  async create(data: UserCreateData): Promise<User> {
+    const response = await fetch(API_ENDPOINTS.USERS.LIST, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(JSON.stringify(error));
     }
 
     return await response.json();

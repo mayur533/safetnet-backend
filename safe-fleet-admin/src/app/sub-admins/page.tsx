@@ -31,9 +31,7 @@ export default function SubAdminsPage() {
           <p className="text-muted-foreground mt-1">Manage and oversee all sub-administrators</p>
         </div>
         <Button
-          onClick={() => {
-            toast.info('Sub-admin creation is not yet implemented from this page. Sub-admins can be created through user registration.');
-          }}
+          onClick={() => setIsModalOpen(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200"
         >
           <span className="material-icons text-xl mr-2">add</span>
@@ -50,7 +48,10 @@ export default function SubAdminsPage() {
       {/* Add Sub-Admin Modal */}
       <AddSubAdminModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setRefreshTrigger(prev => prev + 1);
+        }}
       />
 
       {/* Edit Sub-Admin Modal */}

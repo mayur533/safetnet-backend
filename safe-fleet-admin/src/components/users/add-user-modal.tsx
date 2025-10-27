@@ -131,30 +131,37 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
       return;
     }
 
-    if (!isEditing) {
-      toast.info('User creation is not yet implemented. Users can self-register.');
-      onClose();
-      return;
-    }
-
     try {
       setIsSubmitting(true);
 
-      // Update user via API
-      await usersService.update(editingUserId!, {
-        username: formData.fullName.split(' ')[0].toLowerCase(),
-        first_name: formData.fullName.split(' ')[0],
-        last_name: formData.fullName.split(' ').slice(1).join(' '),
-        email: formData.email,
-        is_active: true,
-      });
-
-      toast.success('User updated successfully');
+      if (isEditing && editingUserId) {
+        // Update user via API
+        await usersService.update(editingUserId, {
+          username: formData.username,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email,
+          is_active: formData.isActive,
+        });
+        toast.success('User updated successfully');
+      } else {
+        // Create new user via registration API
+        const nameParts = formData.firstName ? `${formData.firstName} ${formData.lastName}`.trim() : formData.username;
+        await usersService.create({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password || 'Temporary123!', // Generate temporary password
+          full_name: nameParts,
+          role: 'USER',
+        });
+        toast.success('User created successfully');
+      }
+      
       onUserUpdated?.();
       onClose();
     } catch (error) {
-      console.error('Update error:', error);
-      toast.error('Failed to update user');
+      console.error('User operation error:', error);
+      toast.error(isEditing ? 'Failed to update user' : 'Failed to create user');
     } finally {
       setIsSubmitting(false);
     }
