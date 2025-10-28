@@ -60,12 +60,16 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    zoneType: '',
-    color: '#6366f1',
-    latitude: '',
-    longitude: '',
-    radius: '500',
     organization: '',
+    // Four corner points for the polygon
+    point1Lat: '',
+    point1Lng: '',
+    point2Lat: '',
+    point2Lng: '',
+    point3Lat: '',
+    point3Lng: '',
+    point4Lat: '',
+    point4Lng: '',
   });
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -108,25 +112,31 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       newErrors.name = 'Geofence name is required';
     }
 
-    if (!formData.zoneType) {
-      newErrors.zoneType = 'Please select a zone type';
-    }
-
     if (!formData.organization) {
       newErrors.organization = 'Please select an organization';
     }
 
-    if (!formData.latitude) {
-      newErrors.latitude = 'Latitude is required';
-    } else if (isNaN(Number(formData.latitude))) {
-      newErrors.latitude = 'Invalid latitude format';
-    }
+    // Validate all four points
+    const points = [
+      { lat: formData.point1Lat, lng: formData.point1Lng, num: 1 },
+      { lat: formData.point2Lat, lng: formData.point2Lng, num: 2 },
+      { lat: formData.point3Lat, lng: formData.point3Lng, num: 3 },
+      { lat: formData.point4Lat, lng: formData.point4Lng, num: 4 },
+    ];
 
-    if (!formData.longitude) {
-      newErrors.longitude = 'Longitude is required';
-    } else if (isNaN(Number(formData.longitude))) {
-      newErrors.longitude = 'Invalid longitude format';
-    }
+    points.forEach((point) => {
+      if (!point.lat) {
+        newErrors[`point${point.num}Lat`] = `Point ${point.num} latitude is required`;
+      } else if (isNaN(Number(point.lat))) {
+        newErrors[`point${point.num}Lat`] = `Point ${point.num} latitude is invalid`;
+      }
+      
+      if (!point.lng) {
+        newErrors[`point${point.num}Lng`] = `Point ${point.num} longitude is required`;
+      } else if (isNaN(Number(point.lng))) {
+        newErrors[`point${point.num}Lng`] = `Point ${point.num} longitude is invalid`;
+      }
+    });
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -142,22 +152,14 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
     setIsSubmitting(true);
 
     try {
-      const lat = parseFloat(formData.latitude);
-      const lng = parseFloat(formData.longitude);
-      const radiusMeters = parseInt(formData.radius);
-      
-      // Create a circular polygon from center point and radius
-      // Convert radius from meters to degrees (approximate)
-      const radiusDeg = radiusMeters / 111320; // 1 degree ≈ 111.32 km
-      const numPoints = 32; // Number of points to create the circle
-      
-      const coordinates: number[][][] = [[]];
-      for (let i = 0; i <= numPoints; i++) {
-        const angle = (i / numPoints) * 2 * Math.PI;
-        const pointLng = lng + radiusDeg * Math.cos(angle) / Math.cos(lat * Math.PI / 180);
-        const pointLat = lat + radiusDeg * Math.sin(angle);
-        coordinates[0].push([pointLng, pointLat]); // GeoJSON uses [lng, lat]
-      }
+      // Create polygon from four corner points
+      const coordinates = [[
+        [parseFloat(formData.point1Lng), parseFloat(formData.point1Lat)], // Point 1: [lng, lat]
+        [parseFloat(formData.point2Lng), parseFloat(formData.point2Lat)], // Point 2
+        [parseFloat(formData.point3Lng), parseFloat(formData.point3Lat)], // Point 3
+        [parseFloat(formData.point4Lng), parseFloat(formData.point4Lat)], // Point 4
+        [parseFloat(formData.point1Lng), parseFloat(formData.point1Lat)], // Close the polygon by returning to first point
+      ]];
       
       const polygonJson = {
         type: 'Polygon',
@@ -178,12 +180,15 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       setFormData({
         name: '',
         description: '',
-        zoneType: '',
-        color: '#6366f1',
-        latitude: '',
-        longitude: '',
-        radius: '500',
         organization: '',
+        point1Lat: '',
+        point1Lng: '',
+        point2Lat: '',
+        point2Lng: '',
+        point3Lat: '',
+        point3Lng: '',
+        point4Lat: '',
+        point4Lng: '',
       });
       
       onClose();
@@ -202,12 +207,15 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
     setFormData({
       name: '',
       description: '',
-      zoneType: '',
-      color: '#6366f1',
-      latitude: '',
-      longitude: '',
-      radius: '500',
       organization: '',
+      point1Lat: '',
+      point1Lng: '',
+      point2Lat: '',
+      point2Lng: '',
+      point3Lat: '',
+      point3Lng: '',
+      point4Lat: '',
+      point4Lng: '',
     });
     setErrors({});
     onClose();
@@ -292,131 +300,169 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
             {errors.organization && <p className="text-xs text-red-500 mt-1">{errors.organization}</p>}
           </div>
 
-          {/* Zone Type and Color */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="zoneType" className="text-sm font-medium">
-                Zone Type <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
-                  category
-                </span>
-                <Select value={formData.zoneType} onValueChange={(value) => handleChange('zoneType', value)}>
-                  <SelectTrigger className={`pl-10 ${errors.zoneType ? 'border-red-500' : ''}`}>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {zoneTypes.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {/* Four Corner Points */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-foreground">Define Four Corner Points</h3>
+            
+            {/* Point 1 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 1 Latitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    my_location
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., 40.7128"
+                    value={formData.point1Lat}
+                    onChange={(e) => handleChange('point1Lat', e.target.value)}
+                    className={`pl-10 ${errors.point1Lat ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point1Lat && <p className="text-xs text-red-500 mt-1">{errors.point1Lat}</p>}
               </div>
-              {errors.zoneType && <p className="text-xs text-red-500 mt-1">{errors.zoneType}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="color" className="text-sm font-medium">
-                Border Color
-              </Label>
-              <Select value={formData.color} onValueChange={(value) => handleChange('color', value)}>
-                <SelectTrigger>
-                  <SelectValue>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-4 h-4 rounded-full"
-                        style={{ backgroundColor: formData.color }}
-                      ></div>
-                      {colors.find((c) => c.value === formData.color)?.name || 'Select color'}
-                    </div>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {colors.map((color) => (
-                    <SelectItem key={color.value} value={color.value}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: color.value }}
-                        ></div>
-                        {color.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Coordinates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="latitude" className="text-sm font-medium">
-                Latitude <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                  my_location
-                </span>
-                <Input
-                  id="latitude"
-                  type="text"
-                  placeholder="e.g., 40.7128"
-                  value={formData.latitude}
-                  onChange={(e) => handleChange('latitude', e.target.value)}
-                  className={`pl-10 ${errors.latitude ? 'border-red-500' : ''}`}
-                />
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 1 Longitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    location_on
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., -74.0060"
+                    value={formData.point1Lng}
+                    onChange={(e) => handleChange('point1Lng', e.target.value)}
+                    className={`pl-10 ${errors.point1Lng ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point1Lng && <p className="text-xs text-red-500 mt-1">{errors.point1Lng}</p>}
               </div>
-              {errors.latitude && <p className="text-xs text-red-500 mt-1">{errors.latitude}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="longitude" className="text-sm font-medium">
-                Longitude <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                  location_on
-                </span>
-                <Input
-                  id="longitude"
-                  type="text"
-                  placeholder="e.g., -74.0060"
-                  value={formData.longitude}
-                  onChange={(e) => handleChange('longitude', e.target.value)}
-                  className={`pl-10 ${errors.longitude ? 'border-red-500' : ''}`}
-                />
+            {/* Point 2 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 2 Latitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    my_location
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., 40.7200"
+                    value={formData.point2Lat}
+                    onChange={(e) => handleChange('point2Lat', e.target.value)}
+                    className={`pl-10 ${errors.point2Lat ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point2Lat && <p className="text-xs text-red-500 mt-1">{errors.point2Lat}</p>}
               </div>
-              {errors.longitude && <p className="text-xs text-red-500 mt-1">{errors.longitude}</p>}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 2 Longitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    location_on
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., -74.0100"
+                    value={formData.point2Lng}
+                    onChange={(e) => handleChange('point2Lng', e.target.value)}
+                    className={`pl-10 ${errors.point2Lng ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point2Lng && <p className="text-xs text-red-500 mt-1">{errors.point2Lng}</p>}
+              </div>
             </div>
-          </div>
 
-          {/* Radius */}
-          <div className="space-y-2">
-            <Label htmlFor="radius" className="text-sm font-medium">
-              Radius (meters)
-            </Label>
-            <div className="relative">
-              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                adjust
-              </span>
-              <Input
-                id="radius"
-                type="number"
-                min="100"
-                max="10000"
-                step="50"
-                value={formData.radius}
-                onChange={(e) => handleChange('radius', e.target.value)}
-                className="pl-10"
-              />
+            {/* Point 3 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 3 Latitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    my_location
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., 40.7150"
+                    value={formData.point3Lat}
+                    onChange={(e) => handleChange('point3Lat', e.target.value)}
+                    className={`pl-10 ${errors.point3Lat ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point3Lat && <p className="text-xs text-red-500 mt-1">{errors.point3Lat}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 3 Longitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    location_on
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., -74.0050"
+                    value={formData.point3Lng}
+                    onChange={(e) => handleChange('point3Lng', e.target.value)}
+                    className={`pl-10 ${errors.point3Lng ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point3Lng && <p className="text-xs text-red-500 mt-1">{errors.point3Lng}</p>}
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Current radius: {formData.radius}m
-            </p>
+
+            {/* Point 4 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 4 Latitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    my_location
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., 40.7180"
+                    value={formData.point4Lat}
+                    onChange={(e) => handleChange('point4Lat', e.target.value)}
+                    className={`pl-10 ${errors.point4Lat ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point4Lat && <p className="text-xs text-red-500 mt-1">{errors.point4Lat}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Point 4 Longitude <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                    location_on
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="e.g., -74.0080"
+                    value={formData.point4Lng}
+                    onChange={(e) => handleChange('point4Lng', e.target.value)}
+                    className={`pl-10 ${errors.point4Lng ? 'border-red-500' : ''}`}
+                  />
+                </div>
+                {errors.point4Lng && <p className="text-xs text-red-500 mt-1">{errors.point4Lng}</p>}
+              </div>
+            </div>
           </div>
 
           {/* Info Box */}
