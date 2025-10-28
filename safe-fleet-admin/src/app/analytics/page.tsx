@@ -13,6 +13,10 @@ import { Button } from '@/components/ui/button';
 import { CardLoading } from '@/components/ui/content-loading';
 import { analyticsService, AnalyticsData } from '@/lib/services/analytics';
 import { exportToPDF, exportToCSV, ExportData } from '@/lib/utils/export-utils';
+import { alertsService } from '@/lib/services/alerts';
+import { incidentsService } from '@/lib/services/incidents';
+import { usersService } from '@/lib/services/users';
+import { geofencesService } from '@/lib/services/geofences';
 import { toast } from 'sonner';
 
 export default function AnalyticsPage() {
@@ -43,18 +47,60 @@ export default function AnalyticsPage() {
     }
 
     try {
+      toast.loading('Preparing PDF export...', { id: 'export-pdf' });
+      
+      // Fetch all detailed data
+      const [allAlerts, allIncidents, allUsers, allGeofences] = await Promise.all([
+        alertsService.getAll().catch(() => []),
+        incidentsService.getAll().catch(() => []),
+        usersService.getAll().catch(() => []),
+        geofencesService.getAll().catch(() => []),
+      ]);
+
+      // Process alert types
+      const alertTypesMap = new Map<string, number>();
+      allAlerts.forEach(alert => {
+        const type = alert.alert_type || 'Unknown';
+        alertTypesMap.set(type, (alertTypesMap.get(type) || 0) + 1);
+      });
+      const alertTypes = Array.from(alertTypesMap.entries()).map(([name, value]) => ({ name, value }));
+
+      // Process user roles
+      const userRolesMap = new Map<string, number>();
+      allUsers.forEach(user => {
+        const role = user.role || 'Unknown';
+        userRolesMap.set(role, (userRolesMap.get(role) || 0) + 1);
+      });
+      const userRoles = Array.from(userRolesMap.entries()).map(([name, value]) => ({ name, value }));
+
+      // Process incidents trends (monthly)
+      const incidentsTrendsMap = new Map<string, { resolved: number; unresolved: number }>();
+      allIncidents.forEach(incident => {
+        const date = new Date(incident.created_at);
+        const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const entry = incidentsTrendsMap.get(monthKey) || { resolved: 0, unresolved: 0 };
+        if (incident.is_resolved) entry.resolved++;
+        else entry.unresolved++;
+        incidentsTrendsMap.set(monthKey, entry);
+      });
+      const incidentsTrends = Array.from(incidentsTrendsMap.entries()).map(([month, data]) => ({ month, ...data }));
+
       const exportData: ExportData = {
         analytics: analyticsData,
-        alertTypes: [],
-        userRoles: [],
-        incidentsTrends: [],
+        alertTypes,
+        userRoles,
+        incidentsTrends,
+        allAlerts,
+        allIncidents,
+        allUsers,
+        allGeofences,
       };
 
       await exportToPDF(exportData);
-      toast.success('PDF exported successfully');
+      toast.success('PDF exported successfully', { id: 'export-pdf' });
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      toast.error('Failed to export PDF');
+      toast.error('Failed to export PDF', { id: 'export-pdf' });
     }
   };
 
@@ -65,18 +111,60 @@ export default function AnalyticsPage() {
     }
 
     try {
+      toast.loading('Preparing CSV export...', { id: 'export-csv' });
+      
+      // Fetch all detailed data
+      const [allAlerts, allIncidents, allUsers, allGeofences] = await Promise.all([
+        alertsService.getAll().catch(() => []),
+        incidentsService.getAll().catch(() => []),
+        usersService.getAll().catch(() => []),
+        geofencesService.getAll().catch(() => []),
+      ]);
+
+      // Process alert types
+      const alertTypesMap = new Map<string, number>();
+      allAlerts.forEach(alert => {
+        const type = alert.alert_type || 'Unknown';
+        alertTypesMap.set(type, (alertTypesMap.get(type) || 0) + 1);
+      });
+      const alertTypes = Array.from(alertTypesMap.entries()).map(([name, value]) => ({ name, value }));
+
+      // Process user roles
+      const userRolesMap = new Map<string, number>();
+      allUsers.forEach(user => {
+        const role = user.role || 'Unknown';
+        userRolesMap.set(role, (userRolesMap.get(role) || 0) + 1);
+      });
+      const userRoles = Array.from(userRolesMap.entries()).map(([name, value]) => ({ name, value }));
+
+      // Process incidents trends (monthly)
+      const incidentsTrendsMap = new Map<string, { resolved: number; unresolved: number }>();
+      allIncidents.forEach(incident => {
+        const date = new Date(incident.created_at);
+        const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        const entry = incidentsTrendsMap.get(monthKey) || { resolved: 0, unresolved: 0 };
+        if (incident.is_resolved) entry.resolved++;
+        else entry.unresolved++;
+        incidentsTrendsMap.set(monthKey, entry);
+      });
+      const incidentsTrends = Array.from(incidentsTrendsMap.entries()).map(([month, data]) => ({ month, ...data }));
+
       const exportData: ExportData = {
         analytics: analyticsData,
-        alertTypes: [],
-        userRoles: [],
-        incidentsTrends: [],
+        alertTypes,
+        userRoles,
+        incidentsTrends,
+        allAlerts,
+        allIncidents,
+        allUsers,
+        allGeofences,
       };
 
       await exportToCSV(exportData);
-      toast.success('CSV exported successfully');
+      toast.success('CSV exported successfully', { id: 'export-csv' });
     } catch (error) {
       console.error('Error exporting CSV:', error);
-      toast.error('Failed to export CSV');
+      toast.error('Failed to export CSV', { id: 'export-csv' });
     }
   };
 
