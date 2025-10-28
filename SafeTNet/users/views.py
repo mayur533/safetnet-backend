@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import authenticate
 from django.db.models import Q
+from django.db import transaction
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,10 +142,18 @@ class GeofenceViewSet(OrganizationIsolationMixin, ModelViewSet):
     def perform_destroy(self, instance):
         """Override destroy to handle related objects"""
         try:
-            # Delete related alerts, incidents, and notifications
+            # Delete related alerts, incidents, notifications from users app
             instance.alerts.all().delete()
             instance.incidents.all().delete()
             instance.notifications.all().delete()
+            
+            # Handle SOS alerts from security_app if it exists
+            try:
+                from security_app.models import SOSAlert
+                SOSAlert.objects.filter(geofence=instance).update(geofence=None)
+            except Exception as sos_error:
+                logger.warning(f"Could not handle SOS alerts: {str(sos_error)}")
+            
             # Delete the geofence
             instance.delete()
         except Exception as e:
