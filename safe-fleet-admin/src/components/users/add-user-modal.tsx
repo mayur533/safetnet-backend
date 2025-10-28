@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { usersService, type User } from '@/lib/services/users';
+import { organizationsService } from '@/lib/services/organizations';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -49,8 +50,25 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingUser, setIsLoadingUser] = useState(false);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
 
   const isEditing = !!editingUserId;
+
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      if (!isOpen) return;
+      try {
+        const orgs = await organizationsService.getAll();
+        setOrganizations(orgs);
+      } catch (error) {
+        // Silently fail if user doesn't have access
+        console.warn('Could not fetch organizations');
+      }
+    };
+    
+    fetchOrganizations();
+  }, [isOpen]);
 
   useEffect(() => {
     if (isEditing && isOpen && editingUserId) {
@@ -68,6 +86,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         assignedGeofence: '',
         fullName: '',
         isActive: true,
+        organization: '',
       });
       setErrors({});
     }
@@ -168,6 +187,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
           last_name: lastName,
           full_name: formData.fullName,
           role: 'USER',
+          organization: formData.organization ? parseInt(formData.organization) : null,
         });
         toast.success('User created successfully');
       }
@@ -194,6 +214,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
       assignedGeofence: '',
       fullName: '',
       isActive: true,
+      organization: '',
     });
     setErrors({});
     onClose();
@@ -329,10 +350,37 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
                   </SelectContent>
                 </Select>
               </div>
-              {errors.assignedGeofence && (
-                <p className="text-xs text-red-500 mt-1">{errors.assignedGeofence}</p>
-              )}
+            {errors.assignedGeofence && (
+              <p className="text-xs text-red-500 mt-1">{errors.assignedGeofence}</p>
+            )}
+          </div>
+
+          {/* Organization */}
+          <div className="space-y-2">
+            <Label htmlFor="organization" className="text-sm font-medium">
+              Organization
+            </Label>
+            <div className="relative">
+              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
+                business
+              </span>
+              <Select
+                value={formData.organization}
+                onValueChange={(value) => handleChange('organization', value)}
+              >
+                <SelectTrigger className="pl-10">
+                  <SelectValue placeholder="Select organization (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id.toString()}>
+                      {org.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+          </div>
 
           {/* Info Box */}
           <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/20 dark:to-blue-950/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
