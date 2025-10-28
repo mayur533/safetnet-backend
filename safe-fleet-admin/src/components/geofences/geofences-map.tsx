@@ -47,7 +47,7 @@ const extractCoordinates = (polygonJson: Record<string, unknown>): [number, numb
     if (polygonJson.type === 'Polygon' && Array.isArray(polygonJson.coordinates)) {
       // GeoJSON format is [lng, lat] but Leaflet needs [lat, lng]
       const coords = polygonJson.coordinates[0] as number[][];
-      return coords.map((coord: number[]) => [coord[0], coord[1]] as [number, number]);
+      return coords.map((coord: number[]) => [coord[1], coord[0]] as [number, number]);
     }
     return [];
   } catch (error) {

@@ -10,6 +10,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import authenticate
 from django.db.models import Q
+import logging
+
+logger = logging.getLogger(__name__)
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserSerializer,
     OrganizationSerializer, GeofenceSerializer, GeofenceCreateSerializer,
@@ -134,6 +137,19 @@ class GeofenceViewSet(OrganizationIsolationMixin, ModelViewSet):
             )
         else:
             serializer.save(created_by=self.request.user)
+    
+    def perform_destroy(self, instance):
+        """Override destroy to handle related objects"""
+        try:
+            # Delete related alerts, incidents, and notifications
+            instance.alerts.all().delete()
+            instance.incidents.all().delete()
+            instance.notifications.all().delete()
+            # Delete the geofence
+            instance.delete()
+        except Exception as e:
+            logger.error(f"Error deleting geofence {instance.id}: {str(e)}")
+            raise
 
 
 class UserListViewSet(OrganizationIsolationMixin, ModelViewSet):
