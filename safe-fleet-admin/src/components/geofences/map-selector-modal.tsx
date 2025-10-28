@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,27 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+
+// Dynamic imports for Leaflet components (client-side only)
+const MapContainer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.MapContainer),
+  { ssr: false }
+);
+
+const TileLayer = dynamic(
+  () => import('react-leaflet').then((mod) => mod.TileLayer),
+  { ssr: false }
+);
+
+const Marker = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Marker),
+  { ssr: false }
+);
+
+const Polygon = dynamic(
+  () => import('react-leaflet').then((mod) => mod.Polygon),
+  { ssr: false }
+);
 
 interface MapPoint {
   lat: number;
@@ -28,112 +50,51 @@ export function MapSelectorModal({
   onConfirm,
 }: MapSelectorModalProps) {
   const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const polygonRef = useRef<google.maps.Polygon | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  const mapRef = useRef<any>(null);
 
   useEffect(() => {
-    if (isOpen && !mapInstanceRef.current && mapRef.current) {
-      initializeMap();
-    }
-    
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
     if (!isOpen) {
       clearAllPoints();
     }
   }, [isOpen]);
 
-  const initializeMap = () => {
-    if (!mapRef.current) return;
+  // Initialize map click handler
+  useEffect(() => {
+    if (!isClient || !mapRef.current || !isOpen) return;
 
-    const map = new google.maps.Map(mapRef.current, {
-      center: { lat: 28.6139, lng: 77.2090 }, // Delhi coordinates
-      zoom: 12,
-    });
+    const map = mapRef.current;
+    
+    const handleMapClick = (e: any) => {
+      const { lat, lng } = e.latlng;
+      addPoint(lat, lng);
+    };
 
-    map.addListener('click', (event: google.maps.MapMouseEvent) => {
-      if (event.latLng) {
-        const lat = event.latLng.lat();
-        const lng = event.latLng.lng();
-        addPoint(lat, lng);
+    map.on('click', handleMapClick);
+
+    return () => {
+      if (map) {
+        map.off('click', handleMapClick);
       }
-    });
-
-    mapInstanceRef.current = map;
-  };
+    };
+  }, [isClient, isOpen, mapPoints]);
 
   const addPoint = (lat: number, lng: number) => {
-    if (!mapInstanceRef.current) return;
-
     const newPoint: MapPoint = { lat, lng };
-    const updatedPoints = [...mapPoints, newPoint];
-    setMapPoints(updatedPoints);
-
-    // Add marker
-    const marker = new google.maps.Marker({
-      position: { lat, lng },
-      map: mapInstanceRef.current,
-      title: `Point ${updatedPoints.length}`,
-    });
-
-    markersRef.current.push(marker);
-
-    // Update polygon if we have at least 3 points
-    if (updatedPoints.length >= 3) {
-      updatePolygon(updatedPoints);
-    }
-  };
-
-  const updatePolygon = (points: MapPoint[]) => {
-    if (!mapInstanceRef.current) return;
-
-    if (polygonRef.current) {
-      polygonRef.current.setMap(null);
-    }
-
-    const polygon = new google.maps.Polygon({
-      paths: points,
-      strokeColor: '#FF0000',
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-      fillColor: '#FF0000',
-      fillOpacity: 0.35,
-      map: mapInstanceRef.current,
-    });
-
-    polygonRef.current = polygon;
+    setMapPoints(prev => [...prev, newPoint]);
   };
 
   const removeLastPoint = () => {
     if (mapPoints.length === 0) return;
-
-    const updatedPoints = mapPoints.slice(0, -1);
-    setMapPoints(updatedPoints);
-
-    // Remove last marker
-    if (markersRef.current.length > 0) {
-      const lastMarker = markersRef.current.pop();
-      lastMarker?.setMap(null);
-    }
-
-    // Update polygon
-    if (updatedPoints.length >= 3) {
-      updatePolygon(updatedPoints);
-    } else if (polygonRef.current) {
-      polygonRef.current.setMap(null);
-      polygonRef.current = null;
-    }
+    setMapPoints(prev => prev.slice(0, -1));
   };
 
   const clearAllPoints = () => {
     setMapPoints([]);
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    markersRef.current = [];
-    
-    if (polygonRef.current) {
-      polygonRef.current.setMap(null);
-      polygonRef.current = null;
-    }
   };
 
   const handleConfirm = () => {
@@ -149,6 +110,15 @@ export function MapSelectorModal({
     clearAllPoints();
     onClose();
   };
+
+  // Convert points to Leaflet polygon format [lat, lng][]
+  const getPolygonCoordinates = () => {
+    return mapPoints.map(point => [point.lat, point.lng]);
+  };
+
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -192,7 +162,43 @@ export function MapSelectorModal({
 
           {/* Map */}
           <div className="border rounded-lg overflow-hidden" style={{ height: '450px' }}>
-            <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+            <MapContainer
+              center={[28.6139, 77.2090]} // Delhi coordinates
+              zoom={12}
+              style={{ height: '100%', width: '100%' }}
+              className="z-0"
+              ref={mapRef}
+              whenCreated={(mapInstance) => {
+                mapRef.current = mapInstance;
+              }}
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+
+              {/* Render markers for each point */}
+              {mapPoints.map((point, index) => (
+                <Marker
+                  key={`${point.lat}-${point.lng}`}
+                  position={[point.lat, point.lng]}
+                >
+                </Marker>
+              ))}
+
+              {/* Render polygon if we have at least 3 points */}
+              {mapPoints.length >= 3 && (
+                <Polygon
+                  positions={getPolygonCoordinates()}
+                  pathOptions={{
+                    color: '#FF0000',
+                    fillColor: '#FF0000',
+                    fillOpacity: 0.35,
+                    weight: 2,
+                  }}
+                />
+              )}
+            </MapContainer>
           </div>
 
           {/* Instructions */}
@@ -230,4 +236,3 @@ export function MapSelectorModal({
     </Dialog>
   );
 }
-
