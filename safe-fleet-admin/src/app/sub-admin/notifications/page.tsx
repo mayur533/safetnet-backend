@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { ListLoading, FormLoading, ContentLoading } from '@/components/ui/content-loading';
 import { notificationsService, type Notification as BackendNotification } from '@/lib/services/notifications';
+import { geofencesService, type Geofence } from '@/lib/services/geofences';
 import { useSearch } from '@/lib/contexts/search-context';
 
 type NotificationType = 'NORMAL' | 'EMERGENCY';
@@ -11,53 +12,85 @@ type NotificationType = 'NORMAL' | 'EMERGENCY';
 export default function SubAdminNotificationsPage() {
   const { searchQuery } = useSearch();
   const [notifications, setNotifications] = useState<BackendNotification[]>([]);
+  const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notificationType, setNotificationType] = useState<NotificationType>('NORMAL');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [targetGeofence, setTargetGeofence] = useState('');
+  const [selectedGeofences, setSelectedGeofences] = useState<string[]>([]);
 
-  // Fetch notifications on mount
+  // Fetch notifications and geofences on mount
   useEffect(() => {
     fetchNotifications();
+    fetchGeofences();
   }, []);
 
   const fetchNotifications = async () => {
     try {
-      setIsLoading(true);
       const data = await notificationsService.getAll();
       setNotifications(data);
     } catch (error: any) {
       console.error('Failed to fetch notifications:', error);
       toast.error('Failed to load notifications');
+    }
+  };
+
+  const fetchGeofences = async () => {
+    try {
+      setIsLoading(true);
+      const data = await geofencesService.getAll();
+      setGeofences(data);
+    } catch (error: any) {
+      console.error('Failed to fetch geofences:', error);
+      toast.error('Failed to load geofences');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleGeofenceToggle = (geofenceId: string) => {
+    setSelectedGeofences(prev => {
+      if (prev.includes(geofenceId)) {
+        return prev.filter(id => id !== geofenceId);
+      } else {
+        return [...prev, geofenceId];
+      }
+    });
+  };
+
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title || !message || !targetGeofence) {
-      toast.error('Please fill in all fields');
+    if (!title || !message) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (selectedGeofences.length === 0) {
+      toast.error('Please select at least one geofence');
       return;
     }
 
     try {
-      await notificationsService.send({
-        notification_type: notificationType,
-        title,
-        message,
-        target_type: 'GEOFENCE_OFFICERS',
-        target_geofence: parseInt(targetGeofence),
-      });
+      // Send notification for each selected geofence
+      const promises = selectedGeofences.map(geofenceId =>
+        notificationsService.send({
+          notification_type: notificationType,
+          title,
+          message,
+          target_type: 'GEOFENCE_OFFICERS',
+          target_geofence: parseInt(geofenceId),
+        })
+      );
 
-      toast.success(`${notificationType === 'EMERGENCY' ? 'Emergency' : 'Normal'} notification sent successfully!`);
+      await Promise.all(promises);
+
+      toast.success(`${notificationType === 'EMERGENCY' ? 'Emergency' : 'Normal'} notification sent to ${selectedGeofences.length} geofence(s)!`);
       
       // Reset form
       setTitle('');
       setMessage('');
-      setTargetGeofence('');
+      setSelectedGeofences([]);
       setNotificationType('NORMAL');
       
       // Refresh notifications list
@@ -170,26 +203,38 @@ export default function SubAdminNotificationsPage() {
             </div>
           </div>
 
-          {/* Target Geofence */}
+          {/* Target Geofences */}
           <div>
-            <label className="block text-sm font-medium mb-2">Target Geofence</label>
-            <select
-              required
-              value={targetGeofence}
-              onChange={(e) => setTargetGeofence(e.target.value)}
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Select Geofence</option>
-              <option value="all">All My Areas</option>
-              <option value="north">North Gate</option>
-              <option value="east">East Sector</option>
-              <option value="west">West Zone</option>
-              <option value="south">South Entrance</option>
-              <option value="central">Central Park</option>
-              <option value="main">Main Entrance</option>
-              <option value="parking">Parking Area B</option>
-              <option value="recreation">Recreation Center</option>
-            </select>
+            <label className="block text-sm font-medium mb-2">Target Geofence(s) <span className="text-red-500">*</span></label>
+            {geofences.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No geofences available</p>
+            ) : (
+              <div className="max-h-60 overflow-y-auto border rounded-lg p-3 space-y-2">
+                {geofences.map((geofence) => (
+                  <label
+                    key={geofence.id}
+                    className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedGeofences.includes(geofence.id.toString())}
+                      onChange={() => handleGeofenceToggle(geofence.id.toString())}
+                      className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                    <span className="material-icons text-indigo-600 text-sm">location_on</span>
+                    <span className="text-sm">{geofence.name}</span>
+                    {geofence.organization_name && (
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        ({geofence.organization_name})
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-2">
+              Select one or more geofences to send the notification to. {selectedGeofences.length} geofence(s) selected.
+            </p>
           </div>
 
           {/* Submit Button */}
