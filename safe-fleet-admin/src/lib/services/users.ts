@@ -34,6 +34,9 @@ export interface UserCreateData {
   password: string;
   full_name?: string;
   role?: string;
+  first_name?: string;
+  last_name?: string;
+  organization?: number | null;
 }
 
 export const usersService = {

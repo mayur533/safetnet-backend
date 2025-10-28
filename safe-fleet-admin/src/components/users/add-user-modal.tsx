@@ -43,6 +43,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
     assignedGeofence: '',
     fullName: '',
     isActive: true,
+    organization: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -159,13 +160,18 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         toast.success('User updated successfully');
       } else {
         // Create new user via registration API
-        const nameParts = formData.firstName ? `${formData.firstName} ${formData.lastName}`.trim() : formData.username;
+        const nameParts = formData.fullName.trim().split(' ');
+        const firstName = nameParts[0] || formData.username;
+        const lastName = nameParts.slice(1).join(' ') || '';
+        
         await usersService.create({
-          username: formData.username,
+          username: formData.username || formData.email.split('@')[0],
           email: formData.email,
-          password: formData.password || 'Temporary123!', // Generate temporary password
-          full_name: nameParts,
-          role: 'USER',
+          password: formData.password,
+          first_name: firstName,
+          last_name: lastName,
+          full_name: formData.fullName,
+          role: formData.role || 'USER',
         });
         toast.success('User created successfully');
       }

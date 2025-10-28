@@ -106,11 +106,7 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    if (!formData.assignedArea) {
-      newErrors.assignedArea = 'Please select an area';
-    }
-
-    if (!formData.organization) {
+      if (!formData.organization) {
       newErrors.organization = 'Please select an organization';
     }
 
@@ -164,7 +160,9 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
         password: '',
         confirmPassword: '',
         assignedArea: '',
+        organization: '',
       });
+      setErrors({});
 
       toast.success('Sub-admin created successfully!');
       onClose();
@@ -187,6 +185,10 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
     });
     setErrors({});
     onClose();
+    // Trigger refresh
+    setTimeout(() => {
+      window.location.reload();
+    }, 100);
   };
 
   return (
@@ -290,33 +292,33 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
             </div>
           </div>
 
-          {/* Area Assignment */}
+          {/* Organization Selection */}
           <div className="space-y-2">
-            <Label htmlFor="assignedArea" className="text-sm font-medium">
-              Assigned Security Area <span className="text-red-500">*</span>
+            <Label htmlFor="organization" className="text-sm font-medium">
+              Organization <span className="text-red-500">*</span>
             </Label>
             <div className="relative">
               <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
-                location_on
+                business
               </span>
               <Select
-                value={formData.assignedArea}
-                onValueChange={(value) => handleChange('assignedArea', value)}
+                value={formData.organization}
+                onValueChange={(value) => handleChange('organization', value)}
               >
-                <SelectTrigger className={`pl-10 ${errors.assignedArea ? 'border-red-500' : ''}`}>
-                  <SelectValue placeholder="Select an area" />
+                <SelectTrigger className={`pl-10 ${errors.organization ? 'border-red-500' : ''}`}>
+                  <SelectValue placeholder="Select organization" />
                 </SelectTrigger>
                 <SelectContent>
-                  {geofenceAreas.map((area) => (
-                    <SelectItem key={area} value={area}>
-                      {area}
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id.toString()}>
+                      {org.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            {errors.assignedArea && (
-              <p className="text-xs text-red-500 mt-1">{errors.assignedArea}</p>
+            {errors.organization && (
+              <p className="text-xs text-red-500 mt-1">{errors.organization}</p>
             )}
           </div>
 

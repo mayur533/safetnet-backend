@@ -234,14 +234,28 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
     }
   };
 
-  const handleToggleStatus = (id: string) => {
-    setSubAdmins(
-      subAdmins.map((admin) =>
-        admin.id === id
-          ? { ...admin, status: admin.status === 'active' ? 'inactive' : 'active' }
-          : admin
-      )
-    );
+  const handleToggleStatus = async (userId: number) => {
+    try {
+      const user = subAdmins.find(admin => admin.id === userId);
+      if (!user) return;
+
+      // Toggle the is_active status
+      const updatedUser = await usersService.update(userId, {
+        is_active: !user.is_active
+      });
+
+      // Update the local state
+      setSubAdmins(
+        subAdmins.map((admin) =>
+          admin.id === userId ? updatedUser : admin
+        )
+      );
+
+      toast.success(`User ${updatedUser.is_active ? 'activated' : 'deactivated'} successfully`);
+    } catch (error) {
+      console.error('Toggle status error:', error);
+      toast.error('Failed to update user status');
+    }
   };
 
   const getStatusBadge = (isActive: boolean) => {
@@ -697,7 +711,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="cursor-pointer"
-                          onClick={() => handleToggleStatus(admin.id)}
+                          onClick={async () => await handleToggleStatus(admin.id)}
                         >
                           <span className="material-icons text-sm mr-2">
                             {admin.is_active ? 'block' : 'check_circle'}
