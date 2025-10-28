@@ -21,6 +21,7 @@ import {
 import { getAuthHeaders, API_ENDPOINTS } from '@/lib/config/api';
 import { toast } from 'sonner';
 import { organizationsService } from '@/lib/services/organizations';
+import { usersService } from '@/lib/services/users';
 
 interface AddSubAdminModalProps {
   isOpen: boolean;
@@ -124,34 +125,21 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
     setIsSubmitting(true);
 
     try {
-      // Create sub-admin user via registration API
       // Split name into first and last name
       const nameParts = formData.name.trim().split(' ');
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({
-          username: formData.email.split('@')[0], // Use email prefix as username
-          email: formData.email,
-          password: formData.password,
-          password_confirm: formData.confirmPassword,
-          role: 'SUB_ADMIN',
-          first_name: firstName,
-          last_name: lastName,
-          organization: formData.organization ? parseInt(formData.organization) : null,
-        }),
+      
+      // Use users API to create SUB_ADMIN
+      await usersService.create({
+        username: formData.email.split('@')[0],
+        email: formData.email,
+        password: formData.password,
+        first_name: firstName,
+        last_name: lastName,
+        role: 'SUB_ADMIN',
+        organization: formData.organization ? parseInt(formData.organization) : null,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(JSON.stringify(error));
-      }
 
       // Reset form
       setFormData({
@@ -185,10 +173,6 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
     });
     setErrors({});
     onClose();
-    // Trigger refresh
-    setTimeout(() => {
-      window.location.reload();
-    }, 100);
   };
 
   return (
