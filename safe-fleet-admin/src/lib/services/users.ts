@@ -44,18 +44,32 @@ export const usersService = {
    * Get all users
    */
   async getAll(): Promise<User[]> {
-    const response = await fetch(API_ENDPOINTS.USERS.LIST, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-    });
+    const allUsers: User[] = [];
+    let nextUrl: string | null = API_ENDPOINTS.USERS.LIST;
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch users');
+    while (nextUrl) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch users');
+      }
+
+      const data = await response.json();
+      
+      // Handle paginated response
+      if (data.results) {
+        allUsers.push(...data.results);
+        nextUrl = data.next;
+      } else {
+        // Not paginated, return the data directly
+        return Array.isArray(data) ? data : [];
+      }
     }
 
-    const data = await response.json();
-    // Handle paginated response - extract results array
-    return data.results || data;
+    return allUsers;
   },
 
   /**
