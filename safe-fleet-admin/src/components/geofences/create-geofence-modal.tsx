@@ -21,6 +21,7 @@ import {
 import { geofencesService } from '@/lib/services/geofences';
 import { organizationsService } from '@/lib/services/organizations';
 import { toast } from 'sonner';
+import { MapSelectorModal } from './map-selector-modal';
 
 interface CreateGeofenceModalProps {
   isOpen: boolean;
@@ -28,32 +29,14 @@ interface CreateGeofenceModalProps {
   onRefresh?: () => void;
 }
 
-const zoneTypes = [
-  'Residential',
-  'Commercial',
-  'Industrial',
-  'Educational',
-  'Healthcare',
-  'Entertainment',
-  'Government',
-  'Mixed Use',
-];
-
-const colors = [
-  { name: 'Indigo', value: '#6366f1' },
-  { name: 'Purple', value: '#8b5cf6' },
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Cyan', value: '#06b6d4' },
-  { name: 'Green', value: '#10b981' },
-  { name: 'Yellow', value: '#f59e0b' },
-  { name: 'Orange', value: '#f97316' },
-  { name: 'Red', value: '#ef4444' },
-  { name: 'Pink', value: '#ec4899' },
-];
-
 interface Organization {
   id: number;
   name: string;
+}
+
+interface MapPoint {
+  lat: number;
+  lng: number;
 }
 
 export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofenceModalProps) {
@@ -61,17 +44,10 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
     name: '',
     description: '',
     organization: '',
-    // Four corner points for the polygon
-    point1Lat: '',
-    point1Lng: '',
-    point2Lat: '',
-    point2Lng: '',
-    point3Lat: '',
-    point3Lng: '',
-    point4Lat: '',
-    point4Lng: '',
   });
 
+  const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,30 +92,21 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       newErrors.organization = 'Please select an organization';
     }
 
-    // Validate all four points
-    const points = [
-      { lat: formData.point1Lat, lng: formData.point1Lng, num: 1 },
-      { lat: formData.point2Lat, lng: formData.point2Lng, num: 2 },
-      { lat: formData.point3Lat, lng: formData.point3Lng, num: 3 },
-      { lat: formData.point4Lat, lng: formData.point4Lng, num: 4 },
-    ];
-
-    points.forEach((point) => {
-      if (!point.lat) {
-        newErrors[`point${point.num}Lat`] = `Point ${point.num} latitude is required`;
-      } else if (isNaN(Number(point.lat))) {
-        newErrors[`point${point.num}Lat`] = `Point ${point.num} latitude is invalid`;
-      }
-      
-      if (!point.lng) {
-        newErrors[`point${point.num}Lng`] = `Point ${point.num} longitude is required`;
-      } else if (isNaN(Number(point.lng))) {
-        newErrors[`point${point.num}Lng`] = `Point ${point.num} longitude is invalid`;
-      }
-    });
+    if (mapPoints.length < 3) {
+      newErrors.polygon = 'Please select at least 3 points on the map to create a geofence';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const handleMapPointsConfirm = (points: MapPoint[]) => {
+    setMapPoints(points);
+    if (errors.polygon) {
+      const newErrors = { ...errors };
+      delete newErrors.polygon;
+      setErrors(newErrors);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -152,18 +119,14 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
     setIsSubmitting(true);
 
     try {
-      // Create polygon from four corner points
-      const coordinates = [[
-        [parseFloat(formData.point1Lng), parseFloat(formData.point1Lat)], // Point 1: [lng, lat]
-        [parseFloat(formData.point2Lng), parseFloat(formData.point2Lat)], // Point 2
-        [parseFloat(formData.point3Lng), parseFloat(formData.point3Lat)], // Point 3
-        [parseFloat(formData.point4Lng), parseFloat(formData.point4Lat)], // Point 4
-        [parseFloat(formData.point1Lng), parseFloat(formData.point1Lat)], // Close the polygon by returning to first point
-      ]];
+      // Create polygon from map points
+      const coordinates = mapPoints.map(point => [point.lng, point.lat]);
+      // Close the polygon by repeating the first point
+      coordinates.push(coordinates[0]);
       
       const polygonJson = {
         type: 'Polygon',
-        coordinates: coordinates
+        coordinates: [coordinates]
       };
 
       await geofencesService.create({
@@ -181,15 +144,8 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
         name: '',
         description: '',
         organization: '',
-        point1Lat: '',
-        point1Lng: '',
-        point2Lat: '',
-        point2Lng: '',
-        point3Lat: '',
-        point3Lng: '',
-        point4Lat: '',
-        point4Lng: '',
       });
+      setMapPoints([]);
       
       onClose();
       
@@ -208,15 +164,8 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       name: '',
       description: '',
       organization: '',
-      point1Lat: '',
-      point1Lng: '',
-      point2Lat: '',
-      point2Lng: '',
-      point3Lat: '',
-      point3Lng: '',
-      point4Lat: '',
-      point4Lng: '',
     });
+    setMapPoints([]);
     setErrors({});
     onClose();
   };
@@ -300,169 +249,30 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
             {errors.organization && <p className="text-xs text-red-500 mt-1">{errors.organization}</p>}
           </div>
 
-          {/* Four Corner Points */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-foreground">Define Four Corner Points</h3>
+          {/* Select Geofence Area */}
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">
+              Define Geofence Area <span className="text-red-500">*</span>
+            </Label>
             
-            {/* Point 1 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 1 Latitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    my_location
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., 40.7128"
-                    value={formData.point1Lat}
-                    onChange={(e) => handleChange('point1Lat', e.target.value)}
-                    className={`pl-10 ${errors.point1Lat ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point1Lat && <p className="text-xs text-red-500 mt-1">{errors.point1Lat}</p>}
+            <Button
+              type="button"
+              variant="outline"
+              className={`w-full ${errors.polygon ? 'border-red-500' : ''}`}
+              onClick={() => setIsMapModalOpen(true)}
+            >
+              <span className="material-icons text-lg mr-2">map</span>
+              {mapPoints.length === 0 ? 'Select Geofence Area on Map' : `${mapPoints.length} Points Selected`}
+            </Button>
+            
+            {mapPoints.length > 0 && (
+              <div className="text-sm text-green-600 dark:text-green-400">
+                <span className="material-icons text-sm mr-1">check_circle</span>
+                {mapPoints.length} points selected
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 1 Longitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    location_on
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., -74.0060"
-                    value={formData.point1Lng}
-                    onChange={(e) => handleChange('point1Lng', e.target.value)}
-                    className={`pl-10 ${errors.point1Lng ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point1Lng && <p className="text-xs text-red-500 mt-1">{errors.point1Lng}</p>}
-              </div>
-            </div>
-
-            {/* Point 2 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 2 Latitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    my_location
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., 40.7200"
-                    value={formData.point2Lat}
-                    onChange={(e) => handleChange('point2Lat', e.target.value)}
-                    className={`pl-10 ${errors.point2Lat ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point2Lat && <p className="text-xs text-red-500 mt-1">{errors.point2Lat}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 2 Longitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    location_on
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., -74.0100"
-                    value={formData.point2Lng}
-                    onChange={(e) => handleChange('point2Lng', e.target.value)}
-                    className={`pl-10 ${errors.point2Lng ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point2Lng && <p className="text-xs text-red-500 mt-1">{errors.point2Lng}</p>}
-              </div>
-            </div>
-
-            {/* Point 3 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 3 Latitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    my_location
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., 40.7150"
-                    value={formData.point3Lat}
-                    onChange={(e) => handleChange('point3Lat', e.target.value)}
-                    className={`pl-10 ${errors.point3Lat ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point3Lat && <p className="text-xs text-red-500 mt-1">{errors.point3Lat}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 3 Longitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    location_on
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., -74.0050"
-                    value={formData.point3Lng}
-                    onChange={(e) => handleChange('point3Lng', e.target.value)}
-                    className={`pl-10 ${errors.point3Lng ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point3Lng && <p className="text-xs text-red-500 mt-1">{errors.point3Lng}</p>}
-              </div>
-            </div>
-
-            {/* Point 4 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 4 Latitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    my_location
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., 40.7180"
-                    value={formData.point4Lat}
-                    onChange={(e) => handleChange('point4Lat', e.target.value)}
-                    className={`pl-10 ${errors.point4Lat ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point4Lat && <p className="text-xs text-red-500 mt-1">{errors.point4Lat}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Point 4 Longitude <span className="text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                    location_on
-                  </span>
-                  <Input
-                    type="text"
-                    placeholder="e.g., -74.0080"
-                    value={formData.point4Lng}
-                    onChange={(e) => handleChange('point4Lng', e.target.value)}
-                    className={`pl-10 ${errors.point4Lng ? 'border-red-500' : ''}`}
-                  />
-                </div>
-                {errors.point4Lng && <p className="text-xs text-red-500 mt-1">{errors.point4Lng}</p>}
-              </div>
-            </div>
+            )}
+            
+            {errors.polygon && <p className="text-xs text-red-500 mt-1">{errors.polygon}</p>}
           </div>
 
           {/* Info Box */}
@@ -474,7 +284,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
                   Drawing Tip
                 </p>
                 <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
-                  After creation, you can refine the geofence shape by clicking on the map to add polygon points.
+                  Click the button above to open the map and select points by clicking on it. You can add as many points as needed.
                 </p>
               </div>
             </div>
@@ -511,10 +321,13 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           </div>
         </form>
       </DialogContent>
+
+      {/* Map Selector Modal */}
+      <MapSelectorModal
+        isOpen={isMapModalOpen}
+        onClose={() => setIsMapModalOpen(false)}
+        onConfirm={handleMapPointsConfirm}
+      />
     </Dialog>
   );
 }
-
-
-
-
