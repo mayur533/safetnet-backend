@@ -59,7 +59,7 @@ const getStatusBadge = (notificationType: 'NORMAL' | 'EMERGENCY') => {
 
 type SortField = 'created_at' | 'title' | 'notification_type';
 type SortOrder = 'asc' | 'desc';
-type FilterType = 'all' | 'NORMAL' | 'EMERGENCY' | 'sent' | 'unsent';
+type FilterType = 'all' | 'NORMAL' | 'EMERGENCY' | 'unread';
 
 export function NotificationsContainer() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -107,6 +107,28 @@ export function NotificationsContainer() {
     }
   };
 
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      // Update local state immediately for instant feedback
+      setNotifications(notifications.map(n => 
+        n.id.toString() === id ? { ...n, is_read: true } : n
+      ));
+      
+      // Mark as read in background
+      await notificationsService.markAsRead(Number(id));
+      
+      // Refetch to sync with server
+      fetchNotifications();
+    } catch (error: any) {
+      console.error('Error marking notification as read:', error);
+      // Revert local state on error
+      setNotifications(notifications.map(n => 
+        n.id.toString() === id ? { ...n, is_read: false } : n
+      ));
+      toast.error('Failed to mark notification as read');
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -117,13 +139,11 @@ export function NotificationsContainer() {
     });
   };
 
-  // Filter by type and sent status
+  // Filter by type and read status
   let filteredNotifications = notifications;
   
-  if (filter === 'sent') {
-    filteredNotifications = filteredNotifications.filter(n => n.is_sent);
-  } else if (filter === 'unsent') {
-    filteredNotifications = filteredNotifications.filter(n => !n.is_sent);
+  if (filter === 'unread') {
+    filteredNotifications = filteredNotifications.filter(n => !n.is_read);
   } else if (filter === 'NORMAL' || filter === 'EMERGENCY') {
     filteredNotifications = filteredNotifications.filter(n => n.notification_type === filter);
   }
@@ -352,31 +372,18 @@ export function NotificationsContainer() {
                 </button>
                 <button
                   onClick={() => {
-                    setFilter('sent');
+                    setFilter('unread');
                     setCurrentPage(1);
                     setShowFilterMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    filter === 'sent'
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
+                    filter === 'unread'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Sent Only
-                </button>
-                <button
-                  onClick={() => {
-                    setFilter('unsent');
-                    setCurrentPage(1);
-                    setShowFilterMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    filter === 'unsent'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Unsent Only
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  Unread Only
                 </button>
 
                 <div className="border-t border-border my-2"></div>
@@ -504,33 +511,38 @@ export function NotificationsContainer() {
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-b">
-              <TableHead className="text-muted-foreground text-sm font-medium">Title</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium">Message</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium">Geofence</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium">Organization</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium">Type</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium">Status</TableHead>
-              <TableHead className="text-muted-foreground text-sm font-medium text-right">Actions</TableHead>
-            </TableRow>
+              <TableRow className="border-b">
+                <TableHead className="text-muted-foreground text-sm font-medium w-3"></TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium">Title</TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium">Message</TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium">Geofence</TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium">Organization</TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium">Type</TableHead>
+                <TableHead className="text-muted-foreground text-sm font-medium text-right">Actions</TableHead>
+              </TableRow>
           </TableHeader>
           <TableBody>
             {paginatedNotifications.map((notification) => (
               <TableRow
                 key={notification.id}
                 className={`border-b hover:bg-muted/50 transition-colors ${
-                  !notification.is_read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
+                  !notification.is_read ? 'bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer' : ''
                 }`}
+                onClick={() => {
+                  if (!notification.is_read) {
+                    handleMarkAsRead(notification.id.toString());
+                  }
+                }}
               >
+                <TableCell className="py-4 px-2">
+                  {!notification.is_read && (
+                    <span className="w-2 h-2 bg-blue-600 rounded-full inline-block" title="Unread"></span>
+                  )}
+                </TableCell>
                 <TableCell className="py-4 px-4">
-                  <div className="flex items-center gap-2">
-                    {!notification.is_read && (
-                      <span className="w-2 h-2 bg-blue-600 rounded-full" title="Unread"></span>
-                    )}
-                    <div>
-                      <div className="font-medium text-sm">{notification.title}</div>
-                      <div className="text-xs text-muted-foreground">By: {notification.created_by_username || 'System'}</div>
-                    </div>
+                  <div>
+                    <div className="font-medium text-sm">{notification.title}</div>
+                    <div className="text-xs text-muted-foreground">By: {notification.created_by_username || 'System'}</div>
                   </div>
                 </TableCell>
                 <TableCell className="py-4 px-4">
@@ -550,19 +562,6 @@ export function NotificationsContainer() {
                 </TableCell>
                 <TableCell className="py-4 px-4">
                   {getStatusBadge(notification.notification_type)}
-                </TableCell>
-                <TableCell className="py-4 px-4">
-                  <div className="flex flex-col gap-1">
-                    <Badge variant={notification.is_sent ? "default" : "outline"}>
-                      {notification.is_sent ? 'Sent' : 'Draft'}
-                    </Badge>
-                    {!notification.is_read && (
-                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300">
-                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full mr-1"></span>
-                        Unread
-                      </Badge>
-                    )}
-                  </div>
                 </TableCell>
                 <TableCell className="py-4 px-4 text-right">
                   <DropdownMenu>
