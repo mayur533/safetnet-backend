@@ -99,13 +99,15 @@ class Geofence(models.Model):
             return None
         
         # Calculate center
+        # GeoJSON format is [longitude, latitude], so coord[0] is lon, coord[1] is lat
         lats = [coord[1] for coord in ring]
         lons = [coord[0] for coord in ring]
         
         center_lat = sum(lats) / len(lats)
         center_lon = sum(lons) / len(lons)
         
-        return [center_lon, center_lat]
+        # Return as [latitude, longitude] for frontend compatibility
+        return [center_lat, center_lon]
 
 
 class Alert(models.Model):
