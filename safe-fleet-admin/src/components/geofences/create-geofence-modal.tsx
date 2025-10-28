@@ -72,12 +72,18 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           setFormData(prev => ({ ...prev, organization: user.organization.toString() }));
         } else {
           // For Main Admin, fetch all organizations
-          const orgs = await organizationsService.getAll();
-          setOrganizations(orgs);
+          try {
+            const orgs = await organizationsService.getAll();
+            setOrganizations(orgs);
+          } catch (error) {
+            // Silently fail for Main Admin - they might not have access to organizations endpoint
+            console.warn('Could not fetch organizations list, continuing without it');
+            setOrganizations([]);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch organizations:', error);
-        toast.error('Failed to load organizations');
+        // Don't show error toast for Sub-Admins as they don't need to fetch orgs
       } finally {
         setIsLoading(false);
       }
