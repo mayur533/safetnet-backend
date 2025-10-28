@@ -72,14 +72,8 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           setFormData(prev => ({ ...prev, organization: user.organization.toString() }));
         } else {
           // For Main Admin, fetch all organizations
-          try {
-            const orgs = await organizationsService.getAll();
-            setOrganizations(orgs);
-          } catch (error) {
-            // Silently fail for Main Admin - they might not have access to organizations endpoint
-            console.warn('Could not fetch organizations list, continuing without it');
-            setOrganizations([]);
-          }
+          const orgs = await organizationsService.getAll();
+          setOrganizations(orgs);
         }
       } catch (error) {
         console.error('Failed to fetch organizations:', error);

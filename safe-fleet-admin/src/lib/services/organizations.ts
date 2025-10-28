@@ -29,6 +29,10 @@ export const organizationsService = {
     });
 
     if (!response.ok) {
+      // Return empty array for 403 errors (Sub-Admins don't have access)
+      if (response.status === 403) {
+        return [];
+      }
       throw new Error('Failed to fetch organizations');
     }
 
