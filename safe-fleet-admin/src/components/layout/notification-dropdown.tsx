@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { notificationsService } from '@/lib/services/notifications';
+import { notificationsService, type Notification as ApiNotification } from '@/lib/services/notifications';
 import { Notifications, NotificationsOff, Info, Warning, CheckCircle, Error } from '@mui/icons-material';
 
 interface Notification {
@@ -20,41 +20,6 @@ interface Notification {
   type: 'info' | 'warning' | 'success' | 'error';
   unread: boolean;
 }
-
-const sampleNotifications: Notification[] = [
-  {
-    id: '1',
-    title: 'New SOS Alert',
-    message: 'Emergency alert triggered in University Campus',
-    time: '2 min ago',
-    type: 'error',
-    unread: true,
-  },
-  {
-    id: '2',
-    title: 'User Registration',
-    message: 'New user joined the security network',
-    time: '15 min ago',
-    type: 'success',
-    unread: true,
-  },
-  {
-    id: '3',
-    title: 'Geofence Created',
-    message: 'New security zone added to Downtown Area',
-    time: '1 hour ago',
-    type: 'info',
-    unread: false,
-  },
-  {
-    id: '4',
-    title: 'System Update',
-    message: 'Security protocols updated successfully',
-    time: '3 hours ago',
-    type: 'info',
-    unread: false,
-  },
-];
 
 const getNotificationIcon = (type: Notification['type']) => {
   switch (type) {
@@ -86,10 +51,10 @@ const getNotificationColor = (type: Notification['type']) => {
 
 interface NotificationDropdownProps {
   onViewAll: () => void;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
-export function NotificationDropdown({ onViewAll, onClose }: NotificationDropdownProps) {
+export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -103,10 +68,10 @@ export function NotificationDropdown({ onViewAll, onClose }: NotificationDropdow
       setLoading(true);
       const data = await notificationsService.getAll();
       
-      // Convert API notifications to dropdown format (show only recent 5 unsent as unread)
+      // Convert API notifications to dropdown format (show only recent 5)
       const recentNotifs: Notification[] = data
         .slice(0, 5)
-        .map((notif: any) => ({
+        .map((notif: ApiNotification) => ({
           id: notif.id.toString(),
           title: notif.title,
           message: notif.message,
@@ -116,8 +81,8 @@ export function NotificationDropdown({ onViewAll, onClose }: NotificationDropdow
             hour: '2-digit',
             minute: '2-digit',
           }),
-          type: notif.notification_type === 'emergency' ? 'error' : 'info',
-          unread: !notif.is_sent, // Unsent notifications are "unread"
+          type: notif.notification_type === 'EMERGENCY' ? 'error' : 'info',
+          unread: !notif.is_read, // Unread if user hasn't read it yet
         }));
 
       setNotifications(recentNotifs);
