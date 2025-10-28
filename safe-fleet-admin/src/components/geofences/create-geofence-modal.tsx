@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { geofencesService } from '@/lib/services/geofences';
+import { organizationsService } from '@/lib/services/organizations';
 import { toast } from 'sonner';
 
 interface CreateGeofenceModalProps {
@@ -50,6 +51,11 @@ const colors = [
   { name: 'Pink', value: '#ec4899' },
 ];
 
+interface Organization {
+  id: number;
+  name: string;
+}
+
 export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofenceModalProps) {
   const [formData, setFormData] = useState({
     name: '',
@@ -59,10 +65,34 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
     latitude: '',
     longitude: '',
     radius: '500',
+    organization: '',
   });
 
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      if (!isOpen) return;
+      try {
+        setIsLoading(true);
+        const orgs = await organizationsService.getAll();
+        setOrganizations(orgs);
+      } catch (error) {
+        console.error('Failed to fetch organizations:', error);
+        toast.error('Failed to load organizations');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    if (isOpen) {
+      fetchOrganizations();
+    }
+  }, [isOpen]);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -80,6 +110,10 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
 
     if (!formData.zoneType) {
       newErrors.zoneType = 'Please select a zone type';
+    }
+
+    if (!formData.organization) {
+      newErrors.organization = 'Please select an organization';
     }
 
     if (!formData.latitude) {
@@ -133,10 +167,9 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       await geofencesService.create({
         name: formData.name,
         description: formData.description || undefined,
-        zone_type: formData.zoneType,
         polygon_json: polygonJson,
-        center_point: [lat, lng], // Our API uses [lat, lng]
-        is_active: true,
+        organization: parseInt(formData.organization),
+        active: true,
       });
 
       toast.success('Geofence created successfully!');
@@ -150,6 +183,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
         latitude: '',
         longitude: '',
         radius: '500',
+        organization: '',
       });
       
       onClose();
@@ -173,6 +207,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       latitude: '',
       longitude: '',
       radius: '500',
+      organization: '',
     });
     setErrors({});
     onClose();
@@ -230,6 +265,31 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
                 className="w-full pl-10 pr-4 py-2 min-h-[80px] rounded-md border border-input bg-background text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
+          </div>
+
+          {/* Organization */}
+          <div className="space-y-2">
+            <Label htmlFor="organization" className="text-sm font-medium">
+              Organization <span className="text-red-500">*</span>
+            </Label>
+            <div className="relative">
+              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
+                business
+              </span>
+              <Select value={formData.organization} onValueChange={(value) => handleChange('organization', value)}>
+                <SelectTrigger className={`pl-10 ${errors.organization ? 'border-red-500' : ''}`}>
+                  <SelectValue placeholder="Select organization" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id.toString()}>
+                      {org.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {errors.organization && <p className="text-xs text-red-500 mt-1">{errors.organization}</p>}
           </div>
 
           {/* Zone Type and Color */}
