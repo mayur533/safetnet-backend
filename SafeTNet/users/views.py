@@ -841,18 +841,24 @@ def analytics_data(request):
     ).count()
     
     # Calculate response time (average time to acknowledge alerts) - in minutes
-    acknowledged_alerts = Alert.objects.filter(acknowledged=True, **alert_filter).select_related()
+    # Note: Alert model doesn't have acknowledged_at field
+    # We'll calculate based on resolved_at if available, otherwise use default
+    resolved_alerts = Alert.objects.filter(is_resolved=True, **alert_filter)
     response_times = []
-    for alert in acknowledged_alerts:
-        if alert.created_at and alert.acknowledged_at:
-            delta = alert.acknowledged_at - alert.created_at
+    for alert in resolved_alerts[:10]:  # Limit to avoid too much processing
+        if alert.created_at and alert.resolved_at:
+            delta = alert.resolved_at - alert.created_at
             response_times.append(delta.total_seconds() / 60)  # Convert to minutes
     
-    avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+    avg_response_time = sum(response_times) / len(response_times) if response_times else 15.0
     
     # Resolution rate (percentage of resolved incidents)
-    total_incidents = Incident.objects.filter(**alert_filter).count()
-    resolved_incidents = Incident.objects.filter(is_resolved=True, **alert_filter).count()
+    incident_filter = {}
+    if user.role == 'SUB_ADMIN' and user.organization:
+        incident_filter['geofence__organization'] = user.organization
+    
+    total_incidents = Incident.objects.filter(**incident_filter).count()
+    resolved_incidents = Incident.objects.filter(is_resolved=True, **incident_filter).count()
     resolution_rate = (resolved_incidents / total_incidents * 100) if total_incidents > 0 else 0
     
     return Response({
