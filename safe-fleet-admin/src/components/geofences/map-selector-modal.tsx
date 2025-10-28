@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { useMapEvents } from 'react-leaflet';
 
 // Dynamic imports for Leaflet components (client-side only)
 const MapContainer = dynamic(
@@ -33,6 +34,17 @@ const Polygon = dynamic(
   { ssr: false }
 );
 
+// Component to handle map click events
+function ClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (e) => {
+      const { lat, lng } = e.latlng;
+      onMapClick(lat, lng);
+    },
+  });
+  return null;
+}
+
 interface MapPoint {
   lat: number;
   lng: number;
@@ -51,7 +63,6 @@ export function MapSelectorModal({
 }: MapSelectorModalProps) {
   const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
   const [isClient, setIsClient] = useState(false);
-  const mapRef = useRef<any>(null);
 
   useEffect(() => {
     setIsClient(true);
@@ -59,9 +70,13 @@ export function MapSelectorModal({
 
   useEffect(() => {
     if (!isOpen) {
-      clearAllPoints();
+      setMapPoints([]);
     }
   }, [isOpen]);
+
+  const handleMapClick = (lat: number, lng: number) => {
+    setMapPoints(prev => [...prev, { lat, lng }]);
+  };
 
   const removeLastPoint = () => {
     if (mapPoints.length === 0) return;
@@ -82,7 +97,7 @@ export function MapSelectorModal({
   };
 
   const handleClose = () => {
-    clearAllPoints();
+    setMapPoints([]);
     onClose();
   };
 
@@ -142,21 +157,13 @@ export function MapSelectorModal({
               zoom={12}
               style={{ height: '100%', width: '100%' }}
               className="z-0"
-              ref={mapRef}
-              whenCreated={(mapInstance) => {
-                mapRef.current = mapInstance;
-                
-                // Add click event listener after map is created
-                mapInstance.on('click', (e: any) => {
-                  const { lat, lng } = e.latlng;
-                  setMapPoints(prev => [...prev, { lat, lng }]);
-                });
-              }}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
+              
+              <ClickHandler onMapClick={handleMapClick} />
 
               {/* Render markers for each point */}
               {mapPoints.map((point, index) => (
