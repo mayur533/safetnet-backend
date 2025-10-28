@@ -93,7 +93,7 @@ class GeofenceCreateSerializer(serializers.ModelSerializer):
 
 
 class UserListSerializer(serializers.ModelSerializer):
-    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    organization_name = serializers.CharField(source='organization.name', read_only=True, allow_null=True)
     organization = serializers.SerializerMethodField()
     
     class Meta:
@@ -104,6 +104,9 @@ class UserListSerializer(serializers.ModelSerializer):
             'date_joined', 'last_login'
         )
         read_only_fields = ('id', 'date_joined', 'last_login')
+        extra_kwargs = {
+            'organization': {'required': False}
+        }
     
     def get_organization(self, obj):
         if obj.organization:
@@ -112,6 +115,12 @@ class UserListSerializer(serializers.ModelSerializer):
                 'name': obj.organization.name
             }
         return None
+    
+    def to_internal_value(self, data):
+        # Convert organization object to ID for writes
+        if 'organization' in data and isinstance(data['organization'], dict):
+            data['organization'] = data['organization'].get('id')
+        return super().to_internal_value(data)
 
 
 class AlertSerializer(serializers.ModelSerializer):
