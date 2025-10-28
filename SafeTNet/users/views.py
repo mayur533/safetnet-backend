@@ -632,6 +632,14 @@ def send_notification(request):
             )
             notification.target_officers.set(officers)
         
+        # Add target officers to unread_users list
+        # Get all users from the officers (assuming officers have a user relationship)
+        # For now, we'll add all officers as unread (you may need to adjust based on your User model)
+        target_officer_users = User.objects.filter(
+            securityofficer__in=notification.target_officers.all()
+        ).distinct()
+        notification.unread_users.set(target_officer_users)
+        
         # Mark as sent (in real implementation, this would trigger actual notification sending)
         notification.mark_as_sent()
         
@@ -642,6 +650,28 @@ def send_notification(request):
         }, status=status.HTTP_201_CREATED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_notification_read(request, notification_id):
+    """
+    Mark a notification as read for the current user.
+    """
+    try:
+        notification = Notification.objects.get(id=notification_id)
+        
+        # Remove the current user from unread_users list
+        notification.unread_users.remove(request.user)
+        
+        return Response({
+            'message': 'Notification marked as read',
+            'notification_id': notification.id
+        }, status=status.HTTP_200_OK)
+    except Notification.DoesNotExist:
+        return Response({
+            'error': 'Notification not found'
+        }, status=status.HTTP_404_NOT_FOUND)
 
 
 @api_view(['GET'])

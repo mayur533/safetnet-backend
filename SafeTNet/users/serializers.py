@@ -225,6 +225,8 @@ class NotificationSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     target_officers_names = serializers.StringRelatedField(source='target_officers', many=True, read_only=True)
+    unread_users = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    is_unread = serializers.SerializerMethodField()
     
     class Meta:
         model = Notification
@@ -232,9 +234,17 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'notification_type', 'title', 'message', 'target_type',
             'target_geofence', 'target_geofence_name', 'target_officers',
             'target_officers_names', 'organization', 'organization_name',
-            'is_sent', 'sent_at', 'created_by_username', 'created_at', 'updated_at'
+            'is_sent', 'sent_at', 'created_by_username', 'created_at', 'updated_at',
+            'unread_users', 'is_unread'
         )
-        read_only_fields = ('id', 'sent_at', 'created_by_username', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'sent_at', 'created_by_username', 'created_at', 'updated_at', 'is_unread')
+    
+    def get_is_unread(self, obj):
+        """Check if the current user has read this notification"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            return obj.unread_users.filter(id=request.user.id).exists()
+        return False
 
 
 class NotificationCreateSerializer(serializers.ModelSerializer):

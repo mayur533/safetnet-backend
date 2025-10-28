@@ -43,4 +43,7 @@ urlpatterns = [
     # Sub-Admin Panel specific endpoints
     path('subadmin/notifications/send/', views.send_notification, name='send_notification'),
     path('subadmin/dashboard-kpis/', views.subadmin_dashboard_kpis, name='subadmin_dashboard_kpis'),
+    
+    # Notification read status
+    path('notifications/<int:notification_id>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
 ]
