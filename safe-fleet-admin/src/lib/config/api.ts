@@ -74,6 +74,11 @@ export const API_ENDPOINTS = {
     KPIS: `${API_CONFIG.BASE_URL}/api/auth/dashboard-kpis/`,
   },
   
+  // Analytics
+  ANALYTICS: {
+    DATA: `${API_CONFIG.BASE_URL}/api/auth/analytics/data/`,
+  },
+  
   // Users
   USERS: {
     LIST: `${API_CONFIG.BASE_URL}/api/auth/admin/users/`,

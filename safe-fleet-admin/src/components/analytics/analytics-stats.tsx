@@ -1,42 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { API_ENDPOINTS, getAuthHeaders } from '@/lib/config/api';
+import { analyticsService, AnalyticsData } from '@/lib/services/analytics';
 import { toast } from 'sonner';
 
-interface DashboardKPIs {
-  active_geofences: number;
-  alerts_today: number;
-  active_sub_admins: number;
-  total_users: number;
-  critical_alerts: number;
-  system_health: string;
-}
-
 export function AnalyticsStats() {
-  const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchKPIs();
+    fetchAnalytics();
   }, []);
 
-  const fetchKPIs = async () => {
+  const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      const response = await fetch(API_ENDPOINTS.DASHBOARD.KPIS, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch KPIs');
-      }
-
-      const data = await response.json();
-      setKpis(data);
+      const data = await analyticsService.getAnalytics();
+      setAnalytics(data);
     } catch (error) {
-      console.error('Error fetching KPIs:', error);
+      console.error('Error fetching analytics:', error);
       toast.error('Failed to fetch analytics stats');
     } finally {
       setLoading(false);
@@ -53,7 +35,7 @@ export function AnalyticsStats() {
     );
   }
 
-  if (!kpis) {
+  if (!analytics) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="col-span-4 text-center py-8 text-muted-foreground">
@@ -66,32 +48,32 @@ export function AnalyticsStats() {
   const stats = [
     {
       title: 'Total Alerts (30d)',
-      value: '-',
-      change: 'No data available',
+      value: analytics.alerts_last_30_days.toLocaleString(),
+      change: `${analytics.total_alerts} total`,
       trend: 'up',
       icon: 'notifications_active',
       gradient: 'from-indigo-500 to-purple-600',
     },
     {
       title: 'Response Time',
-      value: '-',
-      change: 'No data available',
+      value: `${analytics.avg_response_time.toFixed(1)} min`,
+      change: `${analytics.alerts_today} alerts today`,
       trend: 'down',
       icon: 'timer',
       gradient: 'from-green-500 to-teal-600',
     },
     {
       title: 'Resolution Rate',
-      value: '-',
-      change: 'No data available',
+      value: `${analytics.resolution_rate.toFixed(1)}%`,
+      change: `${analytics.critical_alerts} critical`,
       trend: 'up',
       icon: 'check_circle',
       gradient: 'from-blue-500 to-cyan-600',
     },
     {
       title: 'Active Users',
-      value: kpis.total_users.toLocaleString(),
-      change: 'System-wide',
+      value: analytics.active_users.toLocaleString(),
+      change: `${analytics.total_users} total users`,
       trend: 'up',
       icon: 'people',
       gradient: 'from-orange-500 to-red-600',

@@ -46,4 +46,7 @@ urlpatterns = [
     
     # Notification read status
     path('notifications/<int:notification_id>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
+    
+    # Analytics
+    path('analytics/data/', views.analytics_data, name='analytics_data'),
 ]

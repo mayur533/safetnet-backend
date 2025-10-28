@@ -803,6 +803,72 @@ class UserReplyViewSet(ReadOnlyModelViewSet):
     ordering = ['-date_time']
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsSuperAdminOrSubAdmin])
+def analytics_data(request):
+    """
+    Get analytics data for the dashboard.
+    Returns actual data including total users, active users, geofences, alerts, etc.
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    user = request.user
+    now = timezone.now()
+    
+    # Get organization filter based on user role
+    organization_filter = {}
+    alert_filter = {}
+    if user.role == 'SUB_ADMIN' and user.organization:
+        organization_filter['organization'] = user.organization
+        alert_filter['geofence__organization'] = user.organization
+    
+    # User statistics
+    total_users = User.objects.filter(role__in=['USER', 'SUB_ADMIN'], **organization_filter).count()
+    active_users = User.objects.filter(is_active=True, role__in=['USER', 'SUB_ADMIN'], **organization_filter).count()
+    
+    # Geofence statistics
+    total_geofences = Geofence.objects.filter(**organization_filter).count()
+    active_geofences = Geofence.objects.filter(active=True, **organization_filter).count()
+    
+    # Alert statistics
+    total_alerts = Alert.objects.filter(**alert_filter).count()
+    alerts_today = Alert.objects.filter(created_at__date=now.date(), **alert_filter).count()
+    critical_alerts = Alert.objects.filter(severity='CRITICAL', **alert_filter).count()
+    alerts_last_30_days = Alert.objects.filter(
+        created_at__gte=now - timedelta(days=30),
+        **alert_filter
+    ).count()
+    
+    # Calculate response time (average time to acknowledge alerts) - in minutes
+    acknowledged_alerts = Alert.objects.filter(acknowledged=True, **alert_filter).select_related()
+    response_times = []
+    for alert in acknowledged_alerts:
+        if alert.created_at and alert.acknowledged_at:
+            delta = alert.acknowledged_at - alert.created_at
+            response_times.append(delta.total_seconds() / 60)  # Convert to minutes
+    
+    avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+    
+    # Resolution rate (percentage of resolved incidents)
+    total_incidents = Incident.objects.filter(**alert_filter).count()
+    resolved_incidents = Incident.objects.filter(is_resolved=True, **alert_filter).count()
+    resolution_rate = (resolved_incidents / total_incidents * 100) if total_incidents > 0 else 0
+    
+    return Response({
+        'total_users': total_users,
+        'active_users': active_users,
+        'total_geofences': total_geofences,
+        'active_geofences': active_geofences,
+        'total_alerts': total_alerts,
+        'alerts_today': alerts_today,
+        'critical_alerts': critical_alerts,
+        'alerts_last_30_days': alerts_last_30_days,
+        'avg_response_time': round(avg_response_time, 1),
+        'resolution_rate': round(resolution_rate, 1),
+    }, status=status.HTTP_200_OK)
+
+
 class UserDetailsViewSet(ReadOnlyModelViewSet):
     """
     Read-only ViewSet for viewing User Details.
