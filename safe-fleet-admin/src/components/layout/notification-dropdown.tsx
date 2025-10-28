@@ -109,9 +109,22 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await notificationsService.markAsRead(Number(id));
-      // Refetch notifications to get updated state from server
-      await fetchNotifications();
+      // Update local state immediately for instant feedback
+      setNotifications(notifications.map(n => 
+        n.id === id ? { ...n, unread: false } : n
+      ));
+      
+      // Mark as read in background
+      notificationsService.markAsRead(Number(id)).then(() => {
+        // Only refetch if successful
+        fetchNotifications();
+      }).catch(error => {
+        console.error('Error marking notification as read:', error);
+        // Revert local state on error
+        setNotifications(notifications.map(n => 
+          n.id === id ? { ...n, unread: true } : n
+        ));
+      });
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -119,13 +132,21 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
 
   const handleMarkAllAsRead = async () => {
     try {
-      // Mark all unread notifications as read
+      // Update local state immediately for instant feedback
+      setNotifications(notifications.map(n => ({ ...n, unread: false })));
+      
+      // Mark all as read in background
       const unreadNotifs = notifications.filter(n => n.unread);
-      await Promise.all(
+      Promise.all(
         unreadNotifs.map(n => notificationsService.markAsRead(Number(n.id)))
-      );
-      // Refetch notifications to get updated state from server
-      await fetchNotifications();
+      ).then(() => {
+        // Only refetch if successful
+        fetchNotifications();
+      }).catch(error => {
+        console.error('Error marking all as read:', error);
+        // Revert to previous state on error
+        fetchNotifications();
+      });
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
