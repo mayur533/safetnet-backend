@@ -329,11 +329,11 @@ class Notification(models.Model):
         blank=True,
         related_name='received_notifications'
     )
-    unread_users = models.ManyToManyField(
+    read_users = models.ManyToManyField(
         User,
         blank=True,
-        related_name='unread_notifications',
-        help_text='Users who have not read this notification'
+        related_name='read_notifications',
+        help_text='Users who have read this notification'
     )
     organization = models.ForeignKey(
         Organization,

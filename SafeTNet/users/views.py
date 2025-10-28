@@ -632,13 +632,11 @@ def send_notification(request):
             )
             notification.target_officers.set(officers)
         
-        # Add target officers to unread_users list
+        # Add target officers to read_users list (initially empty - will be populated when users read)
         # Get all users from the officers (assuming officers have a user relationship)
-        # For now, we'll add all officers as unread (you may need to adjust based on your User model)
-        target_officer_users = User.objects.filter(
-            securityofficer__in=notification.target_officers.all()
-        ).distinct()
-        notification.unread_users.set(target_officer_users)
+        # For now, we'll leave read_users empty initially
+        # When users read the notification, they'll be added to read_users
+        # Target officer users will be added to read_users when they mark it as read
         
         # Mark as sent (in real implementation, this would trigger actual notification sending)
         notification.mark_as_sent()
@@ -661,8 +659,9 @@ def mark_notification_read(request, notification_id):
     try:
         notification = Notification.objects.get(id=notification_id)
         
-        # Remove the current user from unread_users list
-        notification.unread_users.remove(request.user)
+        # Add the current user to read_users list (if not already there)
+        if not notification.read_users.filter(id=request.user.id).exists():
+            notification.read_users.add(request.user)
         
         return Response({
             'message': 'Notification marked as read',

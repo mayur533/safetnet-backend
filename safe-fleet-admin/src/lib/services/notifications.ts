@@ -18,8 +18,8 @@ export interface Notification {
   created_by_username?: string;
   created_at: string;
   updated_at: string;
-  unread_users?: number[];
-  is_unread?: boolean;
+  read_users?: number[];
+  is_read?: boolean;
 }
 
 export interface NotificationCreateData {
