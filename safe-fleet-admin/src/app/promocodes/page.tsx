@@ -734,10 +734,6 @@ export default function PromocodesPage() {
                             <span className="material-icons text-sm mr-2">visibility</span>
                             View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer">
-                            <span className="material-icons text-sm mr-2">content_copy</span>
-                            Duplicate
-                          </DropdownMenuItem>
                           <DropdownMenuItem
                             className="cursor-pointer text-red-600 focus:text-red-600"
                             onClick={() => setDeletePromocodeId(promo.id)}
