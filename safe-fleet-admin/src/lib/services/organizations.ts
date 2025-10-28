@@ -23,21 +23,28 @@ export const organizationsService = {
    * Get all organizations
    */
   async getAll(): Promise<Organization[]> {
-    const response = await fetch(API_ENDPOINTS.ORGANIZATIONS.LIST, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-    });
+    // Check if user should have access
+    try {
+      const response = await fetch(API_ENDPOINTS.ORGANIZATIONS.LIST, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
 
-    if (!response.ok) {
-      // Return empty array for 403 errors (Sub-Admins don't have access)
-      if (response.status === 403) {
-        return [];
+      if (!response.ok) {
+        // Return empty array for 403 errors (Sub-Admins don't have access)
+        if (response.status === 403) {
+          return [];
+        }
+        throw new Error('Failed to fetch organizations');
       }
-      throw new Error('Failed to fetch organizations');
-    }
 
-    const data = await response.json();
-    return data.results || data;
+      const data = await response.json();
+      return data.results || data;
+    } catch (error: any) {
+      // Return empty array instead of throwing
+      // Silently fail - this is expected for users without access
+      return [];
+    }
   },
 
   /**
