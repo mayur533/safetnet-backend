@@ -2,65 +2,63 @@
 
 import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { alertsService, Alert } from '@/lib/services/alerts';
+import { usersService } from '@/lib/services/users';
 import { toast } from 'sonner';
 
 const COLORS: { [key: string]: string } = {
-  'GEOFENCE_ENTER': '#10b981',
-  'GEOFENCE_EXIT': '#3b82f6',
-  'GEOFENCE_VIOLATION': '#ef4444',
-  'SYSTEM_ERROR': '#f59e0b',
-  'SECURITY_BREACH': '#dc2626',
-  'MAINTENANCE': '#8b5cf6',
+  'SUPER_ADMIN': '#ef4444',
+  'SUB_ADMIN': '#f59e0b',
+  'USER': '#3b82f6',
+  'OFFICER': '#10b981',
   'default': '#6b7280',
 };
 
-export function AlertTypesChart() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+export function UserRolesChart() {
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchAlerts();
+    fetchUsers();
   }, []);
 
-  const fetchAlerts = async () => {
+  const fetchUsers = async () => {
     try {
       setLoading(true);
-      const data = await alertsService.getAll();
-      setAlerts(data);
+      const data = await usersService.getAll();
+      setUsers(data);
     } catch (error) {
-      console.error('Error fetching alerts:', error);
-      toast.error('Failed to fetch alert types');
+      console.error('Error fetching users:', error);
+      toast.error('Failed to fetch user roles');
     } finally {
       setLoading(false);
     }
   };
 
-  // Process alerts data into type distribution
-  const processAlertTypes = () => {
-    if (alerts.length === 0) return [];
+  // Process users data into role distribution
+  const processUserRoles = () => {
+    if (users.length === 0) return [];
 
-    const typeCounts: { [key: string]: number } = {};
+    const roleCounts: { [key: string]: number } = {};
     
-    alerts.forEach(alert => {
-      const type = alert.alert_type || 'System';
-      typeCounts[type] = (typeCounts[type] || 0) + 1;
+    users.forEach(user => {
+      const role = user.role || 'USER';
+      roleCounts[role] = (roleCounts[role] || 0) + 1;
     });
 
-    return Object.entries(typeCounts).map(([name, value]) => ({
+    return Object.entries(roleCounts).map(([name, value]) => ({
       name,
       value,
       color: COLORS[name] || COLORS['default'],
     }));
   };
 
-  const data = processAlertTypes();
+  const data = processUserRoles();
 
   if (loading) {
     return (
       <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
         <div className="mb-6">
-          <h3 className="font-semibold text-lg">Alert Types Distribution</h3>
+          <h3 className="font-semibold text-lg">User Roles Distribution</h3>
           <p className="text-xs text-muted-foreground mt-1">Loading...</p>
         </div>
         <div className="h-80 flex items-center justify-center">
@@ -74,12 +72,12 @@ export function AlertTypesChart() {
     return (
       <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
         <div className="mb-6">
-          <h3 className="font-semibold text-lg">Alert Types Distribution</h3>
-          <p className="text-xs text-muted-foreground mt-1">Breakdown by category</p>
+          <h3 className="font-semibold text-lg">User Roles Distribution</h3>
+          <p className="text-xs text-muted-foreground mt-1">Breakdown by role</p>
         </div>
         <div className="h-80 flex flex-col items-center justify-center text-muted-foreground">
-          <span className="material-icons text-6xl mb-4">pie_chart</span>
-          <p>No alert data available</p>
+          <span className="material-icons text-6xl mb-4">group</span>
+          <p>No user data available</p>
           <p className="text-xs mt-2">Distribution will appear here once data is available</p>
         </div>
       </div>
@@ -89,7 +87,7 @@ export function AlertTypesChart() {
   return (
     <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
       <div className="mb-6">
-        <h3 className="font-semibold text-lg">Alert Types Distribution</h3>
+        <h3 className="font-semibold text-lg">User Roles Distribution</h3>
         <p className="text-xs text-muted-foreground mt-1">Real-time data from API</p>
       </div>
       
@@ -144,7 +142,4 @@ export function AlertTypesChart() {
     </div>
   );
 }
-
-
-
 

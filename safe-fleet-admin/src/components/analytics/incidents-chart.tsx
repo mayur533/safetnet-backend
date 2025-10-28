@@ -13,96 +13,79 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { alertsService, Alert } from '@/lib/services/alerts';
+import { incidentsService, Incident } from '@/lib/services/incidents';
 import { toast } from 'sonner';
 
-export function AlertTrendsChart() {
+export function IncidentsChart() {
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchAlerts();
+    fetchIncidents();
   }, []);
 
-  const fetchAlerts = async () => {
+  const fetchIncidents = async () => {
     try {
       setLoading(true);
-      const data = await alertsService.getAll();
-      setAlerts(data);
+      const data = await incidentsService.getAll();
+      setIncidents(data);
     } catch (error) {
-      console.error('Error fetching alerts:', error);
-      toast.error('Failed to fetch alert trends');
+      console.error('Error fetching incidents:', error);
+      toast.error('Failed to fetch incident trends');
     } finally {
       setLoading(false);
     }
   };
 
-  // Get all unique alert types from the data
-  const getAllAlertTypes = () => {
-    const types = new Set<string>();
-    alerts.forEach(alert => {
-      if (alert.alert_type) {
-        types.add(alert.alert_type);
-      }
-    });
-    return Array.from(types);
-  };
+  // Process incidents data into monthly trends
+  const processIncidentTrends = () => {
+    if (incidents.length === 0) return [];
 
-  // Color mapping for alert types
-  const getColorForType = (type: string): string => {
-    const colorMap: { [key: string]: string } = {
-      'GEOFENCE_ENTER': '#10b981',
-      'GEOFENCE_EXIT': '#3b82f6',
-      'GEOFENCE_VIOLATION': '#ef4444',
-      'SYSTEM_ERROR': '#f59e0b',
-      'SECURITY_BREACH': '#dc2626',
-      'MAINTENANCE': '#8b5cf6',
-    };
-    return colorMap[type] || '#6b7280';
-  };
-
-  // Process alerts data into weekly trends
-  const processAlertTrends = () => {
-    if (alerts.length === 0) return [];
-
-    // Group alerts by week
-    const weeklyData: { [key: string]: { [key: string]: number } } = {};
+    const monthlyData: { [key: string]: { resolved: number; unresolved: number } } = {};
     
-    alerts.forEach(alert => {
-      const date = new Date(alert.created_at);
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
-      const weekKey = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      
-      if (!weeklyData[weekKey]) {
-        weeklyData[weekKey] = {};
+    incidents.forEach(incident => {
+      if (incident.created_at) {
+        const date = new Date(incident.created_at);
+        const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { resolved: 0, unresolved: 0 };
+        }
+        
+        if (incident.is_resolved) {
+          monthlyData[monthKey].resolved++;
+        } else {
+          monthlyData[monthKey].unresolved++;
+        }
       }
-      
-      const alertType = alert.alert_type || 'System';
-      weeklyData[weekKey][alertType] = (weeklyData[weekKey][alertType] || 0) + 1;
     });
 
-    // Convert to array format for recharts
-    return Object.entries(weeklyData)
-      .map(([date, types]) => ({
-        date,
-        ...types,
+    return Object.entries(monthlyData)
+      .map(([month, data]) => ({
+        month,
+        resolved: data.resolved,
+        unresolved: data.unresolved,
+        total: data.resolved + data.unresolved,
       }))
-      .slice(-7); // Last 7 weeks
+      .sort((a, b) => {
+        const dateA = new Date(a.month);
+        const dateB = new Date(b.month);
+        return dateA.getTime() - dateB.getTime();
+      })
+      .slice(-6); // Last 6 months
   };
 
-  const data = processAlertTrends();
-  const alertTypes = getAllAlertTypes();
+  const data = processIncidentTrends();
 
   if (loading) {
     return (
       <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
         <div className="mb-6">
-          <h3 className="font-semibold text-lg">Alert Trends</h3>
-          <p className="text-xs text-muted-foreground mt-1">Loading alert data...</p>
+          <h3 className="font-semibold text-lg">Incident Trends</h3>
+          <p className="text-xs text-muted-foreground mt-1">Loading incident data...</p>
         </div>
-        <div className="h-[435px] flex items-center justify-center">
+        <div className="h-[400px] flex items-center justify-center">
           <div className="animate-pulse text-muted-foreground">Loading chart...</div>
         </div>
       </div>
@@ -113,13 +96,13 @@ export function AlertTrendsChart() {
     return (
       <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
         <div className="mb-6">
-          <h3 className="font-semibold text-lg">Alert Trends</h3>
-          <p className="text-xs text-muted-foreground mt-1">Weekly alert distribution over time</p>
+          <h3 className="font-semibold text-lg">Incident Trends</h3>
+          <p className="text-xs text-muted-foreground mt-1">Monthly incident resolution tracking</p>
         </div>
-        <div className="h-[435px] flex flex-col items-center justify-center text-muted-foreground">
-          <span className="material-icons text-6xl mb-4">show_chart</span>
-          <p>No alert data available</p>
-          <p className="text-xs mt-2">Alert trends will appear here once data is available</p>
+        <div className="h-[400px] flex flex-col items-center justify-center text-muted-foreground">
+          <span className="material-icons text-6xl mb-4">security</span>
+          <p>No incident data available</p>
+          <p className="text-xs mt-2">Incident trends will appear here once data is available</p>
         </div>
       </div>
     );
@@ -129,8 +112,8 @@ export function AlertTrendsChart() {
     <div className="bg-card/50 backdrop-blur-xl p-6 rounded-2xl shadow-xl border border-border/50">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="font-semibold text-lg">Alert Trends</h3>
-          <p className="text-xs text-muted-foreground mt-1">Weekly alert distribution from API data</p>
+          <h3 className="font-semibold text-lg">Incident Trends</h3>
+          <p className="text-xs text-muted-foreground mt-1">Monthly resolution tracking</p>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -156,13 +139,13 @@ export function AlertTrendsChart() {
         </div>
       </div>
       
-      <div className="h-[435px]">
+      <div className="h-[400px]">
         <ResponsiveContainer width="100%" height="100%">
           {chartType === 'bar' ? (
             <BarChart data={data}>
               <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
               <XAxis 
-                dataKey="date" 
+                dataKey="month" 
                 tick={{ fontSize: 12 }}
                 stroke="hsl(var(--muted-foreground))"
               />
@@ -180,20 +163,14 @@ export function AlertTrendsChart() {
               <Legend 
                 wrapperStyle={{ fontSize: '12px' }}
               />
-              {alertTypes.map((type) => (
-                <Bar 
-                  key={type} 
-                  dataKey={type} 
-                  fill={getColorForType(type)} 
-                  radius={[8, 8, 0, 0]} 
-                />
-              ))}
+              <Bar dataKey="resolved" fill="#10b981" radius={[8, 8, 0, 0]} name="Resolved" />
+              <Bar dataKey="unresolved" fill="#ef4444" radius={[8, 8, 0, 0]} name="Unresolved" />
             </BarChart>
           ) : (
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
               <XAxis 
-                dataKey="date" 
+                dataKey="month" 
                 tick={{ fontSize: 12 }}
                 stroke="hsl(var(--muted-foreground))"
               />
@@ -211,16 +188,22 @@ export function AlertTrendsChart() {
               <Legend 
                 wrapperStyle={{ fontSize: '12px' }}
               />
-              {alertTypes.map((type) => (
-                <Line 
-                  key={type}
-                  type="monotone" 
-                  dataKey={type} 
-                  stroke={getColorForType(type)} 
-                  strokeWidth={3}
-                  dot={{ fill: getColorForType(type), r: 4 }}
-                />
-              ))}
+              <Line 
+                type="monotone" 
+                dataKey="resolved" 
+                stroke="#10b981" 
+                strokeWidth={3}
+                dot={{ fill: '#10b981', r: 4 }}
+                name="Resolved"
+              />
+              <Line 
+                type="monotone" 
+                dataKey="unresolved" 
+                stroke="#ef4444" 
+                strokeWidth={3}
+                dot={{ fill: '#ef4444', r: 4 }}
+                name="Unresolved"
+              />
             </LineChart>
           )}
         </ResponsiveContainer>

@@ -845,10 +845,15 @@ def analytics_data(request):
     # We'll calculate based on resolved_at if available, otherwise use default
     resolved_alerts = Alert.objects.filter(is_resolved=True, **alert_filter)
     response_times = []
-    for alert in resolved_alerts[:10]:  # Limit to avoid too much processing
+    for alert in resolved_alerts[:20]:  # Limit to avoid too much processing
         if alert.created_at and alert.resolved_at:
-            delta = alert.resolved_at - alert.created_at
-            response_times.append(delta.total_seconds() / 60)  # Convert to minutes
+            # Ensure resolved_at is after created_at
+            if alert.resolved_at > alert.created_at:
+                delta = alert.resolved_at - alert.created_at
+                minutes = delta.total_seconds() / 60
+                # Only include reasonable times (between 1 minute and 30 days)
+                if 1 <= minutes <= 43200:  # 1 minute to 30 days
+                    response_times.append(minutes)
     
     avg_response_time = sum(response_times) / len(response_times) if response_times else 15.0
     

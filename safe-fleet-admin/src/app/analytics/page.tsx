@@ -1,14 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnalyticsStats } from '@/components/analytics/analytics-stats';
 import { AlertTrendsChart } from '@/components/analytics/alert-trends-chart';
 import { AlertTypesChart } from '@/components/analytics/alert-types-chart';
 import { UserActivityChart } from '@/components/analytics/user-activity-chart';
+import { IncidentsChart } from '@/components/analytics/incidents-chart';
+import { UserRolesChart } from '@/components/analytics/user-roles-chart';
 import { RecentLogsTable } from '@/components/analytics/recent-logs-table';
 import { DateRangeFilter } from '@/components/analytics/date-range-filter';
 import { Button } from '@/components/ui/button';
 import { CardLoading } from '@/components/ui/content-loading';
+import { analyticsService, AnalyticsData } from '@/lib/services/analytics';
+import { exportToPDF, exportToCSV, ExportData } from '@/lib/utils/export-utils';
+import { toast } from 'sonner';
 
 export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
@@ -16,15 +21,63 @@ export default function AnalyticsPage() {
     to: new Date(),
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
 
-  const handleExportPDF = () => {
-    alert('Exporting analytics to PDF...');
-    // TODO: Implement PDF export
+  useEffect(() => {
+    fetchAnalyticsData();
+  }, []);
+
+  const fetchAnalyticsData = async () => {
+    try {
+      const data = await analyticsService.getAnalytics();
+      setAnalyticsData(data);
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    }
   };
 
-  const handleExportCSV = () => {
-    alert('Exporting analytics to CSV...');
-    // TODO: Implement CSV export
+  const handleExportPDF = async () => {
+    if (!analyticsData) {
+      toast.error('No analytics data available');
+      return;
+    }
+
+    try {
+      const exportData: ExportData = {
+        analytics: analyticsData,
+        alertTypes: [],
+        userRoles: [],
+        incidentsTrends: [],
+      };
+
+      await exportToPDF(exportData);
+      toast.success('PDF exported successfully');
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error('Failed to export PDF');
+    }
+  };
+
+  const handleExportCSV = async () => {
+    if (!analyticsData) {
+      toast.error('No analytics data available');
+      return;
+    }
+
+    try {
+      const exportData: ExportData = {
+        analytics: analyticsData,
+        alertTypes: [],
+        userRoles: [],
+        incidentsTrends: [],
+      };
+
+      await exportToCSV(exportData);
+      toast.success('CSV exported successfully');
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast.error('Failed to export CSV');
+    }
   };
 
   if (isLoading) {
@@ -126,6 +179,15 @@ export default function AnalyticsPage() {
 
       {/* User Activity Chart */}
       <UserActivityChart />
+
+      {/* Additional Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Incidents Chart */}
+        <IncidentsChart />
+
+        {/* User Roles Chart */}
+        <UserRolesChart />
+      </div>
 
       {/* Recent Alert Logs Table */}
       <RecentLogsTable />
