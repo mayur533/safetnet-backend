@@ -112,10 +112,6 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
       newErrors.email = 'Invalid email format';
     }
 
-    if (!formData.role) {
-      newErrors.role = 'Please select a role';
-    }
-
     if (!isEditing) {
       if (!formData.password) {
         newErrors.password = 'Password is required';
@@ -165,13 +161,13 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         const lastName = nameParts.slice(1).join(' ') || '';
         
         await usersService.create({
-          username: formData.username || formData.email.split('@')[0],
+          username: formData.email.split('@')[0],
           email: formData.email,
           password: formData.password,
           first_name: firstName,
           last_name: lastName,
           full_name: formData.fullName,
-          role: formData.role || 'USER',
+          role: 'USER',
         });
         toast.success('User created successfully');
       }
@@ -240,51 +236,25 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
             {errors.fullName && <p className="text-xs text-red-500 mt-1">{errors.fullName}</p>}
           </div>
 
-          {/* Email and Role */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">
-                Email Address <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
-                  email
-                </span>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@safefleet.com"
-                  value={formData.email}
-                  onChange={(e) => handleChange('email', e.target.value)}
-                  className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
-                />
-              </div>
-              {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+          {/* Email */}
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-sm font-medium">
+              Email Address <span className="text-red-500">*</span>
+            </Label>
+            <div className="relative">
+              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg">
+                email
+              </span>
+              <Input
+                id="email"
+                type="email"
+                placeholder="user@safefleet.com"
+                value={formData.email}
+                onChange={(e) => handleChange('email', e.target.value)}
+                className={`pl-10 ${errors.email ? 'border-red-500' : ''}`}
+              />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="role" className="text-sm font-medium">
-                User Role <span className="text-red-500">*</span>
-              </Label>
-              <div className="relative">
-                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
-                  admin_panel_settings
-                </span>
-                <Select value={formData.role} onValueChange={(value) => handleChange('role', value)}>
-                  <SelectTrigger className={`pl-10 ${errors.role ? 'border-red-500' : ''}`}>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {errors.role && <p className="text-xs text-red-500 mt-1">{errors.role}</p>}
-            </div>
+            {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
           </div>
 
           {/* Password Fields - Only show when creating new user */}
@@ -334,12 +304,11 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
             </div>
           )}
 
-          {/* Assigned Geofence - Hide for Admin role */}
-          {formData.role !== 'Admin' && (
-            <div className="space-y-2">
-              <Label htmlFor="assignedGeofence" className="text-sm font-medium">
-                Assigned Geofence {formData.role && <span className="text-red-500">*</span>}
-              </Label>
+          {/* Assigned Geofence */}
+          <div className="space-y-2">
+            <Label htmlFor="assignedGeofence" className="text-sm font-medium">
+              Assigned Geofence <span className="text-red-500">*</span>
+            </Label>
               <div className="relative">
                 <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
                   location_on
@@ -364,7 +333,6 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
                 <p className="text-xs text-red-500 mt-1">{errors.assignedGeofence}</p>
               )}
             </div>
-          )}
 
           {/* Info Box */}
           <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/20 dark:to-blue-950/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4">
@@ -372,14 +340,10 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
               <span className="material-icons text-indigo-600 text-xl">info</span>
               <div className="flex-1">
                 <p className="text-sm text-indigo-900 dark:text-indigo-100 font-medium">
-                  Role-Based Access
+                  User Access
                 </p>
                 <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
-                  {formData.role === 'Admin' && 'Admins have full system access and can manage all users.'}
-                  {formData.role === 'Sub-Admin' && 'Sub-admins can manage their assigned geofence and create security logins.'}
-                  {formData.role === 'Security' && 'Security officers can respond to alerts in their assigned area.'}
-                  {formData.role === 'Resident' && 'Residents can trigger SOS alerts and join community groups.'}
-                  {!formData.role && 'Select a role to see permission details.'}
+                  Regular users can access the platform features within their assigned geofence area.
                 </p>
               </div>
             </div>
