@@ -823,9 +823,9 @@ def analytics_data(request):
         organization_filter['organization'] = user.organization
         alert_filter['geofence__organization'] = user.organization
     
-    # User statistics
-    total_users = User.objects.filter(role__in=['USER', 'SUB_ADMIN'], **organization_filter).count()
-    active_users = User.objects.filter(is_active=True, role__in=['USER', 'SUB_ADMIN'], **organization_filter).count()
+    # User statistics - include all users
+    total_users = User.objects.filter(**organization_filter).count()
+    active_users = User.objects.filter(is_active=True, **organization_filter).count()
     
     # Geofence statistics
     total_geofences = Geofence.objects.filter(**organization_filter).count()
@@ -843,9 +843,9 @@ def analytics_data(request):
     # Calculate response time (average time to acknowledge alerts) - in minutes
     # Note: Alert model doesn't have acknowledged_at field
     # We'll calculate based on resolved_at if available, otherwise use default
-    resolved_alerts = Alert.objects.filter(is_resolved=True, **alert_filter)
+    resolved_alerts = Alert.objects.filter(is_resolved=True, resolved_at__isnull=False, **alert_filter)
     response_times = []
-    for alert in resolved_alerts[:20]:  # Limit to avoid too much processing
+    for alert in resolved_alerts:
         if alert.created_at and alert.resolved_at:
             # Ensure resolved_at is after created_at
             if alert.resolved_at > alert.created_at:
@@ -855,7 +855,12 @@ def analytics_data(request):
                 if 1 <= minutes <= 43200:  # 1 minute to 30 days
                     response_times.append(minutes)
     
-    avg_response_time = sum(response_times) / len(response_times) if response_times else 15.0
+    # Calculate average response time
+    if response_times:
+        avg_response_time = sum(response_times) / len(response_times)
+    else:
+        # If no valid data, use 0 to show no resolved alerts
+        avg_response_time = 0.0
     
     # Resolution rate (percentage of resolved incidents)
     incident_filter = {}
