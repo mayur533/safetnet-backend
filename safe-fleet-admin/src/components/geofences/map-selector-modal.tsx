@@ -163,8 +163,8 @@ export function MapSelectorModal({
                 <Marker
                   key={`${point.lat}-${point.lng}-${index}`}
                   position={[point.lat, point.lng]}
-                >
-                </Marker>
+                  interactive={false}
+                />
               ))}
 
               {/* Render polygon if we have at least 3 points */}
@@ -177,6 +177,7 @@ export function MapSelectorModal({
                     fillOpacity: 0.35,
                     weight: 2,
                   }}
+                  interactive={false}
                 />
               )}
             </MapContainer>
