@@ -518,11 +518,20 @@ export function NotificationsContainer() {
             {paginatedNotifications.map((notification) => (
               <TableRow
                 key={notification.id}
-                className="border-b hover:bg-muted/50 transition-colors"
+                className={`border-b hover:bg-muted/50 transition-colors ${
+                  !notification.is_read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
+                }`}
               >
                 <TableCell className="py-4 px-4">
-                  <div className="font-medium text-sm">{notification.title}</div>
-                  <div className="text-xs text-muted-foreground">By: {notification.created_by_username || 'System'}</div>
+                  <div className="flex items-center gap-2">
+                    {!notification.is_read && (
+                      <span className="w-2 h-2 bg-blue-600 rounded-full" title="Unread"></span>
+                    )}
+                    <div>
+                      <div className="font-medium text-sm">{notification.title}</div>
+                      <div className="text-xs text-muted-foreground">By: {notification.created_by_username || 'System'}</div>
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell className="py-4 px-4">
                   <div className="text-sm max-w-xs truncate">{notification.message}</div>
@@ -543,9 +552,17 @@ export function NotificationsContainer() {
                   {getStatusBadge(notification.notification_type)}
                 </TableCell>
                 <TableCell className="py-4 px-4">
-                  <Badge variant={notification.is_sent ? "default" : "outline"}>
-                    {notification.is_sent ? 'Sent' : 'Draft'}
-                  </Badge>
+                  <div className="flex flex-col gap-1">
+                    <Badge variant={notification.is_sent ? "default" : "outline"}>
+                      {notification.is_sent ? 'Sent' : 'Draft'}
+                    </Badge>
+                    {!notification.is_read && (
+                      <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300">
+                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full mr-1"></span>
+                        Unread
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="py-4 px-4 text-right">
                   <DropdownMenu>

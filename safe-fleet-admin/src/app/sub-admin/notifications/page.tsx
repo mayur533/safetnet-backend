@@ -343,7 +343,12 @@ export default function SubAdminNotificationsPage() {
               </div>
             ) : (
               filteredNotifications.map((notification) => (
-              <div key={notification.id} className="p-6 hover:bg-muted/30 transition-colors">
+              <div 
+                key={notification.id} 
+                className={`p-6 hover:bg-muted/30 transition-colors ${
+                  !notification.is_read ? 'bg-blue-50/50 dark:bg-blue-950/20 border-l-4 border-blue-600' : ''
+                }`}
+              >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-4 flex-1">
                     <div className={`p-3 rounded-lg ${
@@ -359,7 +364,12 @@ export default function SubAdminNotificationsPage() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-semibold">{notification.title}</h4>
+                        {!notification.is_read && (
+                          <span className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0" title="Unread"></span>
+                        )}
+                        <h4 className={`font-semibold ${!notification.is_read ? 'font-bold' : ''}`}>
+                          {notification.title}
+                        </h4>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           notification.notification_type === 'EMERGENCY' 
                             ? 'bg-red-100 text-red-700' 
@@ -370,6 +380,11 @@ export default function SubAdminNotificationsPage() {
                         {notification.is_sent && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
                             Sent
+                          </span>
+                        )}
+                        {!notification.is_read && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300">
+                            Unread
                           </span>
                         )}
                       </div>
