@@ -10,9 +10,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('username', 'email', 'password', 'password_confirm', 'role')
+        fields = ('username', 'email', 'password', 'password_confirm', 'role', 'organization')
         extra_kwargs = {
-            'role': {'required': False}
+            'role': {'required': False},
+            'organization': {'required': False}
         }
     
     def validate(self, attrs):
