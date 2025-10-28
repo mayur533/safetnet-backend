@@ -68,22 +68,28 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
       setLoading(true);
       const data = await notificationsService.getAll();
       
-      // Convert API notifications to dropdown format (show only recent 5)
+      // Convert API notifications to dropdown format
+      // Show only recent 5, and show as unread if is_read is false or undefined
       const recentNotifs: Notification[] = data
         .slice(0, 5)
-        .map((notif: ApiNotification) => ({
-          id: notif.id.toString(),
-          title: notif.title,
-          message: notif.message,
-          time: new Date(notif.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          type: notif.notification_type === 'EMERGENCY' ? 'error' : 'info',
-          unread: !notif.is_read, // Unread if user hasn't read it yet
-        }));
+        .map((notif: ApiNotification) => {
+          // Check if read_users array exists and has length
+          const isRead = notif.is_read === false ? false : (notif.is_read === true ? true : (notif.read_users && notif.read_users.length > 0));
+          
+          return {
+            id: notif.id.toString(),
+            title: notif.title,
+            message: notif.message,
+            time: new Date(notif.created_at).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            type: notif.notification_type === 'EMERGENCY' ? 'error' : 'info',
+            unread: !isRead, // Unread if not marked as read
+          };
+        });
 
       setNotifications(recentNotifs);
     } catch (error) {
@@ -104,10 +110,8 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
   const handleMarkAsRead = async (id: string) => {
     try {
       await notificationsService.markAsRead(Number(id));
-      // Update local state
-      setNotifications(notifications.map(n => 
-        n.id === id ? { ...n, unread: false } : n
-      ));
+      // Refetch notifications to get updated state from server
+      await fetchNotifications();
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -120,8 +124,8 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
       await Promise.all(
         unreadNotifs.map(n => notificationsService.markAsRead(Number(n.id)))
       );
-      // Update local state
-      setNotifications(notifications.map(n => ({ ...n, unread: false })));
+      // Refetch notifications to get updated state from server
+      await fetchNotifications();
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
