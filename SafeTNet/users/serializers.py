@@ -94,15 +94,24 @@ class GeofenceCreateSerializer(serializers.ModelSerializer):
 
 class UserListSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+    organization = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = (
             'id', 'username', 'email', 'first_name', 'last_name', 
             'role', 'organization', 'organization_name', 'is_active', 
-        'date_joined', 'last_login'
-    )
-    read_only_fields = ('id', 'date_joined', 'last_login')
+            'date_joined', 'last_login'
+        )
+        read_only_fields = ('id', 'date_joined', 'last_login')
+    
+    def get_organization(self, obj):
+        if obj.organization:
+            return {
+                'id': obj.organization.id,
+                'name': obj.organization.name
+            }
+        return None
 
 
 class AlertSerializer(serializers.ModelSerializer):
