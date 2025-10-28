@@ -94,7 +94,6 @@ class GeofenceCreateSerializer(serializers.ModelSerializer):
 
 class UserListSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True, allow_null=True)
-    organization = serializers.SerializerMethodField()
     
     class Meta:
         model = User
@@ -108,19 +107,15 @@ class UserListSerializer(serializers.ModelSerializer):
             'organization': {'required': False}
         }
     
-    def get_organization(self, obj):
+    def to_representation(self, obj):
+        # Override to return organization as object with id and name
+        data = super().to_representation(obj)
         if obj.organization:
-            return {
+            data['organization'] = {
                 'id': obj.organization.id,
                 'name': obj.organization.name
             }
-        return None
-    
-    def to_internal_value(self, data):
-        # Convert organization object to ID for writes
-        if 'organization' in data and isinstance(data['organization'], dict):
-            data['organization'] = data['organization'].get('id')
-        return super().to_internal_value(data)
+        return data
 
 
 class AlertSerializer(serializers.ModelSerializer):
