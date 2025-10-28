@@ -41,6 +41,8 @@ function setupBackend() {
     // Check if venv already exists
     if (fs.existsSync(venvPath)) {
       console.log('✅ Virtual environment already exists');
+      // Still install/upgrade dependencies
+      installBackendDependencies(backendPath, resolve, reject);
     } else {
       // Create venv based on platform
       const pythonCmd = isWindows ? 'python' : 'python3';
@@ -64,20 +66,18 @@ function setupBackend() {
 function installBackendDependencies(backendPath, resolve, reject) {
   console.log('📦 Installing Python dependencies...');
   
-  const activateCmd = isWindows 
-    ? 'venv\\Scripts\\pip.exe install --upgrade pip'
-    : 'source venv/bin/activate && pip install --upgrade pip';
+  const pipPath = isWindows 
+    ? path.join(backendPath, 'venv', 'Scripts', 'pip.exe')
+    : path.join(backendPath, 'venv', 'bin', 'pip');
   
-  exec(activateCmd, { cwd: backendPath }, (error, stdout, stderr) => {
+  // Upgrade pip
+  exec(`"${pipPath}" install --upgrade pip`, { cwd: backendPath }, (error, stdout, stderr) => {
     if (error) {
       console.error(`Error upgrading pip: ${error}`);
     }
     
-    const installReqCmd = isWindows
-      ? 'venv\\Scripts\\pip.exe install -r requirements.txt'
-      : 'source venv/bin/activate && pip install -r requirements.txt';
-    
-    exec(installReqCmd, { cwd: backendPath }, (error, stdout, stderr) => {
+    // Install requirements
+    exec(`"${pipPath}" install -r requirements.txt`, { cwd: backendPath }, (error, stdout, stderr) => {
       if (error) {
         console.error(`Error installing requirements: ${error}`);
         reject(error);
