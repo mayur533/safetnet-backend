@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { geofencesService } from '@/lib/services/geofences';
 import { organizationsService } from '@/lib/services/organizations';
+import { authService } from '@/lib/services/auth';
 import { toast } from 'sonner';
 import { MapSelectorModal } from './map-selector-modal';
 
@@ -53,14 +54,27 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch organizations when modal opens
+  // Fetch organizations when modal opens or set user's organization for Sub-Admins
   useEffect(() => {
     const fetchOrganizations = async () => {
       if (!isOpen) return;
+      
       try {
         setIsLoading(true);
-        const orgs = await organizationsService.getAll();
-        setOrganizations(orgs);
+        
+        // Check if user is Sub-Admin
+        const user = authService.getUser();
+        const isSubAdmin = user?.role === 'SUB_ADMIN';
+        
+        if (isSubAdmin && user?.organization) {
+          // For Sub-Admins, use their own organization
+          setOrganizations([{ id: user.organization, name: 'My Organization' }]);
+          setFormData(prev => ({ ...prev, organization: user.organization.toString() }));
+        } else {
+          // For Main Admin, fetch all organizations
+          const orgs = await organizationsService.getAll();
+          setOrganizations(orgs);
+        }
       } catch (error) {
         console.error('Failed to fetch organizations:', error);
         toast.error('Failed to load organizations');
@@ -225,29 +239,44 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           </div>
 
           {/* Organization */}
-          <div className="space-y-2">
-            <Label htmlFor="organization" className="text-sm font-medium">
-              Organization <span className="text-red-500">*</span>
-            </Label>
-            <div className="relative">
-              <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
-                business
-              </span>
-              <Select value={formData.organization} onValueChange={(value) => handleChange('organization', value)}>
-                <SelectTrigger className={`pl-10 ${errors.organization ? 'border-red-500' : ''}`}>
-                  <SelectValue placeholder="Select organization" />
-                </SelectTrigger>
-                <SelectContent>
-                  {organizations.map((org) => (
-                    <SelectItem key={org.id} value={org.id.toString()}>
-                      {org.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {errors.organization && <p className="text-xs text-red-500 mt-1">{errors.organization}</p>}
-          </div>
+          {(() => {
+            const user = authService.getUser();
+            const isSubAdmin = user?.role === 'SUB_ADMIN';
+            
+            return (
+              <div className="space-y-2">
+                <Label htmlFor="organization" className="text-sm font-medium">
+                  Organization <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
+                    business
+                  </span>
+                  {isSubAdmin ? (
+                    <Input
+                      value={organizations.find(org => org.id.toString() === formData.organization)?.name || 'My Organization'}
+                      disabled
+                      className="pl-10 bg-muted"
+                    />
+                  ) : (
+                    <Select value={formData.organization} onValueChange={(value) => handleChange('organization', value)}>
+                      <SelectTrigger className={`pl-10 ${errors.organization ? 'border-red-500' : ''}`}>
+                        <SelectValue placeholder="Select organization" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {organizations.map((org) => (
+                          <SelectItem key={org.id} value={org.id.toString()}>
+                            {org.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {errors.organization && <p className="text-xs text-red-500 mt-1">{errors.organization}</p>}
+              </div>
+            );
+          })()}
 
           {/* Select Geofence Area */}
           <div className="space-y-3">
