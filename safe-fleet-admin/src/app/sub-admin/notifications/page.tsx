@@ -18,6 +18,7 @@ export default function SubAdminNotificationsPage() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [selectedGeofences, setSelectedGeofences] = useState<string[]>([]);
+  const [selectionMode, setSelectionMode] = useState<'all' | 'select' | null>(null);
 
   // Fetch notifications and geofences on mount
   useEffect(() => {
@@ -66,14 +67,24 @@ export default function SubAdminNotificationsPage() {
       return;
     }
 
-    if (selectedGeofences.length === 0) {
+    if (selectionMode === null) {
+      toast.error('Please select geofence targeting mode');
+      return;
+    }
+
+    // Determine which geofences to use
+    const geofencesToUse = selectionMode === 'all' 
+      ? geofences.map(g => g.id.toString())
+      : selectedGeofences;
+
+    if (selectionMode === 'select' && geofencesToUse.length === 0) {
       toast.error('Please select at least one geofence');
       return;
     }
 
     try {
       // Send notification for each selected geofence
-      const promises = selectedGeofences.map(geofenceId =>
+      const promises = geofencesToUse.map(geofenceId =>
         notificationsService.send({
           notification_type: notificationType,
           title,
@@ -85,12 +96,14 @@ export default function SubAdminNotificationsPage() {
 
       await Promise.all(promises);
 
-      toast.success(`${notificationType === 'EMERGENCY' ? 'Emergency' : 'Normal'} notification sent to ${selectedGeofences.length} geofence(s)!`);
+      const targetCount = selectionMode === 'all' ? geofences.length : selectedGeofences.length;
+      toast.success(`${notificationType === 'EMERGENCY' ? 'Emergency' : 'Normal'} notification sent to ${targetCount} geofence(s)!`);
       
       // Reset form
       setTitle('');
       setMessage('');
       setSelectedGeofences([]);
+      setSelectionMode(null);
       setNotificationType('NORMAL');
       
       // Refresh notifications list
@@ -205,36 +218,79 @@ export default function SubAdminNotificationsPage() {
 
           {/* Target Geofences */}
           <div>
-            <label className="block text-sm font-medium mb-2">Target Geofence(s) <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium mb-3">Target Geofence(s) <span className="text-red-500">*</span></label>
             {geofences.length === 0 ? (
               <p className="text-sm text-muted-foreground">No geofences available</p>
             ) : (
-              <div className="max-h-60 overflow-y-auto border rounded-lg p-3 space-y-2">
-                {geofences.map((geofence) => (
-                  <label
-                    key={geofence.id}
-                    className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+              <>
+                {/* Mode Selection Buttons */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectionMode('all');
+                      setSelectedGeofences([]);
+                    }}
+                    className={`p-4 rounded-lg border-2 transition-all flex items-center justify-center space-x-2 ${
+                      selectionMode === 'all'
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
+                        : 'border-border hover:border-indigo-300'
+                    }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedGeofences.includes(geofence.id.toString())}
-                      onChange={() => handleGeofenceToggle(geofence.id.toString())}
-                      className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <span className="material-icons text-indigo-600 text-sm">location_on</span>
-                    <span className="text-sm">{geofence.name}</span>
-                    {geofence.organization_name && (
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        ({geofence.organization_name})
-                      </span>
-                    )}
-                  </label>
-                ))}
-              </div>
+                    <span className="material-icons text-xl">select_all</span>
+                    <span className="font-medium">All Geofences</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectionMode('select');
+                      setSelectedGeofences([]);
+                    }}
+                    className={`p-4 rounded-lg border-2 transition-all flex items-center justify-center space-x-2 ${
+                      selectionMode === 'select'
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
+                        : 'border-border hover:border-indigo-300'
+                    }`}
+                  >
+                    <span className="material-icons text-xl">checklist</span>
+                    <span className="font-medium">Select Specific</span>
+                  </button>
+                </div>
+
+                {/* Show selection when "Select" mode is active */}
+                {selectionMode === 'select' && (
+                  <div className="max-h-60 overflow-y-auto border rounded-lg p-3 space-y-2">
+                    {geofences.map((geofence) => (
+                      <label
+                        key={geofence.id}
+                        className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedGeofences.includes(geofence.id.toString())}
+                          onChange={() => handleGeofenceToggle(geofence.id.toString())}
+                          className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <span className="material-icons text-indigo-600 text-sm">location_on</span>
+                        <span className="text-sm">{geofence.name}</span>
+                        {geofence.organization_name && (
+                          <span className="text-xs text-muted-foreground ml-auto">
+                            ({geofence.organization_name})
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {/* Status Message */}
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectionMode === 'all' && `${geofences.length} geofence(s) will receive the notification`}
+                  {selectionMode === 'select' && `${selectedGeofences.length} geofence(s) selected`}
+                  {selectionMode === null && 'Select how to target geofences'}
+                </p>
+              </>
             )}
-            <p className="text-xs text-muted-foreground mt-2">
-              Select one or more geofences to send the notification to. {selectedGeofences.length} geofence(s) selected.
-            </p>
           </div>
 
           {/* Submit Button */}
