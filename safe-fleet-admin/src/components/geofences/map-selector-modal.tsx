@@ -71,7 +71,7 @@ export function MapSelectorModal({
     
     const handleMapClick = (e: any) => {
       const { lat, lng } = e.latlng;
-      addPoint(lat, lng);
+      setMapPoints(prev => [...prev, { lat, lng }]);
     };
 
     map.on('click', handleMapClick);
@@ -81,12 +81,7 @@ export function MapSelectorModal({
         map.off('click', handleMapClick);
       }
     };
-  }, [isClient, isOpen, mapPoints]);
-
-  const addPoint = (lat: number, lng: number) => {
-    const newPoint: MapPoint = { lat, lng };
-    setMapPoints(prev => [...prev, newPoint]);
-  };
+  }, [isClient, isOpen]);
 
   const removeLastPoint = () => {
     if (mapPoints.length === 0) return;
