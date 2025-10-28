@@ -114,7 +114,7 @@ export const notificationsService = {
    * Mark notification as read
    */
   async markAsRead(id: number): Promise<void> {
-    const response = await fetch(`${API_ENDPOINTS.NOTIFICATIONS.DETAIL(id)}mark-read/`, {
+    const response = await fetch(API_ENDPOINTS.NOTIFICATIONS.MARK_READ(id), {
       method: 'POST',
       headers: getAuthHeaders(),
     });

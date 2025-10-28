@@ -116,6 +116,7 @@ export const API_ENDPOINTS = {
     CREATE: `${API_CONFIG.BASE_URL}/api/auth/admin/notifications/`,
     SEND: `${API_CONFIG.BASE_URL}/api/auth/subadmin/notifications/send/`,
     DETAIL: (id: number) => `${API_CONFIG.BASE_URL}/api/auth/admin/notifications/${id}/`,
+    MARK_READ: (id: number) => `${API_CONFIG.BASE_URL}/api/auth/notifications/${id}/mark-read/`,
     DELETE: (id: number) => `${API_CONFIG.BASE_URL}/api/auth/admin/notifications/${id}/`,
   },
   
