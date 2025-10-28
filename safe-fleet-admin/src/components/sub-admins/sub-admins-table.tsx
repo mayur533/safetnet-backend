@@ -586,14 +586,14 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                   Email
                 </button>
                 <button
-                  onClick={() => handleSortChange('assignedArea')}
+                  onClick={() => handleSortChange('username')}
                   className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortField === 'assignedArea'
+                    sortField === 'username'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Assigned Area
+                  Organization
                 </button>
                 <button
                   onClick={() => handleSortChange('createdAt')}
@@ -645,7 +645,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                 <TableHead className="text-muted-foreground text-sm font-semibold">Name</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold">Email</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold">
-                  Assigned Area
+                  Organization
                 </TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold">Status</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold text-right">

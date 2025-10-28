@@ -13,7 +13,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { usersService, type User } from '@/lib/services/users';
+import { organizationsService } from '@/lib/services/organizations';
 
 interface EditSubAdminModalProps {
   isOpen: boolean;
@@ -29,11 +37,28 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
     lastName: '',
     email: '',
     isActive: true,
+    organization: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingUser, setIsLoadingUser] = useState(false);
+  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      if (!isOpen) return;
+      try {
+        const orgs = await organizationsService.getAll();
+        setOrganizations(orgs);
+      } catch (error) {
+        console.warn('Could not fetch organizations');
+      }
+    };
+    
+    fetchOrganizations();
+  }, [isOpen]);
 
   useEffect(() => {
     if (userId && isOpen) {
@@ -46,6 +71,7 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
         lastName: '',
         email: '',
         isActive: true,
+        organization: '',
       });
       setErrors({});
     }
@@ -61,6 +87,7 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
         lastName: user.last_name || '',
         email: user.email,
         isActive: user.is_active,
+        organization: user.organization?.id?.toString() || '',
       });
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -111,6 +138,7 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
         last_name: formData.lastName,
         email: formData.email,
         is_active: formData.isActive,
+        organization: formData.organization ? parseInt(formData.organization) : null,
       });
 
       toast.success('Sub-admin updated successfully');
@@ -222,6 +250,33 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
                 />
               </div>
               {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+            </div>
+
+            {/* Organization */}
+            <div className="space-y-2">
+              <Label htmlFor="organization" className="text-sm font-medium">
+                Organization
+              </Label>
+              <div className="relative">
+                <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-lg z-10">
+                  business
+                </span>
+                <Select
+                  value={formData.organization}
+                  onValueChange={(value) => handleChange('organization', value)}
+                >
+                  <SelectTrigger className="pl-10">
+                    <SelectValue placeholder="Select organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {organizations.map((org) => (
+                      <SelectItem key={org.id} value={org.id.toString()}>
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Active Status */}
