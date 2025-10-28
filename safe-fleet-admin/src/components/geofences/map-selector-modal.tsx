@@ -63,26 +63,6 @@ export function MapSelectorModal({
     }
   }, [isOpen]);
 
-  // Initialize map click handler
-  useEffect(() => {
-    if (!isClient || !mapRef.current || !isOpen) return;
-
-    const map = mapRef.current;
-    
-    const handleMapClick = (e: any) => {
-      const { lat, lng } = e.latlng;
-      setMapPoints(prev => [...prev, { lat, lng }]);
-    };
-
-    map.on('click', handleMapClick);
-
-    return () => {
-      if (map) {
-        map.off('click', handleMapClick);
-      }
-    };
-  }, [isClient, isOpen]);
-
   const removeLastPoint = () => {
     if (mapPoints.length === 0) return;
     setMapPoints(prev => prev.slice(0, -1));
@@ -165,6 +145,12 @@ export function MapSelectorModal({
               ref={mapRef}
               whenCreated={(mapInstance) => {
                 mapRef.current = mapInstance;
+                
+                // Add click event listener after map is created
+                mapInstance.on('click', (e: any) => {
+                  const { lat, lng } = e.latlng;
+                  setMapPoints(prev => [...prev, { lat, lng }]);
+                });
               }}
             >
               <TileLayer
@@ -175,7 +161,7 @@ export function MapSelectorModal({
               {/* Render markers for each point */}
               {mapPoints.map((point, index) => (
                 <Marker
-                  key={`${point.lat}-${point.lng}`}
+                  key={`${point.lat}-${point.lng}-${index}`}
                   position={[point.lat, point.lng]}
                 >
                 </Marker>
