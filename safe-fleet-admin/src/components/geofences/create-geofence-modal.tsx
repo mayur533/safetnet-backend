@@ -21,6 +21,7 @@ import {
 import { geofencesService } from '@/lib/services/geofences';
 import { organizationsService } from '@/lib/services/organizations';
 import { authService } from '@/lib/services/auth';
+import { usersService } from '@/lib/services/users';
 import { toast } from 'sonner';
 import { MapSelectorModal } from './map-selector-modal';
 
@@ -53,6 +54,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Fetch organizations when modal opens or set user's organization for Sub-Admins
   useEffect(() => {
@@ -62,14 +64,23 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       try {
         setIsLoading(true);
         
-        // Check if user is Sub-Admin
-        const user = authService.getUser();
-        const isSubAdmin = user?.role === 'SUB_ADMIN';
+        // Get current user from auth
+        const currentUser = authService.getUser();
+        if (!currentUser || !currentUser.id) {
+          console.error('No user found in auth');
+          return;
+        }
         
-        if (isSubAdmin && user?.organization) {
+        // Fetch the current user's details from API to get organization info
+        const userDetails = await usersService.getById(currentUser.id);
+        setCurrentUser(userDetails);
+        const isSubAdmin = userDetails?.role === 'SUB_ADMIN';
+        
+        if (isSubAdmin && userDetails?.organization) {
           // For Sub-Admins, use their own organization
-          setOrganizations([{ id: user.organization, name: 'My Organization' }]);
-          setFormData(prev => ({ ...prev, organization: user.organization.toString() }));
+          const org = userDetails.organization;
+          setOrganizations([{ id: org.id, name: org.name }]);
+          setFormData(prev => ({ ...prev, organization: org.id.toString() }));
         } else {
           // For Main Admin or users with organization field
           try {
@@ -245,8 +256,8 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
 
           {/* Organization */}
           {(() => {
-            const user = authService.getUser();
-            const isSubAdmin = user?.role === 'SUB_ADMIN';
+            const org = organizations.find(org => org.id.toString() === formData.organization);
+            const isSubAdmin = currentUser?.role === 'SUB_ADMIN';
             
             return (
               <div className="space-y-2">
@@ -259,7 +270,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
                   </span>
                   {isSubAdmin ? (
                     <Input
-                      value={organizations.find(org => org.id.toString() === formData.organization)?.name || 'My Organization'}
+                      value={org?.name || ''}
                       disabled
                       className="pl-10 bg-muted"
                     />
