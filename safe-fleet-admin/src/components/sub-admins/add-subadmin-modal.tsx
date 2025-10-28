@@ -18,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getAuthHeaders, API_ENDPOINTS } from '@/lib/config/api';
 import { toast } from 'sonner';
 import { organizationsService } from '@/lib/services/organizations';
 import { usersService } from '@/lib/services/users';
@@ -27,17 +26,6 @@ interface AddSubAdminModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const geofenceAreas = [
-  'Downtown Area',
-  'University Campus',
-  'Shopping Mall',
-  'Business District',
-  'Residential Zone',
-  'Industrial Park',
-  'Medical District',
-  'Entertainment Zone',
-];
 
 interface Organization {
   id: number;
@@ -61,17 +49,18 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
   // Fetch organizations when modal opens
   useEffect(() => {
     const fetchOrganizations = async () => {
+      if (!isOpen) return;
       try {
         const orgs = await organizationsService.getAll();
         setOrganizations(orgs);
       } catch (error) {
         console.error('Failed to fetch organizations:', error);
+        // Silently fail - 403 errors are expected for users without access
+        setOrganizations([]);
       }
     };
     
-    if (isOpen) {
-      fetchOrganizations();
-    }
+    fetchOrganizations();
   }, [isOpen]);
 
   const handleChange = (field: string, value: string) => {
