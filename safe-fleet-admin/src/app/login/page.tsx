@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { authService } from '@/lib/services/auth';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { toast } from 'sonner';
-import { Security, Person, Lock, Error, Refresh, Login, VerifiedUser } from '@mui/icons-material';
+import { Security, Person, Lock, Error, Refresh, Login, VerifiedUser, Visibility, VisibilityOff } from '@mui/icons-material';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
 
   const validateForm = () => {
@@ -121,16 +122,28 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60 w-5 h-5" />
                 <Input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
                     if (errors.password) setErrors({ ...errors, password: undefined });
                   }}
-                  className={`pl-10 bg-background/50 ${errors.password ? 'border-red-500' : ''}`}
+                  className={`pl-10 pr-10 bg-background/50 ${errors.password ? 'border-red-500' : ''}`}
                   disabled={isLoading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/60 hover:text-white/80 transition-colors"
+                  disabled={isLoading}
+                >
+                  {showPassword ? (
+                    <VisibilityOff className="w-5 h-5" />
+                  ) : (
+                    <Visibility className="w-5 h-5" />
+                  )}
+                </button>
               </div>
             </div>
 
