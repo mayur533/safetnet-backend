@@ -142,22 +142,27 @@ class GeofenceViewSet(OrganizationIsolationMixin, ModelViewSet):
     def perform_destroy(self, instance):
         """Override destroy to handle related objects"""
         try:
-            # Delete related alerts, incidents, notifications from users app
-            instance.alerts.all().delete()
-            instance.incidents.all().delete()
-            instance.notifications.all().delete()
-            
-            # Handle SOS alerts from security_app if it exists
-            try:
-                from security_app.models import SOSAlert
-                SOSAlert.objects.filter(geofence=instance).update(geofence=None)
-            except Exception as sos_error:
-                logger.warning(f"Could not handle SOS alerts: {str(sos_error)}")
-            
-            # Delete the geofence
-            instance.delete()
+            with transaction.atomic():
+                # Handle SecurityOfficer assignments - SET_NULL will handle this, but we do it explicitly first
+                instance.assigned_officers.all().update(assigned_geofence=None)
+                
+                # Handle SOS alerts from security_app if it exists
+                try:
+                    from security_app.models import SOSAlert
+                    SOSAlert.objects.filter(geofence=instance).update(geofence=None)
+                except ImportError:
+                    # security_app.models might not exist, ignore silently
+                    pass
+                except Exception as sos_error:
+                    logger.warning(f"Could not handle SOS alerts: {str(sos_error)}")
+                
+                # Django will automatically CASCADE delete alerts, incidents, and notifications
+                # due to their ForeignKey on_delete=CASCADE settings
+                # Just delete the geofence - related objects will be deleted automatically
+                instance.delete()
         except Exception as e:
-            logger.error(f"Error deleting geofence {instance.id}: {str(e)}")
+            logger.error(f"Error deleting geofence {instance.id}: {str(e)}", exc_info=True)
+            # Re-raise the exception so DRF can handle it properly
             raise
 
 
