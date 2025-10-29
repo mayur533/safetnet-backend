@@ -104,12 +104,13 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Database configuration
 # dj_database_url.config() automatically reads DATABASE_URL from environment
 # Render provides DATABASE_URL automatically when database is linked
+# If DATABASE_URL env var is not set, it will use the default (for local dev or fallback)
 DATABASES = {
     "default": dj_database_url.config(
         # Fallback URL only if DATABASE_URL env var is not set
         default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com/safetnet",
         conn_max_age=600,
-        conn_health_checks=True,
+        ssl_require=True,  # Required for Render PostgreSQL connections
     )
 }
 # Password validation
