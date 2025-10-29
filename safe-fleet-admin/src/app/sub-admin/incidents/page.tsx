@@ -29,7 +29,7 @@ interface Incident extends BackendIncident {
   status?: string;
   timestamp?: string;
   priority?: string;
-  geofence?: string | number;
+  geofenceName?: string;
   reportedBy?: string;
   assignedOfficer?: string;
   description?: string;
@@ -45,7 +45,7 @@ const mapIncidentToDisplay = (incident: Incident): Incident => {
     timestamp: incident.created_at,
     status: incident.is_resolved ? 'resolved' : 'open',
     priority: incident.severity.toLowerCase(),
-    geofence: incident.geofence_name || incident.geofence,
+    geofenceName: incident.geofence_name || `Geofence ${incident.geofence}`,
     reportedBy: incident.officer_name || 'System',
     assignedOfficer: incident.officer_name || 'Unassigned',
     description: incident.details,
@@ -53,119 +53,7 @@ const mapIncidentToDisplay = (incident: Incident): Incident => {
   };
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const mockIncidents: Incident[] = [
-  {
-    id: 1,
-    incidentId: 'INC-2024-001',
-    type: 'emergency',
-    title: 'Medical Emergency',
-    description: 'Elderly resident needs immediate medical assistance',
-    geofence: 'North Gate',
-    reportedBy: 'Jane Doe',
-    assignedOfficer: 'John Smith',
-    status: 'resolved',
-    priority: 'critical',
-    timestamp: '2024-10-13T10:30:00',
-    resolvedAt: '2024-10-13T10:45:00',
-  },
-  {
-    id: 2,
-    incidentId: 'INC-2024-002',
-    type: 'security',
-    title: 'Suspicious Activity',
-    description: 'Unknown person loitering near parking area',
-    geofence: 'East Sector',
-    reportedBy: 'Security Camera',
-    assignedOfficer: 'Sarah Johnson',
-    status: 'in-progress',
-    priority: 'high',
-    timestamp: '2024-10-13T09:15:00',
-  },
-  {
-    id: 3,
-    incidentId: 'INC-2024-003',
-    type: 'fire',
-    title: 'Fire Alarm Triggered',
-    description: 'Smoke detector activated in common area',
-    geofence: 'West Zone',
-    reportedBy: 'Fire System',
-    assignedOfficer: 'Mike Davis',
-    status: 'resolved',
-    priority: 'critical',
-    timestamp: '2024-10-13T08:00:00',
-    resolvedAt: '2024-10-13T08:20:00',
-  },
-  {
-    id: 4,
-    incidentId: 'INC-2024-004',
-    type: 'security',
-    title: 'Unauthorized Entry',
-    description: 'Gate access attempted with invalid credentials',
-    geofence: 'South Entrance',
-    reportedBy: 'Access Control System',
-    assignedOfficer: 'Emily Brown',
-    status: 'closed',
-    priority: 'medium',
-    timestamp: '2024-10-13T07:30:00',
-    resolvedAt: '2024-10-13T07:45:00',
-  },
-  {
-    id: 5,
-    incidentId: 'INC-2024-005',
-    type: 'other',
-    title: 'Noise Complaint',
-    description: 'Loud music reported by multiple residents',
-    geofence: 'Central Park',
-    reportedBy: 'Multiple Residents',
-    assignedOfficer: 'David Wilson',
-    status: 'open',
-    priority: 'low',
-    timestamp: '2024-10-13T11:00:00',
-  },
-  {
-    id: 6,
-    incidentId: 'INC-2024-006',
-    type: 'medical',
-    title: 'Minor Injury',
-    description: 'Resident slipped in common area',
-    geofence: 'Main Entrance',
-    reportedBy: 'Building Manager',
-    assignedOfficer: 'Lisa Anderson',
-    status: 'resolved',
-    priority: 'medium',
-    timestamp: '2024-10-12T16:20:00',
-    resolvedAt: '2024-10-12T17:00:00',
-  },
-  {
-    id: 7,
-    incidentId: 'INC-2024-007',
-    type: 'maintenance',
-    title: 'Water Leak',
-    description: 'Pipe burst in basement area',
-    geofence: 'Parking Area B',
-    reportedBy: 'Maintenance Staff',
-    assignedOfficer: 'Robert Taylor',
-    status: 'in-progress',
-    priority: 'high',
-    timestamp: '2024-10-12T14:45:00',
-  },
-  {
-    id: 8,
-    incidentId: 'INC-2024-008',
-    type: 'security',
-    title: 'Package Theft',
-    description: 'Missing delivery reported',
-    geofence: 'Recreation Center',
-    reportedBy: 'Resident',
-    assignedOfficer: 'Maria Garcia',
-    status: 'open',
-    priority: 'medium',
-    timestamp: '2024-10-12T12:30:00',
-  },
-];
-
-type SortField = 'incident_type' | 'severity' | 'geofence' | 'created_at';
+type SortField = 'id' | 'incident_type' | 'severity' | 'geofence' | 'created_at' | 'type' | 'status' | 'priority' | 'reportedBy' | 'assignedOfficer' | 'timestamp';
 type SortOrder = 'asc' | 'desc';
 
 export default function IncidentLogsPage() {
@@ -249,21 +137,21 @@ export default function IncidentLogsPage() {
 
     // Map display fields to API fields
     switch (sortField) {
-      case 'incidentId':
+      case 'id':
         aValue = a.id;
         bValue = b.id;
         break;
       case 'type':
-        aValue = a.incident_type || a.type;
-        bValue = b.incident_type || b.type;
+        aValue = a.incident_type || a.type || '';
+        bValue = b.incident_type || b.type || '';
         break;
       case 'reportedBy':
         aValue = a.officer_name || a.reportedBy || '';
         bValue = b.officer_name || b.reportedBy || '';
         break;
       case 'geofence':
-        aValue = a.geofence_name || a.geofence;
-        bValue = b.geofence_name || b.geofence;
+        aValue = a.geofenceName || a.geofence_name || a.geofence;
+        bValue = b.geofenceName || b.geofence_name || b.geofence;
         break;
       case 'timestamp':
       case 'created_at':
@@ -271,8 +159,8 @@ export default function IncidentLogsPage() {
         bValue = b.timestamp || b.created_at;
         break;
       default:
-        aValue = a[sortField as keyof Incident] || '';
-        bValue = b[sortField as keyof Incident] || '';
+        aValue = String(a[sortField as keyof Incident] || '');
+        bValue = String(b[sortField as keyof Incident] || '');
     }
 
     if (sortOrder === 'asc') {
@@ -682,12 +570,12 @@ export default function IncidentLogsPage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSortField('incidentId');
+                      setSortField('id');
                       setCurrentPage(1);
                       setShowSortMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'incidentId'
+                      sortField === 'id'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
@@ -821,11 +709,11 @@ export default function IncidentLogsPage() {
                       <span className="text-sm font-mono">{incident.incidentId}</span>
                     </TableCell>
                     <TableCell className="py-4 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(incident.type)}`}>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(incident.type || 'unknown')}`}>
                         <span className="material-icons-outlined mr-1" style={{ fontSize: '14px' }}>
-                          {getTypeIcon(incident.type)}
+                          {getTypeIcon(incident.type || 'unknown')}
                         </span>
-                        {incident.type}
+                        {incident.type || 'Unknown'}
                       </span>
                     </TableCell>
                     <TableCell className="py-4 px-4">
@@ -834,12 +722,12 @@ export default function IncidentLogsPage() {
                     <TableCell className="py-4 px-4">
                       <div className="flex items-center space-x-2">
                         <span className="material-icons text-sm text-indigo-600">location_on</span>
-                        <span className="text-sm">{incident.geofence}</span>
+                        <span className="text-sm">{incident.geofenceName || incident.geofence_name || `Geofence ${incident.geofence}`}</span>
                       </div>
                     </TableCell>
                     <TableCell className="py-4 px-4">
-                      <div className="text-sm">{formatDate(incident.timestamp)}</div>
-                      <div className="text-xs text-muted-foreground">{formatTime(incident.timestamp)}</div>
+                      <div className="text-sm">{formatDate(incident.timestamp || incident.created_at)}</div>
+                      <div className="text-xs text-muted-foreground">{formatTime(incident.timestamp || incident.created_at)}</div>
                     </TableCell>
                     <TableCell className="py-4 px-4">
                       {getStatusBadge(incident)}
@@ -917,11 +805,11 @@ export default function IncidentLogsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Type</label>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(selectedIncident.type)}`}>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(selectedIncident.type || 'unknown')}`}>
                     <span className="material-icons-outlined mr-1" style={{ fontSize: '14px' }}>
-                      {getTypeIcon(selectedIncident.type)}
+                      {getTypeIcon(selectedIncident.type || 'unknown')}
                     </span>
-                    {selectedIncident.type}
+                    {selectedIncident.type || 'Unknown'}
                   </span>
                 </div>
                 <div>
@@ -935,7 +823,7 @@ export default function IncidentLogsPage() {
                     selectedIncident.priority === 'high' ? 'text-orange-600' :
                     selectedIncident.priority === 'medium' ? 'text-yellow-600' : 'text-green-600'
                   }`}>
-                    {selectedIncident.priority.toUpperCase()}
+                    {(selectedIncident.priority || 'unknown').toUpperCase()}
                   </p>
                 </div>
               </div>
@@ -953,7 +841,7 @@ export default function IncidentLogsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Geofence</label>
-                  <p>{selectedIncident.geofence}</p>
+                  <p>{selectedIncident.geofenceName || selectedIncident.geofence_name || `Geofence ${selectedIncident.geofence}`}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Reported By</label>
@@ -965,7 +853,7 @@ export default function IncidentLogsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Timestamp</label>
-                  <p>{formatDate(selectedIncident.timestamp)} {formatTime(selectedIncident.timestamp)}</p>
+                  <p>{formatDate(selectedIncident.timestamp || selectedIncident.created_at)} {formatTime(selectedIncident.timestamp || selectedIncident.created_at)}</p>
                 </div>
               </div>
 

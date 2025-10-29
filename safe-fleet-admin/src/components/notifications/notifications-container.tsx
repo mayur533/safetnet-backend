@@ -85,7 +85,7 @@ export function NotificationsContainer() {
       setIsLoading(true);
       const data = await notificationsService.getAll();
       setNotifications(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching notifications:', error);
       toast.error('Failed to load notifications');
     } finally {
@@ -101,9 +101,9 @@ export function NotificationsContainer() {
       toast.success('Notification deleted successfully');
       setDeleteNotificationId(null);
       fetchNotifications(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete notification');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete notification');
     }
   };
 
@@ -119,7 +119,7 @@ export function NotificationsContainer() {
       
       // Refetch to sync with server
       fetchNotifications();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error marking notification as read:', error);
       // Revert local state on error
       setNotifications(notifications.map(n => 
@@ -159,13 +159,13 @@ export function NotificationsContainer() {
 
   // Sort
   filteredNotifications = [...filteredNotifications].sort((a, b) => {
-    let aValue: any = a[sortField as keyof Notification];
-    let bValue: any = b[sortField as keyof Notification];
+    const aValue: unknown = a[sortField as keyof Notification];
+    const bValue: unknown = b[sortField as keyof Notification];
 
     if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+      return String(aValue).localeCompare(String(bValue));
     } else {
-      return aValue < bValue ? 1 : -1;
+      return String(bValue).localeCompare(String(aValue));
     }
   });
 

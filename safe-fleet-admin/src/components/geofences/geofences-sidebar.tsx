@@ -105,7 +105,7 @@ export function GeofencesSidebar({ selectedGeofence, onSelectGeofence, geofences
     setFormData({
       name: geo.name,
       description: geo.description || '',
-      zone_type: geo.zone_type || '',
+      zone_type: (geo as { zone_type?: string }).zone_type || '',
       is_active: geo.active,
     });
   };
@@ -118,16 +118,15 @@ export function GeofencesSidebar({ selectedGeofence, onSelectGeofence, geofences
       await geofencesService.update(editGeofence.id, {
         name: formData.name,
         description: formData.description || undefined,
-        zone_type: formData.zone_type || undefined,
-        is_active: formData.is_active,
+        active: formData.is_active,
       });
       
       toast.success('Geofence updated successfully');
       setEditGeofence(null);
       onRefresh();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update error:', error);
-      toast.error(error.message || 'Failed to update geofence');
+      toast.error(error instanceof Error ? error.message : 'Failed to update geofence');
     } finally {
       setIsSubmitting(false);
     }
@@ -158,9 +157,9 @@ export function GeofencesSidebar({ selectedGeofence, onSelectGeofence, geofences
       
       setDeleteGeofence(null);
       onRefresh();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete geofence');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete geofence');
     } finally {
       setIsDeleting(false);
     }
@@ -597,7 +596,7 @@ export function GeofencesSidebar({ selectedGeofence, onSelectGeofence, geofences
             </AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete{' '}
-              <strong className="text-foreground">"{deleteGeofence?.name}"</strong>?
+              <strong className="text-foreground">&quot;{deleteGeofence?.name}&quot;</strong>?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3 px-6">

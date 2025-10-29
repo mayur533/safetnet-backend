@@ -14,7 +14,7 @@ const COLORS: { [key: string]: string } = {
 };
 
 export function UserRolesChart() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export function UserRolesChart() {
 
     const roleCounts: { [key: string]: number } = {};
     
-    users.forEach(user => {
+    (users as { role?: string }[]).forEach(user => {
       const role = user.role || 'USER';
       roleCounts[role] = (roleCounts[role] || 0) + 1;
     });
@@ -99,7 +99,7 @@ export function UserRolesChart() {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              label={false}
               outerRadius={100}
               fill="#8884d8"
               dataKey="value"

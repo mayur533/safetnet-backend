@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isAuth = authService.isAuthenticated();
 
       if (isAuth && storedUser) {
-        setUser(storedUser);
+        setUser(storedUser as User);
       } else {
         setUser(null);
         // Redirect to login if not on public pages

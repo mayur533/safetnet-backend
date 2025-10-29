@@ -42,119 +42,7 @@ import { useSearch } from '@/lib/contexts/search-context';
 
 type Incident = BackendIncident;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const mockIncidents: Incident[] = [
-  {
-    id: 1,
-    incidentId: 'INC-2024-001',
-    type: 'emergency',
-    title: 'Medical Emergency',
-    description: 'Elderly resident needs immediate medical assistance',
-    geofence: 'North Gate',
-    reportedBy: 'Jane Doe',
-    assignedOfficer: 'John Smith',
-    status: 'resolved',
-    priority: 'critical',
-    timestamp: '2024-10-13T10:30:00',
-    resolvedAt: '2024-10-13T10:45:00',
-  },
-  {
-    id: 2,
-    incidentId: 'INC-2024-002',
-    type: 'security',
-    title: 'Suspicious Activity',
-    description: 'Unknown person loitering near parking area',
-    geofence: 'East Sector',
-    reportedBy: 'Security Camera',
-    assignedOfficer: 'Sarah Johnson',
-    status: 'in-progress',
-    priority: 'high',
-    timestamp: '2024-10-13T09:15:00',
-  },
-  {
-    id: 3,
-    incidentId: 'INC-2024-003',
-    type: 'fire',
-    title: 'Fire Alarm Triggered',
-    description: 'Smoke detector activated in common area',
-    geofence: 'West Zone',
-    reportedBy: 'Fire System',
-    assignedOfficer: 'Mike Davis',
-    status: 'resolved',
-    priority: 'critical',
-    timestamp: '2024-10-13T08:00:00',
-    resolvedAt: '2024-10-13T08:20:00',
-  },
-  {
-    id: 4,
-    incidentId: 'INC-2024-004',
-    type: 'security',
-    title: 'Unauthorized Entry',
-    description: 'Gate access attempted with invalid credentials',
-    geofence: 'South Entrance',
-    reportedBy: 'Access Control System',
-    assignedOfficer: 'Emily Brown',
-    status: 'closed',
-    priority: 'medium',
-    timestamp: '2024-10-13T07:30:00',
-    resolvedAt: '2024-10-13T07:45:00',
-  },
-  {
-    id: 5,
-    incidentId: 'INC-2024-005',
-    type: 'other',
-    title: 'Noise Complaint',
-    description: 'Loud music reported by multiple residents',
-    geofence: 'Central Park',
-    reportedBy: 'Multiple Residents',
-    assignedOfficer: 'David Wilson',
-    status: 'open',
-    priority: 'low',
-    timestamp: '2024-10-13T11:00:00',
-  },
-  {
-    id: 6,
-    incidentId: 'INC-2024-006',
-    type: 'medical',
-    title: 'Minor Injury',
-    description: 'Resident slipped in common area',
-    geofence: 'Main Entrance',
-    reportedBy: 'Building Manager',
-    assignedOfficer: 'Lisa Anderson',
-    status: 'resolved',
-    priority: 'medium',
-    timestamp: '2024-10-12T16:20:00',
-    resolvedAt: '2024-10-12T17:00:00',
-  },
-  {
-    id: 7,
-    incidentId: 'INC-2024-007',
-    type: 'maintenance',
-    title: 'Water Leak',
-    description: 'Pipe burst in basement area',
-    geofence: 'Parking Area B',
-    reportedBy: 'Maintenance Staff',
-    assignedOfficer: 'Robert Taylor',
-    status: 'in-progress',
-    priority: 'high',
-    timestamp: '2024-10-12T14:45:00',
-  },
-  {
-    id: 8,
-    incidentId: 'INC-2024-008',
-    type: 'security',
-    title: 'Package Theft',
-    description: 'Missing delivery reported',
-    geofence: 'Recreation Center',
-    reportedBy: 'Resident',
-    assignedOfficer: 'Maria Garcia',
-    status: 'open',
-    priority: 'medium',
-    timestamp: '2024-10-12T12:30:00',
-  },
-];
-
-type SortField = 'incident_type' | 'severity' | 'geofence' | 'created_at';
+type SortField = 'id' | 'incident_type' | 'severity' | 'geofence' | 'created_at' | 'type' | 'status' | 'priority' | 'reportedBy' | 'assignedOfficer' | 'timestamp';
 type SortOrder = 'asc' | 'desc';
 
 export default function IncidentLogsPage() {
@@ -186,7 +74,7 @@ export default function IncidentLogsPage() {
       setIsLoading(true);
       const data = await incidentsService.getAll();
       setIncidents(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch incidents:', error);
       toast.error('Failed to load incidents');
     } finally {
@@ -238,6 +126,10 @@ export default function IncidentLogsPage() {
   const sortedIncidents = [...filteredIncidents].sort((a, b) => {
     const aValue = a[sortField as keyof Incident];
     const bValue = b[sortField as keyof Incident];
+
+    // Handle null/undefined values
+    if (aValue === null || aValue === undefined) return 1;
+    if (bValue === null || bValue === undefined) return -1;
 
     if (sortOrder === 'asc') {
       return aValue > bValue ? 1 : -1;
@@ -320,20 +212,20 @@ export default function IncidentLogsPage() {
       toast.success('Incident deleted successfully');
       setDeleteIncidentId(null);
       fetchIncidents(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete incident');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete incident');
     }
   };
 
   const handleResolve = async (id: number) => {
     try {
-      await incidentsService.resolve(id, { notes: 'Resolved from admin panel' });
+      await incidentsService.resolve(id);
       toast.success('Incident marked as resolved');
       fetchIncidents(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Resolve error:', error);
-      toast.error(error.message || 'Failed to resolve incident');
+      toast.error(error instanceof Error ? error.message : 'Failed to resolve incident');
     }
   };
 
@@ -673,12 +565,12 @@ export default function IncidentLogsPage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSortField('incidentId');
+                      setSortField('id');
                       setCurrentPage(1);
                       setShowSortMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'incidentId'
+                      sortField === 'id'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}

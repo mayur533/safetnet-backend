@@ -177,7 +177,7 @@ export function MapSelectorModal({
               {/* Render polygon if we have at least 3 points */}
               {mapPoints.length >= 3 && (
                 <Polygon
-                  positions={getPolygonCoordinates()}
+                  positions={getPolygonCoordinates() as [number, number][]}
                   pathOptions={{
                     color: '#FF0000',
                     fillColor: '#FF0000',
@@ -200,7 +200,7 @@ export function MapSelectorModal({
                   <li>Click on the map to add points for your geofence</li>
                   <li>At least 3 points are required to create a polygon</li>
                   <li>You can remove the last point or clear all points and start over</li>
-                  <li>Click "Confirm" when you're done selecting points</li>
+                  <li>Click &quot;Confirm&quot; when you&apos;re done selecting points</li>
                 </ul>
               </div>
             </div>

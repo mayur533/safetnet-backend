@@ -5,7 +5,6 @@ import { UsersTable } from '@/components/users/users-table';
 import { EditUserModal } from '@/components/users/edit-user-modal';
 import { AddUserModal } from '@/components/users/add-user-modal';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
 
 export default function UsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);

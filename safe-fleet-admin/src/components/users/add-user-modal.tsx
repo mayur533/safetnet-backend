@@ -68,6 +68,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         assignedGeofence: '',
         fullName: '',
         isActive: true,
+        organization: '',
       });
       setErrors({});
     }
@@ -82,7 +83,13 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
         firstName: user.first_name || '',
         lastName: user.last_name || '',
         email: user.email,
+        password: '',
+        confirmPassword: '',
+        role: user.role,
+        assignedGeofence: '',
+        fullName: user.full_name || '',
         isActive: user.is_active,
+        organization: user.organization?.name || '',
       });
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -194,6 +201,7 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
       assignedGeofence: '',
       fullName: '',
       isActive: true,
+      organization: '',
     });
     setErrors({});
     onClose();

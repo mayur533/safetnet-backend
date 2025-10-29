@@ -5,7 +5,6 @@ import { SubAdminsTable } from '@/components/sub-admins/sub-admins-table';
 import { AddSubAdminModal } from '@/components/sub-admins/add-subadmin-modal';
 import { EditSubAdminModal } from '@/components/sub-admins/edit-subadmin-modal';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
 
 export default function SubAdminsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);

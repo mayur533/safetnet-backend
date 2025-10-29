@@ -41,104 +41,12 @@ import { usersService, type User } from '@/lib/services/users';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 import { convertRoleFromAPI, getRoleDisplayLabel } from '@/lib/utils/role-converter';
 
-const initialUsers: User[] = [
-  {
-    id: '1',
-    name: 'John Doe',
-    email: 'john.doe@safefleet.com',
-    role: 'Admin',
-    status: 'active',
-    lastLogin: '2024-02-15 10:30',
-  },
-  {
-    id: '2',
-    name: 'Sarah Johnson',
-    email: 'sarah.j@safefleet.com',
-    role: 'Sub-Admin',
-    status: 'active',
-    lastLogin: '2024-02-15 09:45',
-    assignedGeofence: 'Downtown Area',
-  },
-  {
-    id: '3',
-    name: 'Michael Chen',
-    email: 'michael.chen@safefleet.com',
-    role: 'Security',
-    status: 'active',
-    lastLogin: '2024-02-15 11:20',
-    assignedGeofence: 'University Campus',
-  },
-  {
-    id: '4',
-    name: 'Emily Rodriguez',
-    email: 'emily.r@safefleet.com',
-    role: 'Resident',
-    status: 'active',
-    lastLogin: '2024-02-14 18:30',
-    assignedGeofence: 'Residential Zone A',
-  },
-  {
-    id: '5',
-    name: 'David Park',
-    email: 'david.park@safefleet.com',
-    role: 'Security',
-    status: 'inactive',
-    lastLogin: '2024-02-10 14:00',
-    assignedGeofence: 'Shopping Mall',
-  },
-  {
-    id: '6',
-    name: 'Jessica Williams',
-    email: 'jessica.w@safefleet.com',
-    role: 'Sub-Admin',
-    status: 'active',
-    lastLogin: '2024-02-15 08:15',
-    assignedGeofence: 'Business District',
-  },
-  {
-    id: '7',
-    name: 'Robert Brown',
-    email: 'robert.b@safefleet.com',
-    role: 'Resident',
-    status: 'active',
-    lastLogin: '2024-02-15 07:30',
-    assignedGeofence: 'Downtown Area',
-  },
-  {
-    id: '8',
-    name: 'Amanda Taylor',
-    email: 'amanda.t@safefleet.com',
-    role: 'Security',
-    status: 'active',
-    lastLogin: '2024-02-15 12:00',
-    assignedGeofence: 'Industrial Park',
-  },
-  {
-    id: '9',
-    name: 'Christopher Lee',
-    email: 'chris.lee@safefleet.com',
-    role: 'Resident',
-    status: 'active',
-    lastLogin: '2024-02-15 06:45',
-    assignedGeofence: 'Medical District',
-  },
-  {
-    id: '10',
-    name: 'Michelle Garcia',
-    email: 'michelle.g@safefleet.com',
-    role: 'Sub-Admin',
-    status: 'active',
-    lastLogin: '2024-02-15 13:15',
-    assignedGeofence: 'Entertainment Zone',
-  },
-];
-
 interface UsersTableProps {
   onEditUser: (userId: number) => void;
   refreshTrigger?: number;
 }
 
-type SortField = 'username' | 'email' | 'role' | 'date_joined';
+type SortField = 'username' | 'email' | 'role' | 'date_joined' | 'last_login';
 type SortOrder = 'asc' | 'desc';
 type FilterRole = 'all' | 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER';
 type FilterStatus = 'all' | 'active' | 'inactive';
@@ -206,13 +114,13 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
 
   // Sort
   filteredUsers = [...filteredUsers].sort((a, b) => {
-    let aValue = a[sortField];
-    let bValue = b[sortField];
+    const aValue = a[sortField];
+    const bValue = b[sortField];
 
     if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+      return String(aValue || '').localeCompare(String(bValue || ''));
     } else {
-      return aValue < bValue ? 1 : -1;
+      return String(bValue || '').localeCompare(String(aValue || ''));
     }
   });
 
@@ -230,9 +138,9 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
       toast.success('User deleted successfully');
       setDeleteUserId(null);
       fetchUsers(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete user');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete user');
     }
   };
 
@@ -244,7 +152,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
       await usersService.update(id, { is_active: !user.is_active });
       toast.success('User status updated');
       fetchUsers(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Toggle status error:', error);
       toast.error('Failed to update user status');
     }
@@ -611,7 +519,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                         : 'hover:bg-muted'
                     }`}
                   >
-                    {field === 'lastLogin' ? 'Last Login' : field.charAt(0).toUpperCase() + field.slice(1)}
+                     {field === 'last_login' ? 'Last Login' : field.charAt(0).toUpperCase() + field.slice(1)}
                   </button>
                 ))}
 
@@ -818,7 +726,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                 {/* Status */}
                 <div className="space-y-1">
                   <Label className="text-sm font-medium text-muted-foreground">Status</Label>
-                  <div>{getStatusBadge(viewDetailsUser.is_active)}</div>
+                   <div>{getStatusBadge(viewDetailsUser.is_active ? 'active' : 'inactive')}</div>
                 </div>
 
                 {/* Date Joined */}

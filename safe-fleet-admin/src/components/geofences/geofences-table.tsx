@@ -50,7 +50,7 @@ export function GeofencesTable() {
       setIsLoading(true);
       const data = await geofencesService.getAll();
       setGeofences(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching geofences:', error);
       toast.error('Failed to load geofences');
     } finally {

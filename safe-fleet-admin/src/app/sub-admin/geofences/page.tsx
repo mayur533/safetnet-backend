@@ -36,7 +36,7 @@ export default function SubAdminGeofencesPage() {
       const data = await geofencesService.getAll();
       // Backend automatically filters geofences by Sub-Admin's organization
       setGeofences(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching geofences:', error);
       toast.error('Failed to load geofences');
     } finally {
@@ -56,7 +56,7 @@ export default function SubAdminGeofencesPage() {
         </div>
 
         {/* Stats Loading */}
-        <GeofencesStats isLoading={true} />
+        <GeofencesStats geofences={[]} isLoading={true} />
 
         {/* Map and Sidebar Loading */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

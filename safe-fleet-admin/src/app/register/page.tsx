@@ -111,17 +111,18 @@ export default function RegisterPage() {
       });
       toast.success('Registration successful! Please login with your credentials.');
       router.push('/login');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Registration error:', error);
       try {
-        const errorObj = JSON.parse(error.message);
+        const errorMessage = error instanceof Error ? error.message : 'Registration failed';
+        const errorObj = JSON.parse(errorMessage);
         const errorMessages = Object.entries(errorObj)
           .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
           .join('\n');
         toast.error(errorMessages || 'Registration failed');
         setErrors(errorObj);
       } catch {
-        toast.error(error.message || 'Registration failed');
+        toast.error(error instanceof Error ? error.message : 'Registration failed');
       }
     } finally {
       setIsLoading(false);

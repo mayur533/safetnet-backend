@@ -32,7 +32,7 @@ export default function UserDetailsPage() {
       ]);
       setUser(userData);
       setUserDetails(detailsData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load user details');
     } finally {

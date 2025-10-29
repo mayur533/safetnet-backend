@@ -11,7 +11,7 @@ import { useDashboardStore } from '@/lib/stores/dashboard';
 
 export default function DashboardPage() {
   const [pageLoading, setPageLoading] = useState(true);
-  const { isLoading: statsLoading, fetchAlerts } = useDashboardStore();
+  const { fetchAlerts } = useDashboardStore();
 
   useEffect(() => {
     // Initial page load

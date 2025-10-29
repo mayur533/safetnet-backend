@@ -7,7 +7,7 @@ export interface Report {
   description?: string;
   date_range_start: string;
   date_range_end: string;
-  metrics: Record<string, any>;
+  metrics: Record<string, unknown>;
   file_path?: string;
   generated_by_username: string;
   is_generated: boolean;

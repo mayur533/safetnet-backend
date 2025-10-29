@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -152,8 +151,7 @@ export default function AlertsPage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       if (
-        !alert.title?.toLowerCase().includes(query) &&
-        !alert.description?.toLowerCase().includes(query) &&
+        !alert.message?.toLowerCase().includes(query) &&
         !alert.alert_type?.toLowerCase().includes(query) &&
         !alert.severity?.toLowerCase().includes(query) &&
         !alert.location?.toLowerCase().includes(query) &&

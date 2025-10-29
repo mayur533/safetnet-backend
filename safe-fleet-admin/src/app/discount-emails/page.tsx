@@ -149,6 +149,11 @@ export default function DiscountEmailsPage() {
     const aValue = a[sortField as keyof DiscountEmail];
     const bValue = b[sortField as keyof DiscountEmail];
 
+    // Handle undefined values
+    if (aValue === undefined && bValue === undefined) return 0;
+    if (aValue === undefined) return 1;
+    if (bValue === undefined) return -1;
+
     if (sortOrder === 'asc') {
       return aValue > bValue ? 1 : -1;
     } else {

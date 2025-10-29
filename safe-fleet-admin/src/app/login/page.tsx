@@ -51,9 +51,10 @@ export default function LoginPage() {
       login(response.user); // Update auth context
       toast.success('Login successful!');
       router.push('/');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Login error:', error);
-      toast.error(error.message || 'Login failed. Please check your credentials.');
+      const errorMessage = (error as Error)?.message || 'Login failed. Please check your credentials.';
+      toast.error(errorMessage);
       setErrors({ username: 'Invalid username or password' });
     } finally {
       setIsLoading(false);

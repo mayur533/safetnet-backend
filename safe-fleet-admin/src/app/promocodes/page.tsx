@@ -54,7 +54,7 @@ export default function PromocodesPage() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showPerPageMenu, setShowPerPageMenu] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -77,7 +77,7 @@ export default function PromocodesPage() {
       setIsLoading(true);
       const data = await promocodesService.getAll();
       setPromocodes(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch promocodes:', error);
       toast.error('Failed to load promocodes');
     } finally {
@@ -92,7 +92,6 @@ export default function PromocodesPage() {
       const query = searchQuery.toLowerCase();
       if (
         !promo.code.toLowerCase().includes(query) &&
-        !promo.description?.toLowerCase().includes(query) &&
         !promo.discount_percentage.toString().includes(query) &&
         !promo.id.toString().includes(query)
       ) {
@@ -108,8 +107,8 @@ export default function PromocodesPage() {
 
   // Sort
   filteredPromocodes = [...filteredPromocodes].sort((a, b) => {
-    let aValue = a[sortField];
-    let bValue = b[sortField];
+    const aValue = a[sortField];
+    const bValue = b[sortField];
 
     if (sortOrder === 'asc') {
       return aValue > bValue ? 1 : -1;
@@ -152,9 +151,9 @@ export default function PromocodesPage() {
       toast.success('Promocode deleted successfully');
       setDeletePromocodeId(null);
       fetchPromocodes(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete promocode');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete promocode');
     }
   };
 
@@ -166,7 +165,7 @@ export default function PromocodesPage() {
       await promocodesService.update(id, { is_active: !promo.is_active });
       toast.success('Promocode status updated');
       fetchPromocodes(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Toggle status error:', error);
       toast.error('Failed to update promocode status');
     }
@@ -198,16 +197,17 @@ export default function PromocodesPage() {
 
       setIsModalOpen(false);
       fetchPromocodes(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Submit error:', error);
       try {
-        const errorObj = JSON.parse(error.message);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to save promocode';
+        const errorObj = JSON.parse(errorMessage);
         const errorMessages = Object.entries(errorObj)
           .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
           .join('\n');
         toast.error(errorMessages || 'Failed to save promocode');
       } catch {
-        toast.error(error.message || 'Failed to save promocode');
+        toast.error(error instanceof Error ? error.message : 'Failed to save promocode');
       }
     }
   };
@@ -546,12 +546,12 @@ export default function PromocodesPage() {
                   </button>
                   <button
                     onClick={() => {
-                      setSortField('discountValue');
+                      setSortField('discount_percentage');
                       setCurrentPage(1);
                       setShowSortMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'discountValue'
+                      sortField === 'discount_percentage'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
@@ -560,26 +560,12 @@ export default function PromocodesPage() {
                   </button>
                   <button
                     onClick={() => {
-                      setSortField('currentUses');
+                      setSortField('expiry_date');
                       setCurrentPage(1);
                       setShowSortMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'currentUses'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Usage Count
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('expiryDate');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'expiryDate'
+                      sortField === 'expiry_date'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
@@ -588,12 +574,26 @@ export default function PromocodesPage() {
                   </button>
                   <button
                     onClick={() => {
-                      setSortField('createdAt');
+                      setSortField('expiry_date');
                       setCurrentPage(1);
                       setShowSortMenu(false);
                     }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'createdAt'
+                      sortField === 'expiry_date'
+                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    Expiry Date
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSortField('created_at');
+                      setCurrentPage(1);
+                      setShowSortMenu(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                      sortField === 'created_at'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}

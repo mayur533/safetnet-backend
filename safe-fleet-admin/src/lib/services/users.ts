@@ -48,7 +48,7 @@ export const usersService = {
     let nextUrl: string | null = API_ENDPOINTS.USERS.LIST;
 
     while (nextUrl) {
-      const response = await fetch(nextUrl, {
+      const response: Response = await fetch(nextUrl, {
         method: 'GET',
         headers: getAuthHeaders(),
       });

@@ -17,8 +17,8 @@ export interface UserDetail {
   date_of_birth?: string;
   profile_image?: string;
   bio?: string;
-  preferences?: Record<string, any>;
-  metadata?: Record<string, any>;
+  preferences?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

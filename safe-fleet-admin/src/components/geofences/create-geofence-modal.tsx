@@ -54,7 +54,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<unknown>(null);
 
   // Fetch organizations when modal opens or set user's organization for Sub-Admins
   useEffect(() => {
@@ -66,13 +66,13 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
         
         // Get current user from auth
         const currentUser = authService.getUser();
-        if (!currentUser || !currentUser.id) {
+        if (!currentUser || !(currentUser as { id: number }).id) {
           console.error('No user found in auth');
           return;
         }
         
         // Fetch the current user's details from API to get organization info
-        const userDetails = await usersService.getById(currentUser.id);
+        const userDetails = await usersService.getById((currentUser as { id: number }).id);
         setCurrentUser(userDetails);
         const isSubAdmin = userDetails?.role === 'SUB_ADMIN';
         
@@ -181,9 +181,9 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       
       // Refresh geofences list
       if (onRefresh) onRefresh();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Create geofence error:', error);
-      toast.error(error.message || 'Failed to create geofence');
+      toast.error(error instanceof Error ? error.message : 'Failed to create geofence');
     } finally {
       setIsSubmitting(false);
     }
@@ -257,7 +257,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           {/* Organization */}
           {(() => {
             const org = organizations.find(org => org.id.toString() === formData.organization);
-            const isSubAdmin = currentUser?.role === 'SUB_ADMIN';
+            const isSubAdmin = (currentUser as { role?: string })?.role === 'SUB_ADMIN';
             
             return (
               <div className="space-y-2">

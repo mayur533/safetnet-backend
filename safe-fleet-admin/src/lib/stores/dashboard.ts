@@ -84,17 +84,17 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         // Convert API alerts to dashboard format (show only recent 5)
         const recentAlerts: Alert[] = alertsData
           .slice(0, 5)
-          .map((alert: any) => ({
-            id: alert.id.toString(),
-            time: new Date(alert.created_at).toLocaleString('en-US', {
+          .map((alert: unknown) => ({
+            id: (alert as { id: number }).id.toString(),
+            time: new Date((alert as { created_at: string }).created_at).toLocaleString('en-US', {
               month: 'short',
               day: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
             }),
-            location: alert.location || alert.geofence_name || 'N/A',
-            type: alert.alert_type || 'System Alert',
-            status: alert.is_resolved ? 'resolved' : (alert.severity === 'critical' ? 'critical' : 'pending'),
+            location: (alert as { location?: string; geofence_name?: string }).location || (alert as { location?: string; geofence_name?: string }).geofence_name || 'N/A',
+            type: (alert as { alert_type?: string }).alert_type || 'System Alert',
+            status: (alert as { is_resolved?: boolean; severity?: string }).is_resolved ? 'resolved' : ((alert as { is_resolved?: boolean; severity?: string }).severity === 'critical' ? 'critical' : 'pending'),
           }));
 
         set({ alerts: recentAlerts });

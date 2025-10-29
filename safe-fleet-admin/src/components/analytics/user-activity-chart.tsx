@@ -14,7 +14,7 @@ import { usersService } from '@/lib/services/users';
 import { toast } from 'sonner';
 
 export function UserActivityChart() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly' | 'all'>('weekly');
   const [selectedWeek, setSelectedWeek] = useState(0); // 0 = current week, -1 = last week, etc.
@@ -57,7 +57,7 @@ export function UserActivityChart() {
 
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       
-      users.forEach(user => {
+      (users as { date_joined?: string }[]).forEach((user) => {
         if (user.date_joined) {
           const date = new Date(user.date_joined);
           if (date >= weekStart && date <= weekEnd) {
@@ -85,7 +85,7 @@ export function UserActivityChart() {
         dailyData[i.toString()] = 0;
       }
 
-      users.forEach(user => {
+      (users as { date_joined?: string }[]).forEach(user => {
         if (user.date_joined) {
           const date = new Date(user.date_joined);
           if (date >= monthStart && date <= monthEnd) {
@@ -103,7 +103,7 @@ export function UserActivityChart() {
       // All-time: Group by month
       const monthlyData: { [key: string]: number } = {};
 
-      users.forEach(user => {
+      (users as { date_joined?: string }[]).forEach(user => {
         if (user.date_joined) {
           const date = new Date(user.date_joined);
           const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });

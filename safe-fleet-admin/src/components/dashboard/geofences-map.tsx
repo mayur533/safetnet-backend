@@ -29,8 +29,8 @@ const Popup = dynamic(
 interface Geofence {
   id: number;
   name: string;
-  polygon_json: any;
-  center_point?: any;
+  polygon_json: unknown;
+  center_point?: unknown;
   active: boolean;
   organization_name?: string;
 }

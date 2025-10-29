@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { ListLoading, FormLoading, ContentLoading } from '@/components/ui/content-loading';
+import { ListLoading, FormLoading } from '@/components/ui/content-loading';
 import { notificationsService, type Notification as BackendNotification } from '@/lib/services/notifications';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
 import { useSearch } from '@/lib/contexts/search-context';
@@ -30,7 +30,7 @@ export default function SubAdminNotificationsPage() {
     try {
       const data = await notificationsService.getAll();
       setNotifications(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch notifications:', error);
       toast.error('Failed to load notifications');
     }
@@ -41,7 +41,7 @@ export default function SubAdminNotificationsPage() {
       setIsLoading(true);
       const data = await geofencesService.getAll();
       setGeofences(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch geofences:', error);
       toast.error('Failed to load geofences');
     } finally {
@@ -108,7 +108,7 @@ export default function SubAdminNotificationsPage() {
       
       // Refresh notifications list
       fetchNotifications();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Send notification error:', error);
       toast.error('Failed to send notification');
     }

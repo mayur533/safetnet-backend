@@ -8,10 +8,10 @@ export interface ExportData {
   alertTypes: Array<{ name: string; value: number }>;
   userRoles: Array<{ name: string; value: number }>;
   incidentsTrends: Array<{ month: string; resolved: number; unresolved: number }>;
-  allAlerts?: Array<any>;
-  allIncidents?: Array<any>;
-  allUsers?: Array<any>;
-  allGeofences?: Array<any>;
+  allAlerts?: Array<unknown>;
+  allIncidents?: Array<unknown>;
+  allUsers?: Array<unknown>;
+  allGeofences?: Array<unknown>;
 }
 
 export interface ChartImageData {
@@ -148,11 +148,11 @@ export const exportToPDF = async (data: ExportData, chartImages?: ChartImageData
         doc.setFontSize(8);
       }
 
-      doc.text(`${alert.id}`, 20, yPos);
-      doc.text(`${alert.alert_type || 'N/A'}`, 50, yPos);
-      doc.text(`${alert.severity || 'N/A'}`, 90, yPos);
-      doc.text(`${alert.is_resolved ? 'Resolved' : 'Active'}`, 130, yPos);
-      doc.text(`${alert.created_at ? new Date(alert.created_at).toLocaleDateString('en-US') : 'N/A'}`, 165, yPos);
+      doc.text(`${(alert as { id: number }).id}`, 20, yPos);
+      doc.text(`${(alert as { alert_type?: string }).alert_type || 'N/A'}`, 50, yPos);
+      doc.text(`${(alert as { severity?: string }).severity || 'N/A'}`, 90, yPos);
+      doc.text(`${(alert as { is_resolved?: boolean }).is_resolved ? 'Resolved' : 'Active'}`, 130, yPos);
+      doc.text(`${(alert as { created_at?: string }).created_at ? new Date((alert as { created_at?: string }).created_at!).toLocaleDateString('en-US') : 'N/A'}`, 165, yPos);
       yPos += 6;
     });
   }
@@ -223,16 +223,16 @@ export const exportToCSV = async (data: ExportData): Promise<void> => {
       ['Detailed Alerts Data', '', '', '', '', '', '', ''],
       ['ID', 'Type', 'Severity', 'Status', 'Geofence ID', 'User ID', 'Created', 'Resolved', 'Response Time (min)'],
       ...data.allAlerts.map(alert => [
-        alert.id,
-        alert.alert_type || 'N/A',
-        alert.severity || 'N/A',
-        alert.is_resolved ? 'Resolved' : 'Active',
-        alert.geofence || 'N/A',
-        alert.user || 'N/A',
-        alert.created_at ? new Date(alert.created_at).toLocaleString('en-US') : 'N/A',
-        alert.resolved_at ? new Date(alert.resolved_at).toLocaleString('en-US') : 'N/A',
-        alert.resolved_at && alert.created_at 
-          ? ((new Date(alert.resolved_at).getTime() - new Date(alert.created_at).getTime()) / (1000 * 60)).toFixed(2)
+        (alert as { id: number }).id,
+        (alert as { alert_type?: string }).alert_type || 'N/A',
+        (alert as { severity?: string }).severity || 'N/A',
+        (alert as { is_resolved?: boolean }).is_resolved ? 'Resolved' : 'Active',
+        (alert as { geofence?: number }).geofence || 'N/A',
+        (alert as { user?: number }).user || 'N/A',
+        (alert as { created_at?: string }).created_at ? new Date((alert as { created_at?: string }).created_at!).toLocaleString('en-US') : 'N/A',
+        (alert as { resolved_at?: string }).resolved_at ? new Date((alert as { resolved_at?: string }).resolved_at!).toLocaleString('en-US') : 'N/A',
+        (alert as { resolved_at?: string; created_at?: string }).resolved_at && (alert as { resolved_at?: string; created_at?: string }).created_at 
+          ? ((new Date((alert as { resolved_at?: string }).resolved_at!).getTime() - new Date((alert as { created_at?: string }).created_at!).getTime()) / (1000 * 60)).toFixed(2)
           : 'N/A',
       ]),
     ];
@@ -246,13 +246,13 @@ export const exportToCSV = async (data: ExportData): Promise<void> => {
       ['Detailed Incidents Data', '', '', '', '', '', ''],
       ['ID', 'Geofence ID', 'Status', 'Severity', 'Description', 'Created', 'Resolved'],
       ...data.allIncidents.map(incident => [
-        incident.id,
-        incident.geofence || 'N/A',
-        incident.is_resolved ? 'Resolved' : 'Active',
-        incident.severity || 'N/A',
-        incident.description || 'N/A',
-        incident.created_at ? new Date(incident.created_at).toLocaleString('en-US') : 'N/A',
-        incident.resolved_at ? new Date(incident.resolved_at).toLocaleString('en-US') : 'N/A',
+        (incident as { id: number }).id,
+        (incident as { geofence?: number }).geofence || 'N/A',
+        (incident as { is_resolved?: boolean }).is_resolved ? 'Resolved' : 'Active',
+        (incident as { severity?: string }).severity || 'N/A',
+        (incident as { description?: string }).description || 'N/A',
+        (incident as { created_at?: string }).created_at ? new Date((incident as { created_at?: string }).created_at!).toLocaleString('en-US') : 'N/A',
+        (incident as { resolved_at?: string }).resolved_at ? new Date((incident as { resolved_at?: string }).resolved_at!).toLocaleString('en-US') : 'N/A',
       ]),
     ];
     const incidentsWs = XLSX.utils.aoa_to_sheet(incidentsData);
@@ -265,14 +265,14 @@ export const exportToCSV = async (data: ExportData): Promise<void> => {
       ['Detailed Users Data', '', '', '', '', '', '', ''],
       ['ID', 'Username', 'Email', 'Role', 'Organization', 'Status', 'Joined', 'Last Login'],
       ...data.allUsers.map(user => [
-        user.id,
-        user.username || 'N/A',
-        user.email || 'N/A',
-        user.role || 'N/A',
-        user.organization_name || 'N/A',
-        user.is_active ? 'Active' : 'Inactive',
-        user.date_joined ? new Date(user.date_joined).toLocaleDateString('en-US') : 'N/A',
-        user.last_login ? new Date(user.last_login).toLocaleDateString('en-US') : 'Never',
+        (user as { id: number }).id,
+        (user as { username?: string }).username || 'N/A',
+        (user as { email?: string }).email || 'N/A',
+        (user as { role?: string }).role || 'N/A',
+        (user as { organization_name?: string }).organization_name || 'N/A',
+        (user as { is_active?: boolean }).is_active ? 'Active' : 'Inactive',
+        (user as { date_joined?: string }).date_joined ? new Date((user as { date_joined?: string }).date_joined!).toLocaleDateString('en-US') : 'N/A',
+        (user as { last_login?: string }).last_login ? new Date((user as { last_login?: string }).last_login!).toLocaleDateString('en-US') : 'Never',
       ]),
     ];
     const usersWs = XLSX.utils.aoa_to_sheet(usersData);
@@ -285,13 +285,13 @@ export const exportToCSV = async (data: ExportData): Promise<void> => {
       ['Detailed Geofences Data', '', '', '', '', '', ''],
       ['ID', 'Name', 'Organization', 'Status', 'Created', 'Updated', 'Center Point'],
       ...data.allGeofences.map(geofence => [
-        geofence.id,
-        geofence.name || 'N/A',
-        geofence.organization_name || 'N/A',
-        geofence.active ? 'Active' : 'Inactive',
-        geofence.created_at ? new Date(geofence.created_at).toLocaleDateString('en-US') : 'N/A',
-        geofence.updated_at ? new Date(geofence.updated_at).toLocaleDateString('en-US') : 'N/A',
-        geofence.center_point || 'N/A',
+        (geofence as { id: number }).id,
+        (geofence as { name?: string }).name || 'N/A',
+        (geofence as { organization_name?: string }).organization_name || 'N/A',
+        (geofence as { active?: boolean }).active ? 'Active' : 'Inactive',
+        (geofence as { created_at?: string }).created_at ? new Date((geofence as { created_at?: string }).created_at!).toLocaleDateString('en-US') : 'N/A',
+        (geofence as { updated_at?: string }).updated_at ? new Date((geofence as { updated_at?: string }).updated_at!).toLocaleDateString('en-US') : 'N/A',
+        (geofence as { center_point?: string }).center_point || 'N/A',
       ]),
     ];
     const geofencesWs = XLSX.utils.aoa_to_sheet(geofencesData);

@@ -39,90 +39,9 @@ import { useSearch } from '@/lib/contexts/search-context';
 import { usersService, type User } from '@/lib/services/users';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
 
-const initialSubAdmins: SubAdmin[] = [
-  {
-    id: '1',
-    name: 'John Doe',
-    email: 'john.doe@safefleet.com',
-    assignedArea: 'Downtown Area',
-    status: 'active',
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'Sarah Johnson',
-    email: 'sarah.j@safefleet.com',
-    assignedArea: 'University Campus',
-    status: 'active',
-    createdAt: '2024-01-18',
-  },
-  {
-    id: '3',
-    name: 'Michael Chen',
-    email: 'michael.chen@safefleet.com',
-    assignedArea: 'Shopping Mall',
-    status: 'active',
-    createdAt: '2024-01-20',
-  },
-  {
-    id: '4',
-    name: 'Emily Rodriguez',
-    email: 'emily.r@safefleet.com',
-    assignedArea: 'Business District',
-    status: 'inactive',
-    createdAt: '2024-01-22',
-  },
-  {
-    id: '5',
-    name: 'David Park',
-    email: 'david.park@safefleet.com',
-    assignedArea: 'Residential Zone',
-    status: 'active',
-    createdAt: '2024-01-25',
-  },
-  {
-    id: '6',
-    name: 'Jessica Williams',
-    email: 'jessica.w@safefleet.com',
-    assignedArea: 'Industrial Park',
-    status: 'active',
-    createdAt: '2024-01-28',
-  },
-  {
-    id: '7',
-    name: 'Robert Brown',
-    email: 'robert.brown@safefleet.com',
-    assignedArea: 'Medical District',
-    status: 'active',
-    createdAt: '2024-02-01',
-  },
-  {
-    id: '8',
-    name: 'Amanda Taylor',
-    email: 'amanda.t@safefleet.com',
-    assignedArea: 'Entertainment Zone',
-    status: 'inactive',
-    createdAt: '2024-02-05',
-  },
-  {
-    id: '9',
-    name: 'Christopher Lee',
-    email: 'chris.lee@safefleet.com',
-    assignedArea: 'Downtown Area',
-    status: 'active',
-    createdAt: '2024-02-08',
-  },
-  {
-    id: '10',
-    name: 'Michelle Garcia',
-    email: 'michelle.g@safefleet.com',
-    assignedArea: 'University Campus',
-    status: 'active',
-    createdAt: '2024-02-12',
-  },
-];
+// Removed unused initialSubAdmins variable
 
-type SortField = 'username' | 'email' | 'date_joined';
+type SortField = 'username' | 'email' | 'date_joined' | 'name';
 type SortOrder = 'asc' | 'desc';
 type FilterStatus = 'all' | 'active' | 'inactive';
 
@@ -185,13 +104,21 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
 
   // Sort
   filteredSubAdmins = [...filteredSubAdmins].sort((a, b) => {
-    let aValue = a[sortField];
-    let bValue = b[sortField];
+    let aValue: unknown;
+    let bValue: unknown;
+    
+    if (sortField === 'name') {
+      aValue = a.full_name || `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.username;
+      bValue = b.full_name || `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.username;
+    } else {
+      aValue = a[sortField as keyof User];
+      bValue = b[sortField as keyof User];
+    }
 
     if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+      return String(aValue).localeCompare(String(bValue));
     } else {
-      return aValue < bValue ? 1 : -1;
+      return String(bValue).localeCompare(String(aValue));
     }
   });
 
@@ -228,9 +155,9 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
       toast.success('Sub-admin deleted successfully');
       setDeleteSubAdminId(null);
       fetchSubAdmins(); // Refresh list
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete error:', error);
-      toast.error(error.message || 'Failed to delete sub-admin');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete sub-admin');
     }
   };
 
@@ -596,9 +523,9 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                   Organization
                 </button>
                 <button
-                  onClick={() => handleSortChange('createdAt')}
+                  onClick={() => handleSortChange('date_joined')}
                   className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortField === 'createdAt'
+                    sortField === 'date_joined'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}

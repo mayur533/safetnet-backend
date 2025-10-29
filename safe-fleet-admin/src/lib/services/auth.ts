@@ -165,7 +165,7 @@ export const authService = {
     return getFromStorage(STORAGE_KEYS.ACCESS_TOKEN);
   },
 
-  getUser(): any | null {
+  getUser(): unknown | null {
     if (typeof window === 'undefined') return null;
     const user = getFromStorage(STORAGE_KEYS.USER);
     return user ? JSON.parse(user) : null;

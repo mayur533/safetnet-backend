@@ -21,7 +21,7 @@ export default function GeofencesPage() {
       setIsLoading(true);
       const data = await geofencesService.getAll();
       setGeofences(data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching geofences:', error);
       toast.error('Failed to load geofences');
     } finally {
@@ -29,7 +29,7 @@ export default function GeofencesPage() {
     }
   };
 
-  const selectedGeo = geofences.find(g => g.id === selectedGeofence);
+  // const selectedGeo = geofences.find(g => g.id === selectedGeofence);
 
   if (isLoading) {
     return (

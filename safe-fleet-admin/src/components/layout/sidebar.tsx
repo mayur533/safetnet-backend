@@ -14,7 +14,7 @@ interface SidebarProps {
 }
 
 // Icon mapping from string names to MUI components
-const iconMap: Record<string, React.ComponentType<any>> = {
+const iconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   dashboard: Dashboard,
   business: Business,
   supervisor_account: SupervisorAccount,

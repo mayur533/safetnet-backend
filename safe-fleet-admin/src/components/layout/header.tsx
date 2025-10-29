@@ -103,12 +103,12 @@ export function Header() {
                 <Avatar className="w-10 h-10">
                   <AvatarImage src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEDhjvZxwXBGeQrTHHTedlQ79iObGAO9gJwTQ8KWlbK9RK7w_oGWfYweHlOdA-SkeMRUNjamvXIBbeGnOz7cIKQHlOVgZf4vD1BQbLDWcHtQ4IP7kEyYBqQ8As-bHYN_27DUaszBl4TfFlkrXhB1snOrlaoi1Wh_O_w4188QMikFs5Fa9cMBbiP-9-Xfn2GJLb2mvPZcHhcj6nzXWlAv2vIcb47vCvXZ2Btu9aWElFUFNvzWD20Pj24e_ZXeZCW59AwTJmiEP4nEXt" />
                   <AvatarFallback>
-                    {isClient && user?.full_name?.charAt(0).toUpperCase() || isClient && user?.username?.charAt(0).toUpperCase() || 'U'}
+                    {isClient && user?.username?.charAt(0).toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
                 <div suppressHydrationWarning>
                   <p className="font-semibold text-sm">
-                    {isClient ? (user?.full_name || user?.username || 'User') : 'User'}
+                    {isClient ? (user?.username || 'User') : 'User'}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {isClient ? (

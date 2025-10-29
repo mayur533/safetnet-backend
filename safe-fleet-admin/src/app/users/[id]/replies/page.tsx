@@ -32,7 +32,7 @@ export default function UserRepliesPage() {
       ]);
       setUser(userData);
       setReplies(repliesData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load user replies');
     } finally {
@@ -212,7 +212,7 @@ export default function UserRepliesPage() {
             <div className="text-center text-muted-foreground">
               <span className="material-icons text-6xl mb-4 opacity-50">inbox</span>
               <p className="text-lg">No replies found for this user</p>
-              <p className="text-sm mt-2">This user hasn't submitted any feedback or replies yet.</p>
+              <p className="text-sm mt-2">This user hasn&apos;t submitted any feedback or replies yet.</p>
             </div>
           </Card>
         ) : (
