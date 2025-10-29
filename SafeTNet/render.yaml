@@ -20,9 +20,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.0
       - key: DATABASE_URL
-        value: postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com/safetnet
-        # NOTE: If database is linked in Render dashboard, the Internal Database URL will override this
-        # For better performance, use Internal Database URL from your database service settings
+        value: postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a/safetnet
+        # Using Internal Database URL for better performance within Render network
+        # This is the preferred connection method for Render-to-Render services
     autoDeploy: true
     healthCheckPath: /api/auth/test-auth/
 
