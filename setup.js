@@ -70,17 +70,14 @@ function installBackendDependencies(backendPath, resolve, reject) {
     ? path.join(backendPath, 'venv', 'Scripts', 'pip.exe')
     : path.join(backendPath, 'venv', 'bin', 'pip');
   
-  // Requirements.txt is now in root directory
-  const requirementsPath = path.join(__dirname, 'requirements.txt');
-  
   // Upgrade pip
   exec(`"${pipPath}" install --upgrade pip`, { cwd: backendPath }, (error, stdout, stderr) => {
     if (error) {
       console.error(`Error upgrading pip: ${error}`);
     }
     
-    // Install requirements from root directory
-    exec(`"${pipPath}" install -r "${requirementsPath}"`, { cwd: backendPath }, (error, stdout, stderr) => {
+    // Install requirements
+    exec(`"${pipPath}" install -r requirements.txt`, { cwd: backendPath }, (error, stdout, stderr) => {
       if (error) {
         console.error(`Error installing requirements: ${error}`);
         reject(error);
