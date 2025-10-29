@@ -1,6 +1,3 @@
-# NOTE: This render.yaml is for reference only.
-# The actual deployment uses SafeTNet/render.yaml since the root directory is set to SafeTNet folder on Render.
-
 services:
   # Backend Service (Django)
   - type: web
