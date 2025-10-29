@@ -30,20 +30,6 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS.append('safetnet.onrender.com')
-CORS_ALLOWED_ORIGINS = (
-    'http://localhost:3000',
-    'https://security-app-vert.vercel.app',
-    'https://security-app-veot.onrender.com',
-    'http://127.0.0.1:3000',
-    'https://your-frontend-domain.com'  # Add your frontend domain
-)
-CSRF_TRUSTED_ORIGINS = (
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'https://security-app-veot.onrender.com',
-    'https://security-app-vert.vercel.app',
-    'https://safetnet.onrender.com'  # Add this for HTTPS
-)
 # Application definition
 
 INSTALLED_APPS = [
@@ -233,9 +219,35 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://security-app-vert.vercel.app",
+    "https://security-app-veot.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Set to False for security, only allow listed origins
+
+# Allow all common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Allow all HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
 # CSRF Configuration
 CSRF_COOKIE_SECURE = not DEBUG
@@ -244,6 +256,9 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://security-app-vert.vercel.app",
+    "https://security-app-veot.onrender.com",
+    "https://safetnet.onrender.com",
 ]
 
 # Security Headers
