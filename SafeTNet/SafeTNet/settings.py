@@ -118,7 +118,7 @@ DATABASES = {
         # This default is only used if DATABASE_URL env var is not set
         # On Render, DATABASE_URL should always be set when database is linked
         # Using internal URL for Render-to-Render connections
-        default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a/safetnet",
+        default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a:5432/safetnet",
         conn_max_age=600,
         # SSL only required for remote databases (Render), not localhost
         ssl_require=not is_local_db if database_url else True,
