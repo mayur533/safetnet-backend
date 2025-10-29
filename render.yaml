@@ -1,4 +1,11 @@
 services:
+  # PostgreSQL Database
+  - type: pspg
+    name: safetnet-database
+    plan: starter
+    databaseName: safetnet
+    user: safetnet_user
+    
   # Backend Service (Django)
   - type: web
     name: safetnet-backend
@@ -21,6 +28,10 @@ services:
         value: SafeTNet.settings
       - key: PYTHON_VERSION
         value: 3.13.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: safetnet-database
+          property: connectionString
     autoDeploy: true
     healthCheckPath: /api/auth/test-auth/
     
