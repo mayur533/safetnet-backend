@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ContentLoading } from '@/components/ui/content-loading';
 import { userRepliesService, type UserReply } from '@/lib/services/user-replies';
 import { usersService, type User } from '@/lib/services/users';
 

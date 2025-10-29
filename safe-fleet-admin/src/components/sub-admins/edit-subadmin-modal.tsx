@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usersService, type User } from '@/lib/services/users';
+import { usersService } from '@/lib/services/users';
 import { organizationsService } from '@/lib/services/organizations';
 
 interface EditSubAdminModalProps {
@@ -52,7 +52,7 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
       try {
         const orgs = await organizationsService.getAll();
         setOrganizations(orgs);
-      } catch (error) {
+      } catch {
         console.warn('Could not fetch organizations');
       }
     };

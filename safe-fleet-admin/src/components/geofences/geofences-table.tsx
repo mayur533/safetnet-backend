@@ -25,10 +25,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { useSearch } from '@/lib/contexts/search-context';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
-import { CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { TableLoading } from '@/components/ui/content-loading';
 
 export function GeofencesTable() {
   const [geofences, setGeofences] = useState<Geofence[]>([]);

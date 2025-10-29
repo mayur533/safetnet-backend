@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { usersService, type User } from '@/lib/services/users';
+import { usersService } from '@/lib/services/users';
 
 interface EditUserModalProps {
   isOpen: boolean;

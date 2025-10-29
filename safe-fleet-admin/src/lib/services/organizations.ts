@@ -40,7 +40,7 @@ export const organizationsService = {
 
       const data = await response.json();
       return data.results || data;
-    } catch (error: unknown) {
+    } catch {
       // Return empty array instead of throwing
       // Silently fail - this is expected for users without access
       return [];

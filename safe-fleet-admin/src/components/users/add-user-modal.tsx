@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usersService, type User } from '@/lib/services/users';
+import { usersService } from '@/lib/services/users';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -28,7 +28,6 @@ interface AddUserModalProps {
   onUserUpdated?: () => void;
 }
 
-const roles = ['USER', 'SUB_ADMIN', 'SUPER_ADMIN'];
 const geofences = ['Downtown Area', 'University Campus', 'Residential Zone', 'Commercial District'];
 
 export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: AddUserModalProps) {
@@ -48,8 +47,6 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingUser, setIsLoadingUser] = useState(false);
-
   const isEditing = !!editingUserId;
 
   useEffect(() => {

@@ -1,7 +1,6 @@
 import { AnalyticsData } from '@/lib/services/analytics';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 export interface ExportData {
   analytics: AnalyticsData;
@@ -22,7 +21,7 @@ export interface ChartImageData {
   userRolesChart?: string;
 }
 
-export const exportToPDF = async (data: ExportData, chartImages?: ChartImageData): Promise<void> => {
+export const exportToPDF = async (data: ExportData, _chartImages?: ChartImageData): Promise<void> => {
   const doc = new jsPDF('l', 'mm', [297, 210]); // Landscape A4
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();

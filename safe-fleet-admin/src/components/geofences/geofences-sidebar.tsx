@@ -393,7 +393,7 @@ export function GeofencesSidebar({ selectedGeofence, onSelectGeofence, geofences
                           </div>
                         ));
                       }
-                    } catch (e) {
+                    } catch {
                       return <p className="text-xs text-red-500">Invalid polygon data</p>;
                     }
                   })()}

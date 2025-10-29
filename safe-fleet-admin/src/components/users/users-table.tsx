@@ -39,7 +39,6 @@ import { Label } from '@/components/ui/label';
 import { useSearch } from '@/lib/contexts/search-context';
 import { usersService, type User } from '@/lib/services/users';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
-import { convertRoleFromAPI, getRoleDisplayLabel } from '@/lib/utils/role-converter';
 
 interface UsersTableProps {
   onEditUser: (userId: number) => void;

@@ -53,7 +53,6 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<unknown>(null);
 
   // Fetch organizations when modal opens or set user's organization for Sub-Admins
@@ -86,7 +85,7 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
           try {
             const orgs = await organizationsService.getAll();
             setOrganizations(orgs);
-          } catch (error) {
+          } catch {
             // If API call fails (403), set empty organizations
             setOrganizations([]);
           }

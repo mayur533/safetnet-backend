@@ -32,12 +32,16 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(','
 ALLOWED_HOSTS.append('safetnet.onrender.com')
 CORS_ALLOWED_ORIGINS = (
     'http://localhost:3000',
+    'https://security-app-vert.vercel.app',
+    'https://security-app-veot.onrender.com',
     'http://127.0.0.1:3000',
     'https://your-frontend-domain.com'  # Add your frontend domain
 )
 CSRF_TRUSTED_ORIGINS = (
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'https://security-app-veot.onrender.com',
+    'https://security-app-vert.vercel.app',
     'https://safetnet.onrender.com'  # Add this for HTTPS
 )
 # Application definition

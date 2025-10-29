@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useSearch } from '@/lib/contexts/search-context';
-import { CardLoading, TableLoading } from '@/components/ui/content-loading';
+import { TableLoading } from '@/components/ui/content-loading';
 import { notificationsService, type Notification } from '@/lib/services/notifications';
 
 const getStatusBadge = (notificationType: 'NORMAL' | 'EMERGENCY') => {

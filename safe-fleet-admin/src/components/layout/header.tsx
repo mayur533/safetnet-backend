@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +14,7 @@ import { NotificationDropdown } from './notification-dropdown';
 import { useSearch } from '@/lib/contexts/search-context';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { toast } from 'sonner';
-import { Search, Notifications, Person, Settings, Logout, ExpandMore } from '@mui/icons-material';
+import { Search, Person, Settings, Logout, ExpandMore } from '@mui/icons-material';
 
 const searchPlaceholders: Record<string, string> = {
   '/': 'Search dashboard...',

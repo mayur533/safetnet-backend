@@ -34,7 +34,7 @@ interface DashboardStore {
   updateAlertStatus: (id: string, status: Alert['status']) => void;
 }
 
-export const useDashboardStore = create<DashboardStore>((set, get) => ({
+export const useDashboardStore = create<DashboardStore>((set) => ({
   stats: {
     totalSubAdmins: 0,
     activeGeofences: 0,

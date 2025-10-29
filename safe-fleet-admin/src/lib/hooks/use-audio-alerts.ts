@@ -1,11 +1,9 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { toast } from 'sonner';
 
 export function useAudioAlerts() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const playAlert = useCallback((type: 'critical' | 'warning' | 'info') => {
     // Create audio context for emergency alerts
     const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();

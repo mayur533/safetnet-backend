@@ -37,7 +37,6 @@ interface Geofence {
 
 export function GeofencesMap() {
   const [isClient, setIsClient] = useState(false);
-  const [mapError, setMapError] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [geofences, setGeofences] = useState<Geofence[]>([]);
