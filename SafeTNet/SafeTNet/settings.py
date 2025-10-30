@@ -108,17 +108,18 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # For Render: DATABASE_URL is automatically provided when database is linked
 # If DATABASE_URL is not set, it falls back to the default below (Render production)
 
-# Check if we're using a local database (for local dev without SSL)
+# Check if we're using a local or Render internal database (no SSL)
 database_url = os.environ.get('DATABASE_URL', '')
 is_local_db = database_url and ('localhost' in database_url or '127.0.0.1' in database_url)
+is_render_internal = database_url and ('.internal' in database_url)
 
 DATABASES = {
     "default": dj_database_url.config(
         # Fallback URL only if DATABASE_URL env var is not set (for Render production)
         default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com/safetnet",
         conn_max_age=600,
-        # Only require SSL for remote databases (Render), not for localhost
-        ssl_require=not is_local_db if database_url else True,
+        # Require SSL for external DBs; disable for localhost or Render internal connections
+        ssl_require=not (is_local_db or is_render_internal) if database_url else True,
     )
 }
 # Password validation

@@ -1,11 +1,9 @@
 services:
-  # PostgreSQL Database
-  - type: pspg
+  # Key-Value Store (to replace invalid pspg type)
+  - type: keyvalue
     name: safetnet-database
     plan: starter
-    databaseName: safetnet
-    user: safetnet_user
-    
+    ipAllowList: []
   # Backend Service (Django)
   - type: web
     name: safetnet-backend
