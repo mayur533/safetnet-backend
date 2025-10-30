@@ -30,6 +30,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS.append('safetnet.onrender.com')
+ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
 # Application definition
 
 INSTALLED_APPS = [
@@ -102,11 +103,13 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 # Database configuration
-# dj_database_url.config() automatically reads DATABASE_URL from environment
-# For local dev: Set DATABASE_URL in .env file pointing to your local PostgreSQL
+# Uses DATABASE_URL environment variable (automatically different for local vs production)
+# 
+# Local development: Set DATABASE_URL in .env file
 #   Example: DATABASE_URL=postgresql://postgres:Rsl@2015@localhost:5432/SafeTNet
-# For Render: DATABASE_URL is automatically provided when database is linked
-# If DATABASE_URL is not set, it falls back to the default below (Render production)
+#
+# Render production: DATABASE_URL is automatically set when database is linked
+#   If not set, falls back to the hardcoded Render database URL below
 
 # Check if we're using a local or Render internal database (no SSL)
 database_url = os.environ.get('DATABASE_URL', '')
@@ -115,8 +118,10 @@ is_render_internal = database_url and ('.internal' in database_url)
 
 DATABASES = {
     "default": dj_database_url.config(
-        # Fallback URL only if DATABASE_URL env var is not set (for Render production)
-        default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com/safetnet",
+        # This default is only used if DATABASE_URL env var is not set
+        # On Render, DATABASE_URL should always be set when database is linked
+        # Using internal URL for Render-to-Render connections
+        default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com:5432/safetnet",
         conn_max_age=600,
         # Require SSL for external DBs; disable for localhost or Render internal connections
         ssl_require=not (is_local_db or is_render_internal) if database_url else True,
@@ -235,6 +240,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
+    "https://safetnet-backend.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -272,6 +278,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:3000",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
+    "https://safetnet-backend.onrender.com",
     "https://safetnet.onrender.com",
 ]
 
