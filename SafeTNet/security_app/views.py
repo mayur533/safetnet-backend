@@ -8,9 +8,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 
 from users.permissions import IsSuperAdminOrSubAdmin
-from security.models import Case as LegacyCase
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
-from security.utils import haversine_distance_km
 from users.models import SecurityOfficer
 
 from .permissions import IsSecurityOfficer

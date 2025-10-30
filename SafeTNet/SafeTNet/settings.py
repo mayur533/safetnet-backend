@@ -50,7 +50,6 @@ INSTALLED_APPS = [
     "users",
     "users_profile",
     "core",
-    "security",
     "security_app",
 ]
 
