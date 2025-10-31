@@ -61,8 +61,6 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       if (!isOpen) return;
       
       try {
-        setIsLoading(true);
-        
         // Get current user from auth
         const currentUser = authService.getUser();
         if (!currentUser || !(currentUser as { id: number }).id) {
@@ -93,8 +91,6 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
       } catch (error) {
         console.error('Failed to fetch organizations:', error);
         // Don't show error toast for Sub-Admins as they don't need to fetch orgs
-      } finally {
-        setIsLoading(false);
       }
     };
     
@@ -143,6 +139,10 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
 
     if (!validateForm()) {
       return;
+    }
+
+    if (isSubmitting) {
+      return; // Prevent double submission
     }
 
     setIsSubmitting(true);

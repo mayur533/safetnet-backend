@@ -336,28 +336,81 @@ class OfficerLoginView(APIView):
     permission_classes = []
 
     def post(self, request):
-        from django.contrib.auth import authenticate
+        from django.contrib.auth import get_user_model
         from rest_framework_simplejwt.tokens import RefreshToken
 
         username = request.data.get('username')
+        email = request.data.get('email')  # Allow email as alternative identifier
         password = request.data.get('password')
-        if not username or not password:
-            return Response({'detail': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not password:
+            return Response({'detail': 'Password is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not username and not email:
+            return Response({'detail': 'Username or email is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = authenticate(request, username=username, password=password)
-        if not user:
+        # Authenticate against SecurityOfficer directly
+        try:
+            if username:
+                officer = SecurityOfficer.objects.get(username=username, is_active=True)
+            elif email:
+                officer = SecurityOfficer.objects.get(email=email, is_active=True)
+            else:
+                return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+        except SecurityOfficer.DoesNotExist:
             return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Ensure user is an officer
-        try:
-            SecurityOfficer.objects.get(email=user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Only security officers can log in here.'}, status=status.HTTP_403_FORBIDDEN)
+        # Check password
+        if not officer.password or not officer.check_password(password):
+            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Get or create User object for this officer (needed for JWT tokens)
+        # Use username if available, otherwise generate one from email or name
+        User = get_user_model()
+        user_username = officer.username
+        if not user_username:
+            # Generate username from email or name
+            if officer.email:
+                user_username = officer.email.split('@')[0]
+            else:
+                user_username = f'officer_{officer.id}'
+            # Ensure uniqueness
+            counter = 1
+            original_username = user_username
+            while User.objects.filter(username=user_username).exists():
+                user_username = f'{original_username}_{counter}'
+                counter += 1
+        
+        user, created = User.objects.get_or_create(
+            username=user_username,
+            defaults={
+                'email': officer.email or f'{user_username}@safetnet.com',
+                'first_name': officer.name.split()[0] if officer.name.split() else '',
+                'last_name': ' '.join(officer.name.split()[1:]) if len(officer.name.split()) > 1 else '',
+                'role': 'USER',  # Security officers use USER role
+                'organization': officer.organization,
+                'is_active': True,
+            }
+        )
+        
+        # Update user email if it changed
+        if officer.email and user.email != officer.email:
+            user.email = officer.email
+            user.save()
+
+        # Determine final username to return (officer's username or generated one)
+        final_username = officer.username or user_username
+        
         refresh = RefreshToken.for_user(user)
         return Response({
             'access': str(refresh.access_token),
-            'refresh': str(refresh)
+            'refresh': str(refresh),
+            'officer': {
+                'id': officer.id,
+                'name': officer.name,
+                'username': final_username,
+                'email': officer.email,
+            }
         })
 
 

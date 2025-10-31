@@ -87,7 +87,7 @@ export const authService = {
   },
 
   async register(data: RegisterData): Promise<AuthResponse> {
-    const { rememberMe = false, ...registerData } = data;
+    const { rememberMe: _rememberMe, ...registerData } = data;
     
     const response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
       method: 'POST',

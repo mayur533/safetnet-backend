@@ -28,23 +28,42 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class UserLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    username = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField()
     
     def validate(self, attrs):
         username = attrs.get('username')
+        email = attrs.get('email')
         password = attrs.get('password')
         
-        if username and password:
+        if not password:
+            raise serializers.ValidationError('Password is required.')
+        
+        if not username and not email:
+            raise serializers.ValidationError('Must include username or email.')
+        
+        # Try to authenticate with username or email
+        user = None
+        if username:
+            # Try username first
             user = authenticate(username=username, password=password)
-            if not user:
-                raise serializers.ValidationError('Invalid credentials.')
-            if not user.is_active:
-                raise serializers.ValidationError('User account is disabled.')
-            attrs['user'] = user
-            return attrs
-        else:
-            raise serializers.ValidationError('Must include username and password.')
+        elif email:
+            # Try email - need to find user by email first
+            try:
+                user_obj = User.objects.get(email=email, is_active=True)
+                user = authenticate(username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                user = None
+        
+        if not user:
+            raise serializers.ValidationError('Invalid credentials.')
+        
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled.')
+        
+        attrs['user'] = user
+        return attrs
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -173,11 +192,12 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
     assigned_geofence_name = serializers.CharField(source='assigned_geofence.name', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    # Password field is excluded from read serializer for security
     
     class Meta:
         model = SecurityOfficer
         fields = (
-            'id', 'name', 'contact', 'email', 'assigned_geofence', 
+            'id', 'username', 'name', 'contact', 'email', 'assigned_geofence', 
             'assigned_geofence_name', 'organization', 'organization_name',
             'is_active', 'created_by_username', 'created_at', 'updated_at'
         )
@@ -185,14 +205,27 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
 
 class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, min_length=6)
+    username = serializers.CharField(required=True, max_length=150)
+    
     class Meta:
         model = SecurityOfficer
-        fields = ('name', 'contact', 'email', 'assigned_geofence', 'is_active')
+        fields = ('username', 'name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
+    
+    def validate_username(self, value):
+        """Validate username is unique"""
+        if SecurityOfficer.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A security officer with this username already exists.")
+        return value
     
     def create(self, validated_data):
+        password = validated_data.pop('password')
         validated_data['created_by'] = self.context['request'].user
         validated_data['organization'] = self.context['request'].user.organization
-        return super().create(validated_data)
+        officer = SecurityOfficer.objects.create(**validated_data)
+        officer.set_password(password)
+        officer.save()
+        return officer
 
 
 class IncidentSerializer(serializers.ModelSerializer):

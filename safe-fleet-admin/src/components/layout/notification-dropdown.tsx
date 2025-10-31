@@ -164,7 +164,7 @@ export function NotificationDropdown({ onViewAll }: NotificationDropdownProps) {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
+      <DropdownMenuContent align="end" className="w-96">
         <div className="p-4 border-b flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-sm">Notifications</h3>

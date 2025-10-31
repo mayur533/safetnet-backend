@@ -49,6 +49,7 @@ export function EditUserModal({ isOpen, onClose, userId, onUserUpdated }: EditUs
       });
       setErrors({});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, isOpen]);
 
   const fetchUserData = async (id: number) => {

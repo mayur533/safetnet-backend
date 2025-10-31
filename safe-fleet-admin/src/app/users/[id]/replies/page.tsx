@@ -20,6 +20,7 @@ export default function UserRepliesPage() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const fetchData = async () => {

@@ -4,9 +4,12 @@ import { SecurityOfficer, Geofence } from '../types';
 import { Users, Plus, Edit, Trash2, Phone, Mail, MapPin } from 'lucide-react';
 
 interface OfficerFormData {
+  username: string;
   name: string;
   contact: string;
   email: string;
+  password: string;
+  confirmPassword: string;
   assigned_geofence: number | '';
   is_active: boolean;
 }
@@ -19,9 +22,12 @@ const Officers: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingOfficer, setEditingOfficer] = useState<SecurityOfficer | null>(null);
   const [formData, setFormData] = useState<OfficerFormData>({
+    username: '',
     name: '',
     contact: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     assigned_geofence: '',
     is_active: true
   });
@@ -48,10 +54,41 @@ const Officers: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const submitData = {
+    // Validate required fields for new officers
+    if (!editingOfficer) {
+      if (!formData.username || !formData.username.trim()) {
+        setError('Username is required');
+        return;
+      }
+      if (!formData.password) {
+        setError('Password is required');
+        return;
+      }
+      if (formData.password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+    }
+    
+    const submitData: any = {
       ...formData,
       assigned_geofence: formData.assigned_geofence || undefined
     };
+    
+    // Only include password and username when creating new officer
+    if (!editingOfficer) {
+      submitData.username = formData.username;
+      submitData.password = formData.password;
+    } else {
+      // Remove password fields when editing
+      delete submitData.password;
+      delete submitData.confirmPassword;
+      delete submitData.username; // Username cannot be changed
+    }
 
     try {
       if (editingOfficer) {
@@ -62,7 +99,7 @@ const Officers: React.FC = () => {
       
       setShowForm(false);
       setEditingOfficer(null);
-      setFormData({ name: '', contact: '', email: '', assigned_geofence: '', is_active: true });
+      setFormData({ username: '', name: '', contact: '', email: '', password: '', confirmPassword: '', assigned_geofence: '', is_active: true });
       fetchData();
     } catch (err: any) {
       setError(err.message || 'Failed to save officer');
@@ -83,9 +120,12 @@ const Officers: React.FC = () => {
   const startEditing = (officer: SecurityOfficer) => {
     setEditingOfficer(officer);
     setFormData({
+      username: (officer as any).username || '',
       name: officer.name,
       contact: officer.contact,
       email: officer.email || '',
+      password: '',
+      confirmPassword: '',
       assigned_geofence: officer.assigned_geofence || '',
       is_active: officer.is_active
     });
@@ -233,6 +273,37 @@ const Officers: React.FC = () => {
               </h3>
               
               <form onSubmit={handleSubmit} className="space-y-4">
+                {!editingOfficer && (
+                  <div>
+                    <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                      Username *
+                    </label>
+                    <input
+                      type="text"
+                      id="username"
+                      required={!editingOfficer}
+                      value={formData.username}
+                      onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                      placeholder="Enter unique username"
+                    />
+                  </div>
+                )}
+                {editingOfficer && (
+                  <div>
+                    <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                      Username
+                    </label>
+                    <input
+                      type="text"
+                      id="username"
+                      value={formData.username}
+                      disabled
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed sm:text-sm"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Username cannot be changed after creation</p>
+                  </div>
+                )}
                 <div>
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700">
                     Name *
@@ -275,6 +346,40 @@ const Officers: React.FC = () => {
                   />
                 </div>
 
+                {!editingOfficer && (
+                  <>
+                    <div>
+                      <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                        Password *
+                      </label>
+                      <input
+                        type="password"
+                        id="password"
+                        required={!editingOfficer}
+                        value={formData.password}
+                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Minimum 6 characters"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+                        Confirm Password *
+                      </label>
+                      <input
+                        type="password"
+                        id="confirmPassword"
+                        required={!editingOfficer}
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Re-enter password"
+                      />
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <label htmlFor="assigned_geofence" className="block text-sm font-medium text-gray-700">
                     Assigned Geofence
@@ -313,7 +418,7 @@ const Officers: React.FC = () => {
                     onClick={() => {
                       setShowForm(false);
                       setEditingOfficer(null);
-                      setFormData({ name: '', contact: '', email: '', assigned_geofence: '', is_active: true });
+                      setFormData({ username: '', name: '', contact: '', email: '', password: '', confirmPassword: '', assigned_geofence: '', is_active: true });
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                   >

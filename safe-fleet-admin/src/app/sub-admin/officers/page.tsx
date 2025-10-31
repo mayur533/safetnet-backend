@@ -19,6 +19,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { CardLoading, TableLoading } from '@/components/ui/content-loading';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { officersService, type SecurityOfficer } from '@/lib/services/officers';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
 import { useSearch } from '@/lib/contexts/search-context';
@@ -32,9 +42,11 @@ export default function SecurityOfficersPage() {
   const { searchQuery } = useSearch();
   const [officers, setOfficers] = useState<SecurityOfficer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOfficer, setEditingOfficer] = useState<SecurityOfficer | null>(null);
+  const [deleteOfficerId, setDeleteOfficerId] = useState<number | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showPerPageMenu, setShowPerPageMenu] = useState(false);
@@ -44,9 +56,11 @@ export default function SecurityOfficersPage() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
   const [formData, setFormData] = useState({
+    username: '',
     name: '',
     contact: '',
     email: '',
+    password: '',
     assigned_geofence: '',
   });
   const [geofences, setGeofences] = useState<Geofence[]>([]);
@@ -140,9 +154,11 @@ export default function SecurityOfficersPage() {
   const handleAddOfficer = () => {
     setEditingOfficer(null);
     setFormData({
+      username: '',
       name: '',
       contact: '',
       email: '',
+      password: '',
       assigned_geofence: '',
     });
     setSelectedGeofencePreview(null);
@@ -152,9 +168,11 @@ export default function SecurityOfficersPage() {
   const handleEditOfficer = (officer: SecurityOfficer) => {
     setEditingOfficer(officer);
     setFormData({
+      username: officer.username || '',
       name: officer.name,
       contact: officer.contact,
       email: officer.email || '',
+      password: '', // Don't populate password when editing
       assigned_geofence: officer.assigned_geofence?.toString() || '',
     });
     // Set the preview for the assigned geofence
@@ -170,16 +188,22 @@ export default function SecurityOfficersPage() {
     setSelectedGeofencePreview(geofence || null);
   };
 
-  const handleDeleteOfficer = async (id: number) => {
-    if (confirm('Are you sure you want to delete this officer?')) {
-      try {
-        await officersService.delete(id);
-        toast.success('Officer deleted successfully');
-        fetchOfficers(); // Refresh list
-      } catch (error) {
-        console.error('Delete error:', error);
-        toast.error('Failed to delete officer');
-      }
+  const handleDeleteOfficer = (id: number) => {
+    setDeleteOfficerId(id);
+  };
+
+  const confirmDeleteOfficer = async () => {
+    if (!deleteOfficerId) return;
+    
+    try {
+      await officersService.delete(deleteOfficerId);
+      toast.success('Officer deleted successfully');
+      setDeleteOfficerId(null);
+      fetchOfficers(); // Refresh list
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete officer');
+      setDeleteOfficerId(null);
     }
   };
 
@@ -205,10 +229,22 @@ export default function SecurityOfficersPage() {
       return;
     }
 
+    if (!editingOfficer && !formData.username) {
+      toast.error('Username is required');
+      return;
+    }
+
+    if (isSubmitting) {
+      return; // Prevent double submission
+    }
+
+    setIsSubmitting(true);
+
     try {
       if (editingOfficer) {
         // Update existing officer
         await officersService.update(editingOfficer.id, {
+          username: formData.username || undefined,
           name: formData.name,
           contact: formData.contact,
           email: formData.email || undefined,
@@ -216,12 +252,24 @@ export default function SecurityOfficersPage() {
         });
         toast.success('Officer updated successfully');
       } else {
+        // Validate required fields for new officers
+        if (!formData.username || !formData.username.trim()) {
+          toast.error('Username is required');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!formData.password || formData.password.length < 6) {
+          toast.error('Password is required and must be at least 6 characters');
+          setIsSubmitting(false);
+          return;
+        }
+        
         // Create new officer
         await officersService.create({
-          officer_id: `OFF-${Date.now()}`, // Auto-generate officer ID
+          username: formData.username,
           name: formData.name,
           contact: formData.contact,
-          password: 'officer123', // Default password
+          password: formData.password,
           email: formData.email || undefined,
           assigned_geofence: formData.assigned_geofence ? parseInt(formData.assigned_geofence) : undefined,
         });
@@ -234,6 +282,8 @@ export default function SecurityOfficersPage() {
       console.error('Submit error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save officer';
       toast.error(errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -627,7 +677,7 @@ export default function SecurityOfficersPage() {
               <TableHeader>
                 <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
                   <TableHead className="text-muted-foreground text-sm font-semibold">Officer Name</TableHead>
-                  <TableHead className="text-muted-foreground text-sm font-semibold">ID</TableHead>
+                  <TableHead className="text-muted-foreground text-sm font-semibold">Username</TableHead>
                   <TableHead className="text-muted-foreground text-sm font-semibold">Assigned Geofence</TableHead>
                   <TableHead className="text-muted-foreground text-sm font-semibold">Contact</TableHead>
                   <TableHead className="text-muted-foreground text-sm font-semibold">Status</TableHead>
@@ -637,7 +687,7 @@ export default function SecurityOfficersPage() {
               <TableBody>
                 {paginatedOfficers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12">
+                  <TableCell colSpan={7} className="text-center py-12">
                     <span className="material-icons text-6xl text-muted-foreground mb-2">
                       search_off
                     </span>
@@ -661,7 +711,10 @@ export default function SecurityOfficersPage() {
                       </div>
                     </TableCell>
                     <TableCell className="py-4 px-4">
-                      <span className="text-sm font-mono">SO-{officer.id.toString().padStart(3, '0')}</span>
+                      <div className="text-sm font-medium">{officer.username || `SO-${officer.id.toString().padStart(3, '0')}`}</div>
+                      {officer.username && (
+                        <div className="text-xs text-muted-foreground">ID: {officer.id}</div>
+                      )}
                     </TableCell>
                     <TableCell className="py-4 px-4">
                       <div className="flex items-center space-x-2">
@@ -751,7 +804,23 @@ export default function SecurityOfficersPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Officer Name</label>
+                  <label className="block text-sm font-medium mb-1">Username *</label>
+                  <input
+                    type="text"
+                    required={!editingOfficer}
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Enter unique username"
+                    disabled={!!editingOfficer}
+                  />
+                  {editingOfficer && (
+                    <p className="text-xs text-muted-foreground mt-1">Username cannot be changed after creation</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Officer Name *</label>
                   <input
                     type="text"
                     required
@@ -785,6 +854,21 @@ export default function SecurityOfficersPage() {
                     placeholder="officer@security.com"
                   />
                 </div>
+
+                {!editingOfficer && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password *</label>
+                    <input
+                      type="password"
+                      required={!editingOfficer}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Minimum 6 characters"
+                      minLength={6}
+                    />
+                  </div>
+                )}
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium mb-1">Assigned Geofence</label>
@@ -834,21 +918,62 @@ export default function SecurityOfficersPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border rounded-lg hover:bg-muted/50 transition-colors"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border rounded-lg hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {editingOfficer ? 'Update Officer' : 'Add Officer'}
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-icons animate-spin text-lg">refresh</span>
+                      {editingOfficer ? 'Updating...' : 'Creating...'}
+                    </>
+                  ) : (
+                    editingOfficer ? 'Update Officer' : 'Add Officer'
+                  )}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteOfficerId} onOpenChange={() => setDeleteOfficerId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <span className="material-icons text-red-600">warning</span>
+              Delete Security Officer
+            </AlertDialogTitle>
+            <AlertDialogDescription className="pt-2">
+              Are you sure you want to delete this security officer? This action cannot be undone and will permanently remove the officer and all associated data.
+              {deleteOfficerId && (
+                <span className="block mt-2 font-semibold text-foreground">
+                  Officer: {officers.find(o => o.id === deleteOfficerId)?.name || 'Unknown'}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteOfficerId(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteOfficer}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <span className="material-icons text-sm mr-2">delete</span>
+              Delete Officer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

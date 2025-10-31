@@ -111,6 +111,10 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
       return;
     }
 
+    if (isSubmitting) {
+      return; // Prevent double submission
+    }
+
     setIsSubmitting(true);
 
     try {
