@@ -74,7 +74,9 @@ def logout(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
-    serializer = UserSerializer(request.user)
+    # Use select_related to optimize organization query
+    user = User.objects.select_related('organization').get(pk=request.user.pk)
+    serializer = UserSerializer(user)
     return Response(serializer.data)
 
 
@@ -411,37 +413,40 @@ def dashboard_kpis(request):
     Get KPIs for dashboard.
     """
     from django.utils import timezone
-    from datetime import timedelta
     
     today = timezone.now().date()
     
-    # Calculate KPIs
-    active_geofences = Geofence.objects.filter(active=True).count()
-    alerts_today = Alert.objects.filter(created_at__date=today).count()
-    active_sub_admins = User.objects.filter(role='SUB_ADMIN', is_active=True).count()
-    total_users = User.objects.count()
-    critical_alerts = Alert.objects.filter(severity='CRITICAL', is_resolved=False).count()
-    
     # Organization-specific filtering for SUB_ADMIN
     if request.user.role == 'SUB_ADMIN' and request.user.organization:
+        organization = request.user.organization
         active_geofences = Geofence.objects.filter(
             active=True, 
-            organization=request.user.organization
+            organization=organization
         ).count()
         alerts_today = Alert.objects.filter(
             created_at__date=today,
-            geofence__organization=request.user.organization
+            geofence__organization=organization
         ).count()
         active_sub_admins = User.objects.filter(
             role='SUB_ADMIN', 
             is_active=True,
-            organization=request.user.organization
+            organization=organization
         ).count()
-        total_users = User.objects.filter(organization=request.user.organization).count()
+        total_users = User.objects.filter(organization=organization).count()
         critical_alerts = Alert.objects.filter(
             severity='CRITICAL', 
             is_resolved=False,
-            geofence__organization=request.user.organization
+            geofence__organization=organization
+        ).count()
+    else:
+        # For SUPER_ADMIN - count queries are already optimized by Django
+        active_geofences = Geofence.objects.filter(active=True).count()
+        alerts_today = Alert.objects.filter(created_at__date=today).count()
+        active_sub_admins = User.objects.filter(role='SUB_ADMIN', is_active=True).count()
+        total_users = User.objects.count()
+        critical_alerts = Alert.objects.filter(
+            severity='CRITICAL', 
+            is_resolved=False
         ).count()
     
     kpis = {
