@@ -28,23 +28,42 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class UserLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    username = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField()
     
     def validate(self, attrs):
         username = attrs.get('username')
+        email = attrs.get('email')
         password = attrs.get('password')
         
-        if username and password:
+        if not password:
+            raise serializers.ValidationError('Password is required.')
+        
+        if not username and not email:
+            raise serializers.ValidationError('Must include username or email.')
+        
+        # Try to authenticate with username or email
+        user = None
+        if username:
+            # Try username first
             user = authenticate(username=username, password=password)
-            if not user:
-                raise serializers.ValidationError('Invalid credentials.')
-            if not user.is_active:
-                raise serializers.ValidationError('User account is disabled.')
-            attrs['user'] = user
-            return attrs
-        else:
-            raise serializers.ValidationError('Must include username and password.')
+        elif email:
+            # Try email - need to find user by email first
+            try:
+                user_obj = User.objects.get(email=email, is_active=True)
+                user = authenticate(username=user_obj.username, password=password)
+            except User.DoesNotExist:
+                user = None
+        
+        if not user:
+            raise serializers.ValidationError('Invalid credentials.')
+        
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled.')
+        
+        attrs['user'] = user
+        return attrs
 
 
 class UserSerializer(serializers.ModelSerializer):

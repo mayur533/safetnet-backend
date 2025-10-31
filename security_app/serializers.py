@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from security.models import Case as LegacyCase  # legacy Case remains
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification  # new models for security_app
 
 
