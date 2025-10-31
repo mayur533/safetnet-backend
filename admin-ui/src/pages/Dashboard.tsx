@@ -57,6 +57,7 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    // Load KPIs asynchronously - don't block dashboard render
     fetchKPIs();
   }, []);
 
@@ -79,11 +80,15 @@ const Dashboard: React.FC = () => {
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Grid container spacing={3}>
           {/* KPIs Section */}
-          {kpis && (
-            <Grid item xs={12}>
-              <Typography variant="h5" gutterBottom>
-                Key Performance Indicators
-              </Typography>
+          <Grid item xs={12}>
+            <Typography variant="h5" gutterBottom>
+              Key Performance Indicators
+            </Typography>
+            {kpisLoading ? (
+              <Box display="flex" justifyContent="center" alignItems="center" minHeight={200}>
+                <CircularProgress />
+              </Box>
+            ) : kpis ? (
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6} md={2}>
                   <Card>
@@ -158,8 +163,8 @@ const Dashboard: React.FC = () => {
                   </Card>
                 </Grid>
               </Grid>
-            </Grid>
-          )}
+            ) : null}
+          </Grid>
 
           <Grid item xs={12}>
             <Card>

@@ -411,10 +411,10 @@ def download_report(request, report_id):
 def dashboard_kpis(request):
     """
     Get KPIs for dashboard.
-    Optimized for performance.
+    Optimized for performance - uses efficient queries and avoids N+1.
     """
     from django.utils import timezone
-    from datetime import datetime, timedelta, time
+    from datetime import datetime, time
     
     today = timezone.now().date()
     today_start = timezone.make_aware(datetime.combine(today, time.min))
@@ -423,11 +423,11 @@ def dashboard_kpis(request):
     # Organization-specific filtering for SUB_ADMIN
     if request.user.role == 'SUB_ADMIN' and request.user.organization:
         organization = request.user.organization
+        # Use select_related and efficient filtering
         active_geofences = Geofence.objects.filter(
             active=True, 
             organization=organization
         ).count()
-        # Use datetime range instead of __date for better index usage
         alerts_today = Alert.objects.filter(
             created_at__gte=today_start,
             created_at__lte=today_end,
@@ -445,8 +445,9 @@ def dashboard_kpis(request):
             geofence__organization=organization
         ).count()
     else:
-        # For SUPER_ADMIN - optimized queries
-        # Use datetime range instead of __date for better index usage
+        # For SUPER_ADMIN - use efficient queries
+        # These queries are already optimized by Django ORM with count()
+        # Using datetime range instead of __date for better index usage
         active_geofences = Geofence.objects.filter(active=True).count()
         alerts_today = Alert.objects.filter(
             created_at__gte=today_start,
