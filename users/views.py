@@ -411,10 +411,14 @@ def download_report(request, report_id):
 def dashboard_kpis(request):
     """
     Get KPIs for dashboard.
+    Optimized for performance.
     """
     from django.utils import timezone
+    from datetime import datetime, timedelta, time
     
     today = timezone.now().date()
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
     
     # Organization-specific filtering for SUB_ADMIN
     if request.user.role == 'SUB_ADMIN' and request.user.organization:
@@ -423,8 +427,10 @@ def dashboard_kpis(request):
             active=True, 
             organization=organization
         ).count()
+        # Use datetime range instead of __date for better index usage
         alerts_today = Alert.objects.filter(
-            created_at__date=today,
+            created_at__gte=today_start,
+            created_at__lte=today_end,
             geofence__organization=organization
         ).count()
         active_sub_admins = User.objects.filter(
@@ -439,10 +445,17 @@ def dashboard_kpis(request):
             geofence__organization=organization
         ).count()
     else:
-        # For SUPER_ADMIN - count queries are already optimized by Django
+        # For SUPER_ADMIN - optimized queries
+        # Use datetime range instead of __date for better index usage
         active_geofences = Geofence.objects.filter(active=True).count()
-        alerts_today = Alert.objects.filter(created_at__date=today).count()
-        active_sub_admins = User.objects.filter(role='SUB_ADMIN', is_active=True).count()
+        alerts_today = Alert.objects.filter(
+            created_at__gte=today_start,
+            created_at__lte=today_end
+        ).count()
+        active_sub_admins = User.objects.filter(
+            role='SUB_ADMIN', 
+            is_active=True
+        ).count()
         total_users = User.objects.count()
         critical_alerts = Alert.objects.filter(
             severity='CRITICAL', 
