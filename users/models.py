@@ -183,6 +183,7 @@ class Alert(models.Model):
 
 
 class SecurityOfficer(models.Model):
+    username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text="Unique username for security officer")
     name = models.CharField(max_length=100)
     contact = models.CharField(max_length=20, help_text="Phone number or contact info")
     email = models.EmailField(blank=True, null=True)

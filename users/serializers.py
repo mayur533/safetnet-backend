@@ -178,7 +178,7 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
     class Meta:
         model = SecurityOfficer
         fields = (
-            'id', 'name', 'contact', 'email', 'assigned_geofence', 
+            'id', 'username', 'name', 'contact', 'email', 'assigned_geofence', 
             'assigned_geofence_name', 'organization', 'organization_name',
             'is_active', 'created_by_username', 'created_at', 'updated_at'
         )
@@ -187,10 +187,17 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
 class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=6)
+    username = serializers.CharField(required=True, max_length=150)
     
     class Meta:
         model = SecurityOfficer
-        fields = ('name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
+        fields = ('username', 'name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
+    
+    def validate_username(self, value):
+        """Validate username is unique"""
+        if SecurityOfficer.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A security officer with this username already exists.")
+        return value
     
     def create(self, validated_data):
         password = validated_data.pop('password')
