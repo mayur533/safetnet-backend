@@ -7,6 +7,8 @@ interface OfficerFormData {
   name: string;
   contact: string;
   email: string;
+  password: string;
+  confirmPassword: string;
   assigned_geofence: number | '';
   is_active: boolean;
 }
@@ -22,6 +24,8 @@ const Officers: React.FC = () => {
     name: '',
     contact: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     assigned_geofence: '',
     is_active: true
   });
@@ -48,10 +52,35 @@ const Officers: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const submitData = {
+    // Validate password for new officers
+    if (!editingOfficer) {
+      if (!formData.password) {
+        setError('Password is required');
+        return;
+      }
+      if (formData.password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+    }
+    
+    const submitData: any = {
       ...formData,
       assigned_geofence: formData.assigned_geofence || undefined
     };
+    
+    // Only include password when creating new officer
+    if (!editingOfficer) {
+      submitData.password = formData.password;
+    } else {
+      // Remove password fields when editing
+      delete submitData.password;
+      delete submitData.confirmPassword;
+    }
 
     try {
       if (editingOfficer) {
@@ -62,7 +91,7 @@ const Officers: React.FC = () => {
       
       setShowForm(false);
       setEditingOfficer(null);
-      setFormData({ name: '', contact: '', email: '', assigned_geofence: '', is_active: true });
+      setFormData({ name: '', contact: '', email: '', password: '', confirmPassword: '', assigned_geofence: '', is_active: true });
       fetchData();
     } catch (err: any) {
       setError(err.message || 'Failed to save officer');
@@ -86,6 +115,8 @@ const Officers: React.FC = () => {
       name: officer.name,
       contact: officer.contact,
       email: officer.email || '',
+      password: '',
+      confirmPassword: '',
       assigned_geofence: officer.assigned_geofence || '',
       is_active: officer.is_active
     });
@@ -275,6 +306,40 @@ const Officers: React.FC = () => {
                   />
                 </div>
 
+                {!editingOfficer && (
+                  <>
+                    <div>
+                      <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                        Password *
+                      </label>
+                      <input
+                        type="password"
+                        id="password"
+                        required={!editingOfficer}
+                        value={formData.password}
+                        onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Minimum 6 characters"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+                        Confirm Password *
+                      </label>
+                      <input
+                        type="password"
+                        id="confirmPassword"
+                        required={!editingOfficer}
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                        placeholder="Re-enter password"
+                      />
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <label htmlFor="assigned_geofence" className="block text-sm font-medium text-gray-700">
                     Assigned Geofence
@@ -313,7 +378,7 @@ const Officers: React.FC = () => {
                     onClick={() => {
                       setShowForm(false);
                       setEditingOfficer(null);
-                      setFormData({ name: '', contact: '', email: '', assigned_geofence: '', is_active: true });
+                      setFormData({ name: '', contact: '', email: '', password: '', confirmPassword: '', assigned_geofence: '', is_active: true });
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                   >

@@ -173,6 +173,7 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
     assigned_geofence_name = serializers.CharField(source='assigned_geofence.name', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+    # Password field is excluded from read serializer for security
     
     class Meta:
         model = SecurityOfficer
@@ -185,14 +186,20 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
 
 class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, min_length=6)
+    
     class Meta:
         model = SecurityOfficer
-        fields = ('name', 'contact', 'email', 'assigned_geofence', 'is_active')
+        fields = ('name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
     
     def create(self, validated_data):
+        password = validated_data.pop('password')
         validated_data['created_by'] = self.context['request'].user
         validated_data['organization'] = self.context['request'].user.organization
-        return super().create(validated_data)
+        officer = SecurityOfficer.objects.create(**validated_data)
+        officer.set_password(password)
+        officer.save()
+        return officer
 
 
 class IncidentSerializer(serializers.ModelSerializer):
