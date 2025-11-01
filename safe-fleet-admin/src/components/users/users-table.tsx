@@ -240,7 +240,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
             <div>
               <p className="text-sm opacity-90">Active Users</p>
               <p className="text-2xl font-bold mt-1">
-                {users.filter((u) => u.status === 'active').length}
+                {users.filter((u) => u.is_active === true).length}
               </p>
             </div>
             <span className="material-icons text-4xl opacity-80">check_circle</span>
@@ -249,23 +249,23 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
         <div className="bg-gradient-to-br from-blue-500 to-cyan-600 p-4 rounded-xl text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm opacity-90">Security Officers</p>
+              <p className="text-sm opacity-90">Inactive Users</p>
               <p className="text-2xl font-bold mt-1">
-                {users.filter((u) => u.role === 'Security').length}
+                {users.filter((u) => u.is_active === false).length}
               </p>
             </div>
-            <span className="material-icons text-4xl opacity-80">badge</span>
+            <span className="material-icons text-4xl opacity-80">block</span>
           </div>
         </div>
         <div className="bg-gradient-to-br from-orange-500 to-red-600 p-4 rounded-xl text-white shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm opacity-90">Residents</p>
+              <p className="text-sm opacity-90">Organizations</p>
               <p className="text-2xl font-bold mt-1">
-                {users.filter((u) => u.role === 'Resident').length}
+                {new Set(users.map((u) => u.organization?.id).filter(Boolean)).size}
               </p>
             </div>
-            <span className="material-icons text-4xl opacity-80">home</span>
+            <span className="material-icons text-4xl opacity-80">business</span>
           </div>
         </div>
       </div>

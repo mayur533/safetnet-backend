@@ -245,7 +245,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
             <div>
               <p className="text-sm opacity-90">Active</p>
               <p className="text-2xl font-bold mt-1">
-                {subAdmins.filter((a) => a.status === 'active').length}
+                {subAdmins.filter((a) => a.is_active === true).length}
               </p>
             </div>
             <span className="material-icons text-4xl opacity-80">check_circle</span>
@@ -256,7 +256,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
             <div>
               <p className="text-sm opacity-90">Inactive</p>
               <p className="text-2xl font-bold mt-1">
-                {subAdmins.filter((a) => a.status === 'inactive').length}
+                {subAdmins.filter((a) => a.is_active === false).length}
               </p>
             </div>
             <span className="material-icons text-4xl opacity-80">cancel</span>
