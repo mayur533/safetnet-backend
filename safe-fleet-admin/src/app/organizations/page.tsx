@@ -261,9 +261,14 @@ export default function OrganizationsPage() {
                 <p className="text-sm text-green-100">Active This Month</p>
                 <h3 className="text-2xl font-bold mt-1">
                   {organizations.filter(org => {
-                    const createdDate = new Date(org.created_at);
-                    const now = new Date();
-                    return createdDate.getMonth() === now.getMonth() && createdDate.getFullYear() === now.getFullYear();
+                    if (!org.created_at) return false;
+                    try {
+                      const createdDate = new Date(org.created_at);
+                      const now = new Date();
+                      return createdDate.getMonth() === now.getMonth() && createdDate.getFullYear() === now.getFullYear();
+                    } catch {
+                      return false;
+                    }
                   }).length}
                 </h3>
               </div>
@@ -279,10 +284,15 @@ export default function OrganizationsPage() {
                 <p className="text-sm text-purple-100">Recently Added</p>
                 <h3 className="text-2xl font-bold mt-1">
                   {organizations.filter(org => {
-                    const createdDate = new Date(org.created_at);
-                    const weekAgo = new Date();
-                    weekAgo.setDate(weekAgo.getDate() - 7);
-                    return createdDate >= weekAgo;
+                    if (!org.created_at) return false;
+                    try {
+                      const createdDate = new Date(org.created_at);
+                      const weekAgo = new Date();
+                      weekAgo.setDate(weekAgo.getDate() - 7);
+                      return createdDate >= weekAgo;
+                    } catch {
+                      return false;
+                    }
                   }).length}
                 </h3>
               </div>
