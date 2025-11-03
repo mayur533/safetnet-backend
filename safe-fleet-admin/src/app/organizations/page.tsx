@@ -364,69 +364,6 @@ export default function OrganizationsPage() {
                           {count} items
                         </button>
                       ))}
-
-                      <div className="border-t border-border my-2"></div>
-
-                      <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                        Navigation
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (currentPage > 1) {
-                            setCurrentPage(currentPage - 1);
-                            setShowPerPageMenu(false);
-                          }
-                        }}
-                        disabled={currentPage === 1}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                          currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                        }`}
-                      >
-                        <span className="material-icons text-sm">chevron_left</span>
-                        Previous Page
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (currentPage < totalPages) {
-                            setCurrentPage(currentPage + 1);
-                            setShowPerPageMenu(false);
-                          }
-                        }}
-                        disabled={currentPage === totalPages}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                          currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                        }`}
-                      >
-                        <span className="material-icons text-sm">chevron_right</span>
-                        Next Page
-                      </button>
-
-                      <div className="border-t border-border my-2"></div>
-
-                      <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                        Go to page
-                      </div>
-                      {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map((page) => (
-                        <button
-                          key={page}
-                          onClick={() => {
-                            setCurrentPage(page);
-                            setShowPerPageMenu(false);
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                            currentPage === page
-                              ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                              : 'hover:bg-muted'
-                          }`}
-                        >
-                          Page {page}
-                        </button>
-                      ))}
-                      {totalPages > 10 && (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">
-                          Showing first 10 pages of {totalPages}
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -496,65 +433,45 @@ export default function OrganizationsPage() {
                       </div>
                       <button
                         onClick={() => {
-                          setSortBy('name');
+                          if (sortBy === 'name') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortBy('name');
+                            setSortOrder('asc');
+                          }
                           setCurrentPage(1);
-                          setShowSortMenu(false);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                           sortBy === 'name'
                             ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                             : 'hover:bg-muted'
                         }`}
                       >
-                        Name
+                        <span>Name</span>
+                        {sortBy === 'name' && (
+                          <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                        )}
                       </button>
                       <button
                         onClick={() => {
-                          setSortBy('date');
+                          if (sortBy === 'date') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortBy('date');
+                            setSortOrder('desc');
+                          }
                           setCurrentPage(1);
-                          setShowSortMenu(false);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                           sortBy === 'date'
                             ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                             : 'hover:bg-muted'
                         }`}
                       >
-                        Date Created
-                      </button>
-
-                      <div className="border-t border-border my-2"></div>
-
-                      <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                        Order
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSortOrder('asc');
-                          setCurrentPage(1);
-                          setShowSortMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                          sortOrder === 'asc'
-                            ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                            : 'hover:bg-muted'
-                        }`}
-                      >
-                        Ascending (A-Z)
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSortOrder('desc');
-                          setCurrentPage(1);
-                          setShowSortMenu(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                          sortOrder === 'desc'
-                            ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                            : 'hover:bg-muted'
-                        }`}
-                      >
-                        Descending (Z-A)
+                        <span>Date Created</span>
+                        {sortBy === 'date' && (
+                          <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -638,14 +555,36 @@ export default function OrganizationsPage() {
               <p>
                 Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, sortedOrgs.length)} of {sortedOrgs.length} organizations
                 {filterStatus !== 'all' && (
-                  <span className="ml-2 text-indigo-600 font-medium">
-                    (Filtered: {filterStatus === 'recent' ? 'recent' : 'older'})
-                  </span>
+                  <span className="ml-2 text-indigo-600 font-medium">(Filtered)</span>
                 )}
               </p>
-              <p>
-                Page {currentPage} of {totalPages || 1} • Sorted by: {sortBy === 'date' ? 'Date Created' : 'Name'} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
-              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (currentPage > 1) {
+                      setCurrentPage(currentPage - 1);
+                    }
+                  }}
+                  disabled={currentPage === 1}
+                  className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+                >
+                  <span className="material-icons text-lg">chevron_left</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (currentPage < totalPages) {
+                      setCurrentPage(currentPage + 1);
+                    }
+                  }}
+                  disabled={currentPage === totalPages}
+                  className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+                >
+                  <span className="material-icons text-lg">chevron_right</span>
+                </button>
+                <p>
+                  Page {currentPage} of {totalPages || 1} • Sorted by: {sortBy === 'date' ? 'Date Created' : 'Name'} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
+                </p>
+              </div>
             </div>
           </>
         </div>

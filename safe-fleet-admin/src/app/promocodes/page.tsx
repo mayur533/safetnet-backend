@@ -110,10 +110,18 @@ export default function PromocodesPage() {
     const aValue = a[sortField];
     const bValue = b[sortField];
 
+    // Handle date sorting
+    if (sortField === 'created_at' || sortField === 'expiry_date') {
+      const aDate = new Date(aValue as string).getTime();
+      const bDate = new Date(bValue as string).getTime();
+      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
+    }
+
+    // Handle string/number sorting
     if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+      return String(aValue).localeCompare(String(bValue));
     } else {
-      return aValue < bValue ? 1 : -1;
+      return String(bValue).localeCompare(String(aValue));
     }
   });
 
@@ -400,69 +408,6 @@ export default function PromocodesPage() {
                       {count} items
                     </button>
                   ))}
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Navigation
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (currentPage > 1) {
-                        setCurrentPage(currentPage - 1);
-                        setShowPerPageMenu(false);
-                      }
-                    }}
-                    disabled={currentPage === 1}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                      currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                    }`}
-                  >
-                    <span className="material-icons text-sm">chevron_left</span>
-                    Previous Page
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (currentPage < totalPages) {
-                        setCurrentPage(currentPage + 1);
-                        setShowPerPageMenu(false);
-                      }
-                    }}
-                    disabled={currentPage === totalPages}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                      currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                    }`}
-                  >
-                    <span className="material-icons text-sm">chevron_right</span>
-                    Next Page
-                  </button>
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Go to page
-                  </div>
-                  {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => {
-                        setCurrentPage(page);
-                        setShowPerPageMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                        currentPage === page
-                          ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                          : 'hover:bg-muted'
-                      }`}
-                    >
-                      Page {page}
-                    </button>
-                  ))}
-                  {totalPages > 10 && (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">
-                      Showing first 10 pages of {totalPages}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -532,107 +477,45 @@ export default function PromocodesPage() {
                   </div>
                   <button
                     onClick={() => {
-                      setSortField('code');
+                      if (sortField === 'created_at') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('created_at');
+                        setSortOrder('desc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'code'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Code
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('discount_percentage');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'discount_percentage'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Discount Value
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('expiry_date');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'expiry_date'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Expiry Date
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('expiry_date');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'expiry_date'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Expiry Date
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('created_at');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                       sortField === 'created_at'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Date Created
+                    <span>Date Created</span>
+                    {sortField === 'created_at' && (
+                      <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                    )}
                   </button>
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Order
-                  </div>
                   <button
                     onClick={() => {
-                      setSortOrder('asc');
+                      if (sortField === 'code') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('code');
+                        setSortOrder('asc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'asc'
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'code'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Ascending (A-Z)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortOrder('desc');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'desc'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Descending (Z-A)
+                    <span>Code</span>
+                    {sortField === 'code' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -756,14 +639,36 @@ export default function PromocodesPage() {
           <p>
             Showing {startIndex + 1}-{Math.min(endIndex, filteredPromocodes.length)} of {filteredPromocodes.length} promocodes
             {filterStatus !== 'all' && (
-              <span className="ml-2 text-indigo-600 font-medium">
-                (Filtered: {filterStatus})
-              </span>
+              <span className="ml-2 text-indigo-600 font-medium">(Filtered)</span>
             )}
           </p>
-          <p>
-            Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
-          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  setCurrentPage(currentPage - 1);
+                }
+              }}
+              disabled={currentPage === 1}
+              className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_left</span>
+            </button>
+            <button
+              onClick={() => {
+                if (currentPage < totalPages) {
+                  setCurrentPage(currentPage + 1);
+                }
+              }}
+              disabled={currentPage === totalPages}
+              className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_right</span>
+            </button>
+            <p>
+              Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
+            </p>
+          </div>
         </div>
       </div>
 

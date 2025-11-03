@@ -154,10 +154,18 @@ export default function DiscountEmailsPage() {
     if (aValue === undefined) return 1;
     if (bValue === undefined) return -1;
 
+    // Handle date sorting
+    if (sortField === 'created_at') {
+      const aDate = new Date(aValue as string).getTime();
+      const bDate = new Date(bValue as string).getTime();
+      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
+    }
+
+    // Handle string/number sorting
     if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+      return String(aValue).localeCompare(String(bValue));
     } else {
-      return aValue < bValue ? 1 : -1;
+      return String(bValue).localeCompare(String(aValue));
     }
   });
 
@@ -363,60 +371,47 @@ export default function DiscountEmailsPage() {
                   <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
                     Sort By
                   </div>
-                  {[
-                    { value: 'created_at' as SortField, label: 'Date' },
-                    { value: 'email' as SortField, label: 'Email' },
-                    { value: 'status' as SortField, label: 'Status' }
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => {
-                        setSortField(option.value);
-                        setCurrentPage(1);
-                        setShowSortMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                        sortField === option.value
-                          ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                          : 'hover:bg-muted'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Order
-                  </div>
                   <button
                     onClick={() => {
-                      setSortOrder('asc');
+                      if (sortField === 'created_at') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('created_at');
+                        setSortOrder('desc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'asc'
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'created_at'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Ascending
+                    <span>Date</span>
+                    {sortField === 'created_at' && (
+                      <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                    )}
                   </button>
                   <button
                     onClick={() => {
-                      setSortOrder('desc');
+                      if (sortField === 'email') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('email');
+                        setSortOrder('asc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'desc'
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'email'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Descending
+                    <span>Email</span>
+                    {sortField === 'email' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -509,14 +504,36 @@ export default function DiscountEmailsPage() {
           <p>
             Showing {startIndex + 1}-{Math.min(endIndex, filteredEmails.length)} of {filteredEmails.length} emails
             {filterStatus !== 'all' && (
-              <span className="ml-2 text-indigo-600 font-medium">
-                (Filtered: {filterStatus})
-              </span>
+              <span className="ml-2 text-indigo-600 font-medium">(Filtered)</span>
             )}
           </p>
-          <p>
-            Page {currentPage} of {totalPages}
-          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  setCurrentPage(currentPage - 1);
+                }
+              }}
+              disabled={currentPage === 1}
+              className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_left</span>
+            </button>
+            <button
+              onClick={() => {
+                if (currentPage < totalPages) {
+                  setCurrentPage(currentPage + 1);
+                }
+              }}
+              disabled={currentPage === totalPages}
+              className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_right</span>
+            </button>
+            <p>
+              Page {currentPage} of {totalPages}
+            </p>
+          </div>
         </div>
       </div>
 
