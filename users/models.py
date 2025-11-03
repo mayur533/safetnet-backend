@@ -3,6 +3,9 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Organization(models.Model):
@@ -485,6 +488,49 @@ class DiscountEmail(models.Model):
         """Mark discount email as sent"""
         self.status = 'SENT'
         self.save()
+    
+    def send_email(self):
+        """Send discount email to user"""
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.template.loader import render_to_string
+        
+        try:
+            subject = f"Special Discount Code: {self.discount_code.code}"
+            
+            # Create email message with discount details
+            message = f"""
+Hello,
+
+We're excited to offer you an exclusive discount!
+
+Use code: {self.discount_code.code}
+Discount: {self.discount_code.discount_percentage}% OFF
+
+This discount code expires on: {self.discount_code.expiry_date.strftime('%B %d, %Y at %I:%M %p')}
+
+Thank you for being part of SafeTNet!
+
+Best regards,
+The SafeTNet Team
+            """
+            
+            # Send email
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[self.email],
+                fail_silently=False,
+            )
+            
+            # Mark as sent
+            self.mark_as_sent()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send discount email to {self.email}: {str(e)}")
+            return False
 
 
 class UserReply(models.Model):

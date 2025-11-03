@@ -34,6 +34,7 @@ urlpatterns = [
     path('logout/', views.logout, name='logout'),
     path('refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('profile/', views.user_profile, name='user_profile'),
+    path('profile/change-password/', views.change_password, name='change_password'),
     path('test-auth/', views.test_auth, name='test_auth'),
     path('dashboard-kpis/', views.dashboard_kpis, name='dashboard_kpis'),
     path('reports/generate/', views.generate_report, name='generate_report'),
