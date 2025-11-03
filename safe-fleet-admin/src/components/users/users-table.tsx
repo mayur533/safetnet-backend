@@ -345,59 +345,20 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
           {showFilterMenu && (
             <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-10">
               <div className="p-2">
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Filter by Role
-                </div>
                 <button
                   onClick={() => {
+                    setFilterStatus('all');
                     setFilterRole('all');
                     setCurrentPage(1);
                     setShowFilterMenu(false);
                   }}
                   className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    filterRole === 'all'
+                    filterStatus === 'all' && filterRole === 'all'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  All Roles
-                </button>
-                {['Admin', 'Sub-Admin', 'Security', 'Resident'].map((role) => (
-                  <button
-                    key={role}
-                    onClick={() => {
-                      setFilterRole(role as FilterRole);
-                      setCurrentPage(1);
-                      setShowFilterMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      filterRole === role
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    {role}
-                  </button>
-                ))}
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Filter by Status
-                </div>
-                <button
-                  onClick={() => {
-                    setFilterStatus('all');
-                    setCurrentPage(1);
-                    setShowFilterMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    filterStatus === 'all'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  All Status
+                  All
                 </button>
                 <button
                   onClick={() => {
@@ -411,7 +372,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Active Only
+                  Active
                 </button>
                 <button
                   onClick={() => {
@@ -425,7 +386,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Inactive Only
+                  Inactive
                 </button>
               </div>
             </div>
