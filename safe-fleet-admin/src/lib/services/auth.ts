@@ -174,5 +174,35 @@ export const authService = {
   isAuthenticated(): boolean {
     return !!this.getAccessToken();
   },
+
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    const response = await fetch(API_ENDPOINTS.AUTH.REQUEST_RESET, {
+      method: 'POST',
+      headers: DEFAULT_HEADERS,
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || error.detail || 'Failed to send OTP');
+    }
+
+    return await response.json();
+  },
+
+  async resetPasswordWithOTP(email: string, otp: string, newPassword: string): Promise<{ message: string }> {
+    const response = await fetch(API_ENDPOINTS.AUTH.RESET_PASSWORD, {
+      method: 'POST',
+      headers: DEFAULT_HEADERS,
+      body: JSON.stringify({ email, otp, new_password: newPassword }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || error.detail || 'Password reset failed');
+    }
+
+    return await response.json();
+  },
 };
 

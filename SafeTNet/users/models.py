@@ -547,6 +547,28 @@ class UserReply(models.Model):
         return f"{self.email} - {self.date_time.strftime('%Y-%m-%d %H:%M')}"
 
 
+class PasswordResetOTP(models.Model):
+    """Model to store OTP for password reset"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_otps')
+    otp = models.CharField(max_length=6, help_text="6-digit OTP code")
+    email = models.EmailField(help_text="Email address for verification")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(help_text="OTP expiration time")
+    is_used = models.BooleanField(default=False, help_text="Whether OTP has been used")
+    
+    class Meta:
+        verbose_name = 'Password Reset OTP'
+        verbose_name_plural = 'Password Reset OTPs'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"OTP for {self.email} - {self.otp}"
+    
+    def is_valid(self):
+        """Check if OTP is valid (not used and not expired)"""
+        return not self.is_used and timezone.now() < self.expires_at
+
+
 class UserDetails(models.Model):
     STATUS_CHOICES = [
         ('ACTIVE', 'Active'),

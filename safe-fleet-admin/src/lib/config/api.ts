@@ -21,6 +21,8 @@ export const API_ENDPOINTS = {
     LOGOUT: `${API_CONFIG.AUTH_BASE_URL}/logout/`,
     REFRESH: `${API_CONFIG.AUTH_BASE_URL}/refresh/`,
     PROFILE: `${API_CONFIG.AUTH_BASE_URL}/profile/`,
+    REQUEST_RESET: `${API_CONFIG.AUTH_BASE_URL}/request-password-reset/`,
+    RESET_PASSWORD: `${API_CONFIG.AUTH_BASE_URL}/reset-password/`,
   },
   
   // Organizations (Super Admin only)
