@@ -78,8 +78,8 @@ def user_profile(request):
     user = User.objects.select_related('organization').get(pk=request.user.pk)
     
     if request.method == 'GET':
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
+    serializer = UserSerializer(user)
+    return Response(serializer.data)
     
     elif request.method in ['PUT', 'PATCH']:
         # Update profile
