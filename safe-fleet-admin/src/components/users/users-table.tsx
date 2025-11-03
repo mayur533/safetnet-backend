@@ -108,7 +108,10 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
 
   // Filter by status
   if (filterStatus !== 'all') {
-    filteredUsers = filteredUsers.filter((user) => user.status === filterStatus);
+    filteredUsers = filteredUsers.filter((user) => {
+      const isActive = user.is_active;
+      return filterStatus === 'active' ? isActive : !isActive;
+    });
   }
 
   // Sort
