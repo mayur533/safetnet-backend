@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { authService } from '@/lib/services/auth';
 import { toast } from 'sonner';
-import { Security, Email, Refresh, Error, VpnKey } from '@mui/icons-material';
+import { Email, Refresh, Error, VpnKey } from '@mui/icons-material';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();

@@ -22,7 +22,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     if (!isClient) return;
 
     // Public routes that don't require authentication
-    const publicRoutes = ['/login', '/register'];
+    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
     const isPublicRoute = publicRoutes.includes(pathname);
 
     if (!isAuthenticated && !isPublicRoute) {
@@ -40,7 +40,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // Show loading while redirecting
-  if (!isAuthenticated && pathname !== '/login' && pathname !== '/register') {
+  if (!isAuthenticated && pathname !== '/login' && pathname !== '/register' && pathname !== '/forgot-password' && pathname !== '/reset-password') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
