@@ -5,6 +5,7 @@ import { GeneralSettings } from '@/components/settings/general-settings';
 import { NotificationSettings } from '@/components/settings/notification-settings';
 import { SystemPreferences } from '@/components/settings/system-preferences';
 import { Button } from '@/components/ui/button';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
@@ -48,8 +49,8 @@ export default function SettingsPage() {
         >
           {isSaving ? (
             <>
-              <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-              Saving All Changes...
+              <LoadingDots />
+              <span className="ml-2">Saving All Changes</span>
             </>
           ) : (
             <>

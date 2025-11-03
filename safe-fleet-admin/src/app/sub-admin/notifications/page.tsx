@@ -6,6 +6,7 @@ import { ListLoading, FormLoading } from '@/components/ui/content-loading';
 import { notificationsService, type Notification as BackendNotification } from '@/lib/services/notifications';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
 import { useSearch } from '@/lib/contexts/search-context';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 type NotificationType = 'NORMAL' | 'EMERGENCY';
 
@@ -14,6 +15,7 @@ export default function SubAdminNotificationsPage() {
   const [notifications, setNotifications] = useState<BackendNotification[]>([]);
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [notificationType, setNotificationType] = useState<NotificationType>('NORMAL');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -82,6 +84,8 @@ export default function SubAdminNotificationsPage() {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
       // Send notification for each selected geofence
       const promises = geofencesToUse.map(geofenceId =>
@@ -111,6 +115,8 @@ export default function SubAdminNotificationsPage() {
     } catch (error: unknown) {
       console.error('Send notification error:', error);
       toast.error('Failed to send notification');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -297,14 +303,24 @@ export default function SubAdminNotificationsPage() {
           <div className="flex justify-end pt-2">
             <button
               type="submit"
+              disabled={isSubmitting}
               className={`px-6 py-2 rounded-lg text-white transition-colors flex items-center space-x-2 ${
                 notificationType === 'EMERGENCY'
                   ? 'bg-red-600 hover:bg-red-700'
                   : 'bg-primary hover:bg-primary/90'
-              }`}
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
-              <span className="material-icons-outlined">send</span>
-              <span>Send Notification</span>
+              {isSubmitting ? (
+                <>
+                  <LoadingDots />
+                  <span>Sending</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-icons-outlined">send</span>
+                  <span>Send Notification</span>
+                </>
+              )}
             </button>
           </div>
         </form>

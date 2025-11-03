@@ -24,6 +24,7 @@ import { authService } from '@/lib/services/auth';
 import { usersService } from '@/lib/services/users';
 import { toast } from 'sonner';
 import { MapSelectorModal } from './map-selector-modal';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 interface CreateGeofenceModalProps {
   isOpen: boolean;
@@ -352,8 +353,8 @@ export function CreateGeofenceModal({ isOpen, onClose, onRefresh }: CreateGeofen
             >
               {isSubmitting ? (
                 <>
-                  <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-                  Creating...
+                  <LoadingDots />
+                  <span className="ml-2">Creating</span>
                 </>
               ) : (
                 <>

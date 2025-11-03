@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { usersService } from '@/lib/services/users';
 import { organizationsService } from '@/lib/services/organizations';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 interface EditSubAdminModalProps {
   isOpen: boolean;
@@ -324,8 +325,8 @@ export function EditSubAdminModal({ isOpen, onClose, userId, onSubAdminUpdated }
               >
                 {isSubmitting ? (
                   <>
-                    <span className="material-icons animate-spin mr-2 text-sm" style={{ lineHeight: '0', verticalAlign: 'baseline', marginBottom: '-2px' }}>refresh</span>
-                    Updating...
+                    <LoadingDots />
+                    <span className="ml-2">Updating</span>
                   </>
                 ) : (
                   <>

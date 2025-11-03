@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { profileService } from '@/lib/services/profile';
 import { toast } from 'sonner';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 export function ProfileEditor() {
   const { user } = useAuth();
@@ -248,8 +249,8 @@ export function ProfileEditor() {
                 >
                   {isSaving ? (
                     <>
-                      <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-                      Updating...
+                      <LoadingDots />
+                      <span className="ml-2">Updating</span>
                     </>
                   ) : (
                     <>
@@ -272,8 +273,8 @@ export function ProfileEditor() {
           >
             {isSaving ? (
               <>
-                <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-                Saving Changes...
+                <LoadingDots />
+                <span className="ml-2">Saving Changes</span>
               </>
             ) : (
               <>

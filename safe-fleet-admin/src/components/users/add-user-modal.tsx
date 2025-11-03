@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { usersService } from '@/lib/services/users';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -373,8 +374,8 @@ export function AddUserModal({ isOpen, onClose, editingUserId, onUserUpdated }: 
             >
               {isSubmitting ? (
                 <>
-                  <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-                  {isEditing ? 'Updating...' : 'Creating...'}
+                  <LoadingDots />
+                  <span className="ml-2">{isEditing ? 'Updating' : 'Creating'}</span>
                 </>
               ) : (
                 <>

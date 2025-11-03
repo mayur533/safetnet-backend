@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import { organizationsService } from '@/lib/services/organizations';
 import { usersService } from '@/lib/services/users';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 interface AddSubAdminModalProps {
   isOpen: boolean;
@@ -333,8 +334,8 @@ export function AddSubAdminModal({ isOpen, onClose }: AddSubAdminModalProps) {
             >
               {isSubmitting ? (
                 <>
-                  <span className="material-icons animate-spin text-sm mr-2">refresh</span>
-                  Creating...
+                  <LoadingDots />
+                  <span className="ml-2">Creating</span>
                 </>
               ) : (
                 <>

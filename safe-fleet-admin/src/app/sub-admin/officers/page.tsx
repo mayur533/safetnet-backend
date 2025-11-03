@@ -32,6 +32,7 @@ import {
 import { officersService, type SecurityOfficer } from '@/lib/services/officers';
 import { geofencesService, type Geofence } from '@/lib/services/geofences';
 import { useSearch } from '@/lib/contexts/search-context';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 type SortField = 'name' | 'contact' | 'email' | 'created_at';
 type SortOrder = 'asc' | 'desc';
@@ -930,8 +931,8 @@ export default function SecurityOfficersPage() {
                 >
                   {isSubmitting ? (
                     <>
-                      <span className="material-icons animate-spin text-lg">refresh</span>
-                      {editingOfficer ? 'Updating...' : 'Creating...'}
+                      <LoadingDots />
+                      <span>{editingOfficer ? 'Updating' : 'Creating'}</span>
                     </>
                   ) : (
                     editingOfficer ? 'Update Officer' : 'Add Officer'

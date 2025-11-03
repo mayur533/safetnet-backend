@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { usersService } from '@/lib/services/users';
+import { LoadingDots } from '@/components/ui/loading-dots';
 
 interface EditUserModalProps {
   isOpen: boolean;
@@ -269,8 +270,8 @@ export function EditUserModal({ isOpen, onClose, userId, onUserUpdated }: EditUs
               >
                 {isSubmitting ? (
                   <>
-                    <span className="material-icons animate-spin mr-2 text-sm" style={{ lineHeight: '0', verticalAlign: 'baseline', marginBottom: '-2px' }}>refresh</span>
-                    Updating...
+                    <LoadingDots />
+                    <span className="ml-2">Updating</span>
                   </>
                 ) : (
                   <>
