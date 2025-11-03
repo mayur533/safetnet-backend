@@ -26,7 +26,7 @@ from .serializers import (
     DiscountEmailSerializer, DiscountEmailCreateSerializer,
     UserReplySerializer, UserDetailsSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
+from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
 from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin
 
 
@@ -138,6 +138,159 @@ def change_password(request):
     user.save()
     
     return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def request_password_reset(request):
+    """
+    Request password reset by sending OTP to email.
+    """
+    import random
+    from datetime import timedelta
+    from django.core.mail import send_mail
+    from django.conf import settings
+    
+    email = request.data.get('email')
+    
+    if not email:
+        return Response(
+            {'error': 'Email is required'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Find user by email
+    try:
+        user = User.objects.get(email=email, is_active=True)
+    except User.DoesNotExist:
+        # Don't reveal if email exists or not for security
+        return Response({
+            'message': 'If the email exists, an OTP has been sent'
+        }, status=status.HTTP_200_OK)
+    
+    # Generate 6-digit OTP
+    otp = str(random.randint(100000, 999999))
+    
+    # Set expiration to 15 minutes from now
+    expires_at = timezone.now() + timedelta(minutes=15)
+    
+    # Invalidate any existing OTPs for this user
+    PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+    
+    # Create new OTP
+    otp_obj = PasswordResetOTP.objects.create(
+        user=user,
+        otp=otp,
+        email=email,
+        expires_at=expires_at
+    )
+    
+    # Send OTP via email
+    try:
+        subject = "Password Reset OTP - SafeTNet"
+        message = f"""
+Hello {user.username},
+
+Your password reset OTP is: {otp}
+
+This OTP will expire in 15 minutes.
+
+If you did not request this password reset, please ignore this email.
+
+Best regards,
+The SafeTNet Team
+        """
+        
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        
+        return Response({
+            'message': 'OTP has been sent to your email'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset OTP to {email}: {str(e)}")
+        # Delete the OTP if email sending failed
+        otp_obj.delete()
+        return Response({
+            'error': 'Failed to send OTP. Please try again later.'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    """
+    Reset password using OTP.
+    """
+    from django.contrib.auth.password_validation import validate_password
+    
+    email = request.data.get('email')
+    otp = request.data.get('otp')
+    new_password = request.data.get('new_password')
+    
+    # Validate inputs
+    if not email or not otp or not new_password:
+        return Response(
+            {'error': 'Email, OTP, and new password are required'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Find user
+    try:
+        user = User.objects.get(email=email, is_active=True)
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'Invalid email'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Find valid OTP
+    try:
+        otp_obj = PasswordResetOTP.objects.filter(
+            user=user,
+            email=email,
+            otp=otp,
+            is_used=False
+        ).order_by('-created_at').first()
+        
+        if not otp_obj or not otp_obj.is_valid():
+            return Response(
+                {'error': 'Invalid or expired OTP'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+    except PasswordResetOTP.DoesNotExist:
+        return Response(
+            {'error': 'Invalid OTP'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate new password
+    try:
+        validate_password(new_password, user)
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Set new password
+    user.set_password(new_password)
+    user.save()
+    
+    # Mark OTP as used
+    otp_obj.is_used = True
+    otp_obj.save()
+    
+    return Response({
+        'message': 'Password reset successfully'
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
