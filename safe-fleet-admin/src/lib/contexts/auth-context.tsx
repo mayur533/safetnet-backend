@@ -40,7 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null);
         // Redirect to login if not on public pages
-        if (pathname !== '/login' && pathname !== '/register') {
+        const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
+        if (!publicPages.includes(pathname)) {
           router.push('/login');
         }
       }
