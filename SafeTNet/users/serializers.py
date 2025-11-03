@@ -69,8 +69,12 @@ class UserLoginSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'role', 'is_active', 'date_joined')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'date_joined')
         read_only_fields = ('id', 'date_joined')
+        extra_kwargs = {
+            'username': {'required': False},
+            'email': {'required': False},
+        }
 
 
 ## Removed SubAdminProfile serializers as the model is deleted

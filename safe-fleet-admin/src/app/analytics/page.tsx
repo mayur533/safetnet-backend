@@ -24,7 +24,7 @@ export default function AnalyticsPage() {
     from: new Date(new Date().setDate(new Date().getDate() - 30)),
     to: new Date(),
   });
-  const [isLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
 
   useEffect(() => {
@@ -33,10 +33,13 @@ export default function AnalyticsPage() {
 
   const fetchAnalyticsData = async () => {
     try {
+      setIsLoading(true);
       const data = await analyticsService.getAnalytics();
       setAnalyticsData(data);
     } catch (error) {
       console.error('Error fetching analytics:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 

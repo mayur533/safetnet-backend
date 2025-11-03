@@ -71,13 +71,73 @@ def logout(request):
         return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
     # Use select_related to optimize organization query
     user = User.objects.select_related('organization').get(pk=request.user.pk)
-    serializer = UserSerializer(user)
-    return Response(serializer.data)
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+    
+    elif request.method in ['PUT', 'PATCH']:
+        # Update profile
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Change user password.
+    """
+    user = request.user
+    
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+    
+    # Validate inputs
+    if not old_password or not new_password or not confirm_password:
+        return Response(
+            {'error': 'All password fields are required'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Check if passwords match
+    if new_password != confirm_password:
+        return Response(
+            {'error': 'New passwords do not match'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Verify old password
+    if not user.check_password(old_password):
+        return Response(
+            {'error': 'Incorrect old password'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validate new password
+    from django.contrib.auth.password_validation import validate_password
+    try:
+        validate_password(new_password, user)
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Set new password
+    user.set_password(new_password)
+    user.save()
+    
+    return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
@@ -704,9 +764,11 @@ def subadmin_dashboard_kpis(request):
     Get KPIs for sub-admin dashboard.
     """
     from django.utils import timezone
-    from datetime import timedelta
+    from datetime import timedelta, datetime, time
     
     today = timezone.now().date()
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
     user = request.user
     
     if user.role != 'SUB_ADMIN' or not user.organization:
@@ -730,7 +792,8 @@ def subadmin_dashboard_kpis(request):
     ).count()
     
     incidents_today = Incident.objects.filter(
-        created_at__date=today,
+        created_at__gte=today_start,
+        created_at__lte=today_end,
         geofence__organization=organization
     ).count()
     
@@ -746,7 +809,8 @@ def subadmin_dashboard_kpis(request):
     ).count()
     
     notifications_sent_today = Notification.objects.filter(
-        created_at__date=today,
+        created_at__gte=today_start,
+        created_at__lte=today_end,
         organization=organization,
         is_sent=True
     ).count()
@@ -804,12 +868,65 @@ class DiscountEmailViewSet(ModelViewSet):
             return DiscountEmailCreateSerializer
         return DiscountEmailSerializer
     
+    def create(self, request, *args, **kwargs):
+        """Create discount email and send it"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Create the discount email
+        discount_email = serializer.save()
+        
+        # Try to send the email
+        try:
+            email_sent = discount_email.send_email()
+            
+            if email_sent:
+                return Response({
+                    'message': 'Discount email created and sent successfully',
+                    'data': DiscountEmailSerializer(discount_email).data
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    'message': 'Discount email created but failed to send',
+                    'data': DiscountEmailSerializer(discount_email).data,
+                    'warning': 'Email could not be sent. Please check email configuration.'
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            logger.error(f"Error sending discount email: {str(e)}")
+            return Response({
+                'message': 'Discount email created but failed to send',
+                'data': DiscountEmailSerializer(discount_email).data,
+                'warning': f'Email could not be sent: {str(e)}'
+            }, status=status.HTTP_201_CREATED)
+    
     @action(detail=True, methods=['post'])
     def mark_sent(self, request, pk=None):
         """Mark discount email as sent"""
         discount_email = self.get_object()
         discount_email.mark_as_sent()
         return Response({'message': 'Discount email marked as sent successfully'})
+    
+    @action(detail=True, methods=['post'])
+    def resend(self, request, pk=None):
+        """Resend discount email"""
+        discount_email = self.get_object()
+        
+        try:
+            email_sent = discount_email.send_email()
+            
+            if email_sent:
+                return Response({'message': 'Discount email resent successfully'})
+            else:
+                return Response({
+                    'error': 'Failed to send email. Please check email configuration.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+        except Exception as e:
+            logger.error(f"Error resending discount email: {str(e)}")
+            return Response({
+                'error': f'Failed to send email: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserReplyViewSet(ReadOnlyModelViewSet):
