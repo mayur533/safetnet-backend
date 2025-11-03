@@ -103,6 +103,7 @@ export default function UserDetailsPage() {
         <Card className="p-6 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 border-indigo-200 dark:border-indigo-800">
           <div className="flex items-center gap-6">
             {userDetails?.profile_image ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img 
                 src={userDetails.profile_image} 
                 alt={user.username}

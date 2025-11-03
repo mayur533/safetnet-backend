@@ -62,6 +62,7 @@ export function ProfileCard() {
       <div className="flex flex-col items-center">
         <div className="relative group">
           {profileImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={profileImage}
               alt="Profile"
