@@ -45,7 +45,7 @@ interface UsersTableProps {
   refreshTrigger?: number;
 }
 
-type SortField = 'username' | 'email' | 'role' | 'date_joined' | 'last_login';
+type SortField = 'username' | 'email' | 'date_joined';
 type SortOrder = 'asc' | 'desc';
 type FilterRole = 'all' | 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER';
 type FilterStatus = 'all' | 'active' | 'inactive';
@@ -116,6 +116,16 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
     const aValue = a[sortField];
     const bValue = b[sortField];
 
+    // Handle date_joined sorting differently
+    if (sortField === 'date_joined') {
+      if (sortOrder === 'asc') {
+        return new Date(aValue).getTime() - new Date(bValue).getTime();
+      } else {
+        return new Date(bValue).getTime() - new Date(aValue).getTime();
+      }
+    }
+
+    // Handle string sorting
     if (sortOrder === 'asc') {
       return String(aValue || '').localeCompare(String(bValue || ''));
     } else {
@@ -504,23 +514,48 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                 <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
                   Sort By
                 </div>
-                {(['name', 'email', 'role', 'lastLogin'] as SortField[]).map((field) => (
-                  <button
-                    key={field}
-                    onClick={() => {
-                      setSortField(field);
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === field
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                     {field === 'last_login' ? 'Last Login' : field.charAt(0).toUpperCase() + field.slice(1)}
-                  </button>
-                ))}
+                <button
+                  onClick={() => {
+                    setSortField('username');
+                    setCurrentPage(1);
+                    setShowSortMenu(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    sortField === 'username'
+                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  Name
+                </button>
+                <button
+                  onClick={() => {
+                    setSortField('email');
+                    setCurrentPage(1);
+                    setShowSortMenu(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    sortField === 'email'
+                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  Email
+                </button>
+                <button
+                  onClick={() => {
+                    setSortField('date_joined');
+                    setCurrentPage(1);
+                    setShowSortMenu(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    sortField === 'date_joined'
+                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  Last Added
+                </button>
 
                 <div className="border-t border-border my-2"></div>
 
@@ -567,10 +602,8 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
             <TableHeader>
               <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
                 <TableHead className="text-muted-foreground text-sm font-semibold">Name</TableHead>
-                <TableHead className="text-muted-foreground text-sm font-semibold">Role</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold">Email</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold">Status</TableHead>
-                <TableHead className="text-muted-foreground text-sm font-semibold">Last Login</TableHead>
                 <TableHead className="text-muted-foreground text-sm font-semibold text-right">
                   Actions
                 </TableHead>
@@ -579,7 +612,7 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
             <TableBody>
               {paginatedUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12">
+                <TableCell colSpan={4} className="text-center py-12">
                   <span className="material-icons text-6xl text-muted-foreground mb-2">
                     search_off
                   </span>
@@ -600,14 +633,10 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                       <div className="font-medium text-sm">{user.username}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="py-4 px-4">{getRoleBadge(user.role)}</TableCell>
                   <TableCell className="py-4 px-4">
                     <div className="text-sm text-muted-foreground">{user.email}</div>
                   </TableCell>
                   <TableCell className="py-4 px-4">{getStatusBadge(user.is_active ? 'active' : 'inactive')}</TableCell>
-                  <TableCell className="py-4 px-4">
-                    <div className="text-sm">{new Date(user.date_joined).toLocaleString()}</div>
-                  </TableCell>
                   <TableCell className="py-4 px-4 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
