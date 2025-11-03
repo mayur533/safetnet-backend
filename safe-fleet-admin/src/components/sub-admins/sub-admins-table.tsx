@@ -104,21 +104,27 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
 
   // Sort
   filteredSubAdmins = [...filteredSubAdmins].sort((a, b) => {
-    let aValue: unknown;
-    let bValue: unknown;
-    
-    if (sortField === 'name') {
-      aValue = a.full_name || `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.username;
-      bValue = b.full_name || `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.username;
-    } else {
-      aValue = a[sortField as keyof User];
-      bValue = b[sortField as keyof User];
+    const aValue = sortField === 'name' 
+      ? (a.full_name || `${a.first_name || ''} ${a.last_name || ''}`.trim() || a.username)
+      : a[sortField as keyof User];
+    const bValue = sortField === 'name'
+      ? (b.full_name || `${b.first_name || ''} ${b.last_name || ''}`.trim() || b.username)
+      : b[sortField as keyof User];
+
+    // Handle date_joined sorting differently
+    if (sortField === 'date_joined') {
+      if (sortOrder === 'asc') {
+        return new Date(aValue as string).getTime() - new Date(bValue as string).getTime();
+      } else {
+        return new Date(bValue as string).getTime() - new Date(aValue as string).getTime();
+      }
     }
 
+    // Handle string sorting
     if (sortOrder === 'asc') {
-      return String(aValue).localeCompare(String(bValue));
+      return String(aValue || '').localeCompare(String(bValue || ''));
     } else {
-      return String(bValue).localeCompare(String(aValue));
+      return String(bValue || '').localeCompare(String(aValue || ''));
     }
   });
 
@@ -344,72 +350,6 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                   100 items
                 </button>
 
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Navigation
-                </div>
-                <button
-                  onClick={() => {
-                    if (currentPage > 1) {
-                      setCurrentPage(currentPage - 1);
-                      setShowPerPageMenu(false);
-                    }
-                  }}
-                  disabled={currentPage === 1}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                    currentPage === 1
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  <span className="material-icons text-sm">chevron_left</span>
-                  Previous Page
-                </button>
-                <button
-                  onClick={() => {
-                    if (currentPage < totalPages) {
-                      setCurrentPage(currentPage + 1);
-                      setShowPerPageMenu(false);
-                    }
-                  }}
-                  disabled={currentPage === totalPages}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                    currentPage === totalPages
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  <span className="material-icons text-sm">chevron_right</span>
-                  Next Page
-                </button>
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Go to page
-                </div>
-                {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => {
-                      setCurrentPage(page);
-                      setShowPerPageMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      currentPage === page
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Page {page}
-                  </button>
-                ))}
-                {totalPages > 10 && (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Showing first 10 pages of {totalPages}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -444,7 +384,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                       : 'hover:bg-muted'
                   }`}
                 >
-                  All Sub-Admins
+                  All
                 </button>
                 <button
                   onClick={() => handleFilterChange('active')}
@@ -454,7 +394,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Active Only
+                  Active
                 </button>
                 <button
                   onClick={() => handleFilterChange('inactive')}
@@ -464,7 +404,7 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Inactive Only
+                  Inactive
                 </button>
               </div>
             </div>
@@ -493,70 +433,67 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
                   Sort By
                 </div>
                 <button
-                  onClick={() => handleSortChange('name')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  onClick={() => {
+                    if (sortField === 'name') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('name');
+                      setSortOrder('asc');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'name'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Name
+                  <span>Name</span>
+                  {sortField === 'name' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
                 </button>
                 <button
-                  onClick={() => handleSortChange('email')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  onClick={() => {
+                    if (sortField === 'email') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('email');
+                      setSortOrder('asc');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'email'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Email
+                  <span>Email</span>
+                  {sortField === 'email' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
                 </button>
                 <button
-                  onClick={() => handleSortChange('username')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortField === 'username'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Organization
-                </button>
-                <button
-                  onClick={() => handleSortChange('date_joined')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  onClick={() => {
+                    if (sortField === 'date_joined') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('date_joined');
+                      setSortOrder('desc');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'date_joined'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Date Created
-                </button>
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Order
-                </div>
-                <button
-                  onClick={() => handleSortOrderChange('asc')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'asc'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Ascending (A-Z)
-                </button>
-                <button
-                  onClick={() => handleSortOrderChange('desc')}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'desc'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Descending (Z-A)
+                  <span>Last Added</span>
+                  {sortField === 'date_joined' && (
+                    <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                  )}
                 </button>
               </div>
             </div>
@@ -679,9 +616,33 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
             </span>
           )}
         </p>
-        <p>
-          Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
-        </p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (currentPage > 1) {
+                setCurrentPage(currentPage - 1);
+              }
+            }}
+            disabled={currentPage === 1}
+            className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+          >
+            <span className="material-icons text-lg">chevron_left</span>
+          </button>
+          <button
+            onClick={() => {
+              if (currentPage < totalPages) {
+                setCurrentPage(currentPage + 1);
+              }
+            }}
+            disabled={currentPage === totalPages}
+            className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+          >
+            <span className="material-icons text-lg">chevron_right</span>
+          </button>
+          <p>
+            Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
+          </p>
+        </div>
       </div>
 
       {/* View Details Modal */}
