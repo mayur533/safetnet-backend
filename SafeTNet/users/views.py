@@ -834,6 +834,13 @@ def send_notification(request):
     if serializer.is_valid():
         data = serializer.validated_data
         
+        # Handle multiple geofences
+        geofence_ids = []
+        if data.get('target_geofence_ids'):
+            geofence_ids = data['target_geofence_ids']
+        elif data.get('target_geofence_id'):
+            geofence_ids = [data['target_geofence_id']]
+        
         # Create notification
         notification = Notification.objects.create(
             notification_type=data['notification_type'],
@@ -841,6 +848,7 @@ def send_notification(request):
             message=data['message'],
             target_type=data['target_type'],
             target_geofence_id=data.get('target_geofence_id'),
+            target_geofences=geofence_ids,  # Store list of geofence IDs
             organization=request.user.organization,
             created_by=request.user
         )
@@ -853,9 +861,10 @@ def send_notification(request):
             )
             notification.target_officers.set(officers)
         
-        elif data['target_type'] == 'GEOFENCE_OFFICERS' and data.get('target_geofence_id'):
+        elif data['target_type'] == 'GEOFENCE_OFFICERS' and geofence_ids:
+            # Get officers from all selected geofences
             officers = SecurityOfficer.objects.filter(
-                assigned_geofence_id=data['target_geofence_id'],
+                assigned_geofence_id__in=geofence_ids,
                 organization=request.user.organization,
                 is_active=True
             )

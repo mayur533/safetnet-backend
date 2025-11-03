@@ -494,7 +494,10 @@ export function NotificationsContainer() {
                 <TableCell className="py-4 px-4">
                   <div className="text-sm flex items-center gap-1">
                     <span className="material-icons text-xs text-indigo-600">location_on</span>
-                    {notification.target_geofence_name || 'All'}
+                    {notification.target_geofences_names && notification.target_geofences_names.length > 0
+                      ? `${notification.target_geofences_names.map(g => g.name).join(', ')}`
+                      : notification.target_geofence_name || 'All'
+                    }
                   </div>
                 </TableCell>
                 <TableCell className="py-4 px-4">
@@ -629,7 +632,10 @@ export function NotificationsContainer() {
                   <Label className="text-sm font-medium text-muted-foreground">Target Geofence</Label>
                   <p className="text-base font-medium flex items-center gap-1">
                     <span className="material-icons text-sm text-indigo-600">location_on</span>
-                    {viewDetailsNotification.target_geofence_name || 'All Geofences'}
+                    {viewDetailsNotification.target_geofences_names && viewDetailsNotification.target_geofences_names.length > 0
+                      ? `${viewDetailsNotification.target_geofences_names.map(g => g.name).join(', ')}`
+                      : viewDetailsNotification.target_geofence_name || 'All Geofences'
+                    }
                   </p>
                 </div>
 

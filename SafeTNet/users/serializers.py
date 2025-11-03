@@ -259,6 +259,7 @@ class IncidentCreateSerializer(serializers.ModelSerializer):
 
 class NotificationSerializer(serializers.ModelSerializer):
     target_geofence_name = serializers.CharField(source='target_geofence.name', read_only=True)
+    target_geofences_names = serializers.SerializerMethodField()
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     target_officers_names = serializers.StringRelatedField(source='target_officers', many=True, read_only=True)
@@ -269,8 +270,8 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = (
             'id', 'notification_type', 'title', 'message', 'target_type',
-            'target_geofence', 'target_geofence_name', 'target_officers',
-            'target_officers_names', 'organization', 'organization_name',
+            'target_geofence', 'target_geofence_name', 'target_geofences', 'target_geofences_names',
+            'target_officers', 'target_officers_names', 'organization', 'organization_name',
             'is_sent', 'sent_at', 'created_by_username', 'created_at', 'updated_at',
             'read_users', 'is_read'
         )
@@ -282,6 +283,14 @@ class NotificationSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             return obj.read_users.filter(id=request.user.id).exists()
         return False
+    
+    def get_target_geofences_names(self, obj):
+        """Get names of target geofences from the JSONField"""
+        if obj.target_geofences:
+            from .models import Geofence
+            geofences = Geofence.objects.filter(id__in=obj.target_geofences)
+            return [{'id': g.id, 'name': g.name} for g in geofences]
+        return []
 
 
 class NotificationCreateSerializer(serializers.ModelSerializer):
@@ -305,6 +314,11 @@ class NotificationSendSerializer(serializers.Serializer):
     message = serializers.CharField()
     target_type = serializers.ChoiceField(choices=Notification.TARGET_TYPES)
     target_geofence_id = serializers.IntegerField(required=False, allow_null=True)
+    target_geofence_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True
+    )
     target_officer_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
@@ -320,6 +334,17 @@ class NotificationSendSerializer(serializers.Serializer):
                     raise serializers.ValidationError("Geofence does not belong to your organization.")
             except Geofence.DoesNotExist:
                 raise serializers.ValidationError("Geofence not found.")
+        return value
+    
+    def validate_target_geofence_ids(self, value):
+        if value:
+            geofences = Geofence.objects.filter(id__in=value)
+            if len(geofences) != len(value):
+                raise serializers.ValidationError("Some geofences not found.")
+            # Ensure all geofences belong to the user's organization
+            org = self.context['request'].user.organization
+            if org and not all(g.organization == org for g in geofences):
+                raise serializers.ValidationError("Some geofences do not belong to your organization.")
         return value
     
     def validate_target_officer_ids(self, value):

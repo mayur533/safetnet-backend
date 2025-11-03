@@ -87,18 +87,15 @@ export default function SubAdminNotificationsPage() {
     setIsSubmitting(true);
 
     try {
-      // Send notification for each selected geofence
-      const promises = geofencesToUse.map(geofenceId =>
-        notificationsService.send({
-          notification_type: notificationType,
-          title,
-          message,
-          target_type: 'GEOFENCE_OFFICERS',
-          target_geofence: parseInt(geofenceId),
-        })
-      );
-
-      await Promise.all(promises);
+      // Send a single notification with all selected geofences
+      const geofenceIds = geofencesToUse.map(id => parseInt(id));
+      await notificationsService.send({
+        notification_type: notificationType,
+        title,
+        message,
+        target_type: 'GEOFENCE_OFFICERS',
+        target_geofence_ids: geofenceIds,
+      });
 
       const targetCount = selectionMode === 'all' ? geofences.length : selectedGeofences.length;
       toast.success(`${notificationType === 'EMERGENCY' ? 'Emergency' : 'Normal'} notification sent to ${targetCount} geofence(s)!`);
@@ -337,12 +334,18 @@ export default function SubAdminNotificationsPage() {
             const filteredNotifications = searchQuery
               ? notifications.filter((notification) => {
                   const query = searchQuery.toLowerCase();
+                  // Check target_geofences_names for search
+                  const geofencesMatch = notification.target_geofences_names 
+                    ? notification.target_geofences_names.some(g => g.name.toLowerCase().includes(query))
+                    : false;
                   return (
                     notification.title?.toLowerCase().includes(query) ||
                     notification.message?.toLowerCase().includes(query) ||
                     notification.notification_type?.toLowerCase().includes(query) ||
                     notification.target_type?.toLowerCase().includes(query) ||
                     notification.target_geofence?.toString().includes(query) ||
+                    notification.target_geofence_name?.toLowerCase().includes(query) ||
+                    geofencesMatch ||
                     notification.id.toString().includes(query)
                   );
                 })
@@ -408,7 +411,12 @@ export default function SubAdminNotificationsPage() {
                       <div className="flex items-center space-x-4 text-xs text-muted-foreground">
                         <span className="flex items-center space-x-1">
                           <span className="material-icons-outlined" style={{ fontSize: '14px' }}>location_on</span>
-                          <span>Geofence #{notification.target_geofence || 'All'}</span>
+                          <span>
+                            {notification.target_geofences_names && notification.target_geofences_names.length > 0
+                              ? `${notification.target_geofences_names.map(g => g.name).join(', ')}`
+                              : notification.target_geofence_name || 'All'
+                            }
+                          </span>
                         </span>
                         <span className="flex items-center space-x-1">
                           <span className="material-icons-outlined" style={{ fontSize: '14px' }}>category</span>

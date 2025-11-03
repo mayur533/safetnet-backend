@@ -132,41 +132,67 @@ export default function IncidentLogsPage() {
 
   // Sort
   const sortedIncidents = [...filteredIncidents].sort((a, b) => {
-    let aValue: string | number;
-    let bValue: string | number;
+    const aValue = (() => {
+      // Map display fields to API fields
+      switch (sortField) {
+        case 'id':
+          return a.id;
+        case 'type':
+          return a.incident_type || a.type || '';
+        case 'reportedBy':
+          return a.officer_name || a.reportedBy || '';
+        case 'geofence':
+          return a.geofenceName || a.geofence_name || a.geofence;
+        case 'timestamp':
+        case 'created_at':
+          // Return Date object for proper date comparison
+          return new Date(a.timestamp || a.created_at || '');
+        default:
+          return String(a[sortField as keyof Incident] || '');
+      }
+    })();
 
-    // Map display fields to API fields
-    switch (sortField) {
-      case 'id':
-        aValue = a.id;
-        bValue = b.id;
-        break;
-      case 'type':
-        aValue = a.incident_type || a.type || '';
-        bValue = b.incident_type || b.type || '';
-        break;
-      case 'reportedBy':
-        aValue = a.officer_name || a.reportedBy || '';
-        bValue = b.officer_name || b.reportedBy || '';
-        break;
-      case 'geofence':
-        aValue = a.geofenceName || a.geofence_name || a.geofence;
-        bValue = b.geofenceName || b.geofence_name || b.geofence;
-        break;
-      case 'timestamp':
-      case 'created_at':
-        aValue = a.timestamp || a.created_at;
-        bValue = b.timestamp || b.created_at;
-        break;
-      default:
-        aValue = String(a[sortField as keyof Incident] || '');
-        bValue = String(b[sortField as keyof Incident] || '');
-    }
+    const bValue = (() => {
+      // Map display fields to API fields
+      switch (sortField) {
+        case 'id':
+          return b.id;
+        case 'type':
+          return b.incident_type || b.type || '';
+        case 'reportedBy':
+          return b.officer_name || b.reportedBy || '';
+        case 'geofence':
+          return b.geofenceName || b.geofence_name || b.geofence;
+        case 'timestamp':
+        case 'created_at':
+          // Return Date object for proper date comparison
+          return new Date(b.timestamp || b.created_at || '');
+        default:
+          return String(b[sortField as keyof Incident] || '');
+      }
+    })();
 
-    if (sortOrder === 'asc') {
-      return aValue > bValue ? 1 : -1;
+    if (sortField === 'timestamp' || sortField === 'created_at') {
+      // Date comparison
+      if (sortOrder === 'asc') {
+        return (aValue as Date).getTime() - (bValue as Date).getTime();
+      } else {
+        return (bValue as Date).getTime() - (aValue as Date).getTime();
+      }
+    } else if (sortField === 'id') {
+      // Numeric comparison for IDs
+      if (sortOrder === 'asc') {
+        return (aValue as number) - (bValue as number);
+      } else {
+        return (bValue as number) - (aValue as number);
+      }
     } else {
-      return aValue < bValue ? 1 : -1;
+      // String comparison
+      if (sortOrder === 'asc') {
+        return String(aValue).localeCompare(String(bValue));
+      } else {
+        return String(bValue).localeCompare(String(aValue));
+      }
     }
   });
 
@@ -369,69 +395,6 @@ export default function IncidentLogsPage() {
                       {count} items
                     </button>
                   ))}
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Navigation
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (currentPage > 1) {
-                        setCurrentPage(currentPage - 1);
-                        setShowPerPageMenu(false);
-                      }
-                    }}
-                    disabled={currentPage === 1}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                      currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                    }`}
-                  >
-                    <span className="material-icons text-sm">chevron_left</span>
-                    Previous Page
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (currentPage < totalPages) {
-                        setCurrentPage(currentPage + 1);
-                        setShowPerPageMenu(false);
-                      }
-                    }}
-                    disabled={currentPage === totalPages}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                      currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted'
-                    }`}
-                  >
-                    <span className="material-icons text-sm">chevron_right</span>
-                    Next Page
-                  </button>
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Go to page
-                  </div>
-                  {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => {
-                        setCurrentPage(page);
-                        setShowPerPageMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                        currentPage === page
-                          ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                          : 'hover:bg-muted'
-                      }`}
-                    >
-                      Page {page}
-                    </button>
-                  ))}
-                  {totalPages > 10 && (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">
-                      Showing first 10 pages of {totalPages}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -565,112 +528,110 @@ export default function IncidentLogsPage() {
             {showSortMenu && (
               <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-10">
                 <div className="p-2">
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Sort By
-                  </div>
                   <button
                     onClick={() => {
-                      setSortField('id');
+                      if (sortField === 'timestamp') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('timestamp');
+                        setSortOrder('desc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'id'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Incident ID
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('type');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'type'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Type
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('reportedBy');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'reportedBy'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Reported By
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('geofence');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === 'geofence'
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Geofence
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSortField('timestamp');
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                       sortField === 'timestamp'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Date
+                    <span>Date</span>
+                    {sortField === 'timestamp' && (
+                      <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                    )}
                   </button>
-
-                  <div className="border-t border-border my-2"></div>
-
-                  <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                    Order
-                  </div>
                   <button
                     onClick={() => {
-                      setSortOrder('asc');
+                      if (sortField === 'id') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('id');
+                        setSortOrder('asc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'asc'
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'id'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Ascending (A-Z)
+                    <span>Incident ID</span>
+                    {sortField === 'id' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
                   </button>
                   <button
                     onClick={() => {
-                      setSortOrder('desc');
+                      if (sortField === 'type') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('type');
+                        setSortOrder('asc');
+                      }
                       setCurrentPage(1);
-                      setShowSortMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortOrder === 'desc'
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'type'
                         ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    Descending (Z-A)
+                    <span>Type</span>
+                    {sortField === 'type' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (sortField === 'reportedBy') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('reportedBy');
+                        setSortOrder('asc');
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'reportedBy'
+                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    <span>Reported By</span>
+                    {sortField === 'reportedBy' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (sortField === 'geofence') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortField('geofence');
+                        setSortOrder('asc');
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                      sortField === 'geofence'
+                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    <span>Geofence</span>
+                    {sortField === 'geofence' && (
+                      <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -770,14 +731,36 @@ export default function IncidentLogsPage() {
           <p>
             Showing {startIndex + 1}-{Math.min(endIndex, sortedIncidents.length)} of {sortedIncidents.length} incidents
             {(filterStatus !== 'all' || filterGeofence !== 'all') && (
-              <span className="ml-2 text-indigo-600 font-medium">
-                (Filtered)
-              </span>
+              <span className="ml-2 text-indigo-600 font-medium">(Filtered)</span>
             )}
           </p>
-          <p>
-            Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
-          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  setCurrentPage(currentPage - 1);
+                }
+              }}
+              disabled={currentPage === 1}
+              className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_left</span>
+            </button>
+            <button
+              onClick={() => {
+                if (currentPage < totalPages) {
+                  setCurrentPage(currentPage + 1);
+                }
+              }}
+              disabled={currentPage === totalPages}
+              className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+            >
+              <span className="material-icons text-lg">chevron_right</span>
+            </button>
+            <p>
+              Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
+            </p>
+          </div>
         </div>
       </div>
 

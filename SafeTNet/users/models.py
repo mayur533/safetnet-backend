@@ -339,6 +339,11 @@ class Notification(models.Model):
         blank=True,
         related_name='notifications'
     )
+    target_geofences = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='List of geofence IDs for multi-geofence notifications'
+    )
     target_officers = models.ManyToManyField(
         SecurityOfficer,
         blank=True,

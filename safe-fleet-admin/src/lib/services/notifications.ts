@@ -8,6 +8,8 @@ export interface Notification {
   target_type: string;
   target_geofence?: number;
   target_geofence_name?: string;
+  target_geofences?: number[];
+  target_geofences_names?: Array<{id: number; name: string}>;
   target_officers?: number[];
   target_officers_names?: string[];
   organization: number;
@@ -37,6 +39,7 @@ export interface NotificationSendData {
   message: string;
   target_type: string;
   target_geofence?: number;
+  target_geofence_ids?: number[];
 }
 
 export const notificationsService = {
