@@ -516,79 +516,66 @@ export function UsersTable({ onEditUser, refreshTrigger = 0 }: UsersTableProps) 
                 </div>
                 <button
                   onClick={() => {
-                    setSortField('username');
+                    if (sortField === 'username') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('username');
+                      setSortOrder('asc');
+                    }
                     setCurrentPage(1);
-                    setShowSortMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'username'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Name
+                  <span>Name</span>
+                  {sortField === 'username' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => {
-                    setSortField('email');
+                    if (sortField === 'email') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('email');
+                      setSortOrder('asc');
+                    }
                     setCurrentPage(1);
-                    setShowSortMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'email'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Email
+                  <span>Email</span>
+                  {sortField === 'email' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => {
-                    setSortField('date_joined');
+                    if (sortField === 'date_joined') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('date_joined');
+                      setSortOrder('desc');
+                    }
                     setCurrentPage(1);
-                    setShowSortMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
                     sortField === 'date_joined'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Last Added
-                </button>
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Order
-                </div>
-                <button
-                  onClick={() => {
-                    setSortOrder('asc');
-                    setCurrentPage(1);
-                    setShowSortMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'asc'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Ascending (A-Z)
-                </button>
-                <button
-                  onClick={() => {
-                    setSortOrder('desc');
-                    setCurrentPage(1);
-                    setShowSortMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'desc'
-                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  Descending (Z-A)
+                  <span>Last Added</span>
+                  {sortField === 'date_joined' && (
+                    <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                  )}
                 </button>
               </div>
             </div>
