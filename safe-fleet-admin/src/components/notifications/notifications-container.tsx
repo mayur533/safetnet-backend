@@ -159,13 +159,23 @@ export function NotificationsContainer() {
 
   // Sort
   filteredNotifications = [...filteredNotifications].sort((a, b) => {
-    const aValue: unknown = a[sortField as keyof Notification];
-    const bValue: unknown = b[sortField as keyof Notification];
+    const aValue = a[sortField as keyof Notification];
+    const bValue = b[sortField as keyof Notification];
 
+    // Handle created_at sorting differently
+    if (sortField === 'created_at') {
+      if (sortOrder === 'asc') {
+        return new Date(aValue as string).getTime() - new Date(bValue as string).getTime();
+      } else {
+        return new Date(bValue as string).getTime() - new Date(aValue as string).getTime();
+      }
+    }
+
+    // Handle string sorting
     if (sortOrder === 'asc') {
-      return String(aValue).localeCompare(String(bValue));
+      return String(aValue || '').localeCompare(String(bValue || ''));
     } else {
-      return String(bValue).localeCompare(String(aValue));
+      return String(bValue || '').localeCompare(String(aValue || ''));
     }
   });
 
@@ -261,72 +271,6 @@ export function NotificationsContainer() {
                   </button>
                 ))}
 
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Navigation
-                </div>
-                <button
-                  onClick={() => {
-                    if (currentPage > 1) {
-                      setCurrentPage(currentPage - 1);
-                      setShowPaginationMenu(false);
-                    }
-                  }}
-                  disabled={currentPage === 1}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                    currentPage === 1
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  <span className="material-icons text-sm">chevron_left</span>
-                  Previous Page
-                </button>
-                <button
-                  onClick={() => {
-                    if (currentPage < totalPages) {
-                      setCurrentPage(currentPage + 1);
-                      setShowPaginationMenu(false);
-                    }
-                  }}
-                  disabled={currentPage === totalPages}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
-                    currentPage === totalPages
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-muted'
-                  }`}
-                >
-                  <span className="material-icons text-sm">chevron_right</span>
-                  Next Page
-                </button>
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Go to page
-                </div>
-                {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => {
-                      setCurrentPage(page);
-                      setShowPaginationMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      currentPage === page
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    Page {page}
-                  </button>
-                ))}
-                {totalPages > 10 && (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Showing first 10 pages of {totalPages}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -353,9 +297,6 @@ export function NotificationsContainer() {
           {showFilterMenu && (
             <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-lg shadow-lg z-10">
               <div className="p-2">
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Show
-                </div>
                 <button
                   onClick={() => {
                     setFilter('all');
@@ -368,7 +309,7 @@ export function NotificationsContainer() {
                       : 'hover:bg-muted'
                   }`}
                 >
-                  All Notifications
+                  All
                 </button>
                 <button
                   onClick={() => {
@@ -383,14 +324,8 @@ export function NotificationsContainer() {
                   }`}
                 >
                   <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  Unread Only
+                  Unread
                 </button>
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Filter by Type
-                </div>
                 <button
                   onClick={() => {
                     setFilter('NORMAL');
@@ -447,60 +382,68 @@ export function NotificationsContainer() {
                 <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
                   Sort By
                 </div>
-                {[
-                  { value: 'created_at' as SortField, label: 'Date Created' },
-                  { value: 'title' as SortField, label: 'Title' },
-                  { value: 'notification_type' as SortField, label: 'Type' }
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      setSortField(option.value);
-                      setCurrentPage(1);
-                      setShowSortMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                      sortField === option.value
-                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-
-                <div className="border-t border-border my-2"></div>
-
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
-                  Order
-                </div>
                 <button
                   onClick={() => {
-                    setSortOrder('asc');
+                    if (sortField === 'created_at') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('created_at');
+                      setSortOrder('desc');
+                    }
                     setCurrentPage(1);
-                    setShowSortMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'asc'
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                    sortField === 'created_at'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Ascending (A-Z)
+                  <span>Date Created</span>
+                  {sortField === 'created_at' && (
+                    <span className="text-xs font-medium">{sortOrder === 'desc' ? 'Newest' : 'Oldest'}</span>
+                  )}
                 </button>
                 <button
                   onClick={() => {
-                    setSortOrder('desc');
+                    if (sortField === 'title') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('title');
+                      setSortOrder('asc');
+                    }
                     setCurrentPage(1);
-                    setShowSortMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    sortOrder === 'desc'
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                    sortField === 'title'
                       ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  Descending (Z-A)
+                  <span>Title</span>
+                  {sortField === 'title' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    if (sortField === 'notification_type') {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                    } else {
+                      setSortField('notification_type');
+                      setSortOrder('asc');
+                    }
+                    setCurrentPage(1);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                    sortField === 'notification_type'
+                      ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-100'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  <span>Type</span>
+                  {sortField === 'notification_type' && (
+                    <span className="text-xs font-medium">{sortOrder === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                  )}
                 </button>
               </div>
             </div>
@@ -608,9 +551,33 @@ export function NotificationsContainer() {
             </span>
           )}
         </p>
-        <p>
-          Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
-        </p>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (currentPage > 1) {
+                setCurrentPage(currentPage - 1);
+              }
+            }}
+            disabled={currentPage === 1}
+            className={`${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+          >
+            <span className="material-icons text-lg">chevron_left</span>
+          </button>
+          <button
+            onClick={() => {
+              if (currentPage < totalPages) {
+                setCurrentPage(currentPage + 1);
+              }
+            }}
+            disabled={currentPage === totalPages}
+            className={`${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:text-foreground cursor-pointer'}`}
+          >
+            <span className="material-icons text-lg">chevron_right</span>
+          </button>
+          <p>
+            Page {currentPage} of {totalPages} • Sorted by: {sortField} ({sortOrder === 'asc' ? 'Asc' : 'Desc'})
+          </p>
+        </div>
       </div>
 
       {/* View Details Modal */}

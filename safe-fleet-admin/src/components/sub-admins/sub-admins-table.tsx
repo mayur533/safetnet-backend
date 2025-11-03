@@ -141,18 +141,6 @@ export function SubAdminsTable({ onEditSubAdmin, refreshTrigger = 0 }: SubAdmins
     setShowFilterMenu(false);
   };
 
-  const handleSortChange = (field: SortField) => {
-    setSortField(field);
-    setCurrentPage(1);
-    setShowSortMenu(false);
-  };
-
-  const handleSortOrderChange = (order: SortOrder) => {
-    setSortOrder(order);
-    setCurrentPage(1);
-    setShowSortMenu(false);
-  };
-
   const confirmDelete = async () => {
     if (!deleteSubAdminId) return;
     
