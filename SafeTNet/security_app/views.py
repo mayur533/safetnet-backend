@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
-
+from django.db.models import Q
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 from users.models import SecurityOfficer
@@ -35,6 +35,7 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
     search_fields = ['user__username', 'user__email', 'message']
     ordering_fields = ['created_at', 'updated_at']
     ordering = ['-created_at']
+    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -43,14 +44,28 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Only alerts assigned to this officer; default to organization fallback if no assignment
-        try:
-            officer = SecurityOfficer.objects.get(email=user.email)
-            return SOSAlert.objects.filter(is_deleted=False, assigned_officer=officer, status__in=['pending', 'accepted'])
-        except SecurityOfficer.DoesNotExist:
-            if getattr(user, 'organization_id', None):
-                return SOSAlert.objects.filter(is_deleted=False, user__organization_id=user.organization_id, status__in=['pending', 'accepted'])
-            return SOSAlert.objects.none()
+
+        # For Security Officers → show SOS alerts assigned to them or their geofence
+        if hasattr(user, 'securityofficerprofile'):
+            officer = user.securityofficerprofile
+            return SOSAlert.objects.filter(
+                Q(is_deleted=False),
+                Q(assigned_officer=officer) | Q(geofence=officer.geofence)
+            )
+
+        # For Sub-Admins → show SOS alerts within their managed geofence
+        elif hasattr(user, 'subadminprofile'):
+            return SOSAlert.objects.filter(
+                is_deleted=False, 
+                geofence=user.subadminprofile.geofence
+            )
+
+        # For Main Admins → see all active alerts
+        elif user.is_superuser:
+            return SOSAlert.objects.filter(is_deleted=False)
+
+        # For normal users → show only their own alerts
+        return SOSAlert.objects.filter(is_deleted=False, user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -68,7 +83,6 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         instance.save(update_fields=['is_deleted'])
 
     def update(self, request, *args, **kwargs):
-        # Only assigned officer can update
         alert = self.get_object()
         try:
             officer = SecurityOfficer.objects.get(email=request.user.email)
@@ -79,7 +93,6 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        # Enforce same rule on PATCH
         alert = self.get_object()
         try:
             officer = SecurityOfficer.objects.get(email=request.user.email)
