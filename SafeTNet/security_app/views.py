@@ -35,7 +35,6 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
     search_fields = ['user__username', 'user__email', 'message']
     ordering_fields = ['created_at', 'updated_at']
     ordering = ['-created_at']
-    permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -56,7 +55,7 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         # For Sub-Admins → show SOS alerts within their managed geofence
         elif hasattr(user, 'subadminprofile'):
             return SOSAlert.objects.filter(
-                is_deleted=False, 
+                is_deleted=False,
                 geofence=user.subadminprofile.geofence
             )
 
@@ -82,24 +81,12 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         instance.is_deleted = True
         instance.save(update_fields=['is_deleted'])
 
+    # ✅ Allow officers to update any SOS (their own or others)
     def update(self, request, *args, **kwargs):
-        alert = self.get_object()
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
-        if alert.assigned_officer_id and alert.assigned_officer_id != officer.id:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
         return super().update(request, *args, **kwargs)
 
+    # ✅ Same for partial updates (PATCH)
     def partial_update(self, request, *args, **kwargs):
-        alert = self.get_object()
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
-        if alert.assigned_officer_id and alert.assigned_officer_id != officer.id:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
@@ -113,6 +100,7 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         qs = self.get_queryset().filter(status='resolved')
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
+
 
 
 class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
