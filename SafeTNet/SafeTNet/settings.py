@@ -14,6 +14,9 @@ from pathlib import Path
 from decouple import config
 import os
 import dj_database_url
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -117,15 +120,12 @@ is_render_internal = database_url and ('.internal' in database_url)
 
 DATABASES = {
     "default": dj_database_url.config(
-        # This default is only used if DATABASE_URL env var is not set
-        # On Render, DATABASE_URL should always be set when database is linked
-        # Using internal URL for Render-to-Render connections
         default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com:5432/safetnet",
         conn_max_age=600,
-        # Require SSL for external DBs; disable for localhost or Render internal connections
         ssl_require=not (is_local_db or is_render_internal) if database_url else True,
     )
 }
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 
