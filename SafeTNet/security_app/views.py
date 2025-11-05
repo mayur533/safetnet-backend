@@ -91,7 +91,7 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def active(self, request):
-        qs = self.get_queryset().filter(status='active')
+        qs = self.get_queryset().filter(status__in=['pending', 'accepted'])
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 
@@ -148,6 +148,37 @@ class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         updated_case = serializer.save()
         
         return Response(CaseSerializer(updated_case).data)
+    
+    @action(detail=True, methods=['post'])
+    def accept(self, request, pk=None):
+        """Officer accepts a case."""
+        case = self.get_object()
+        case.status = 'accepted'
+        case.save(update_fields=['status'])
+        return Response({'detail': 'Case accepted successfully.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Officer rejects a case."""
+        case = self.get_object()
+        case.status = 'open'  # or 'rejected' if you add that option in STATUS_CHOICES
+        case.save(update_fields=['status'])
+        return Response({'detail': 'Case rejected successfully.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def resolve(self, request, pk=None):
+        """Mark a case as resolved and also update the linked SOS alert."""
+        case = self.get_object()
+        case.status = 'resolved'
+        case.save(update_fields=['status'])
+
+        # Also mark the linked SOS alert as resolved
+        if case.sos_alert:
+            case.sos_alert.status = 'resolved'
+            case.sos_alert.save(update_fields=['status'])
+
+        return Response({'detail': 'Case resolved successfully.'}, status=status.HTTP_200_OK)
+
 
 
 class NavigationView(OfficerOnlyMixin, APIView):
