@@ -4,7 +4,7 @@ import {useNavigation} from '@react-navigation/native';
 import {Text, View, TouchableOpacity, Modal, BackHandler, StyleSheet, Platform} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
+import CustomHeader from '../components/common/CustomHeader';
 import HomeScreen from '../screens/main/HomeScreen';
 import TraceMeScreen from '../screens/traceme/TraceMeScreen';
 import EmergencyContactScreen from '../screens/emergency/EmergencyContactScreen';
@@ -14,6 +14,7 @@ import SafetyTipsScreen from '../screens/safety/SafetyTipsScreen';
 import HowItWorksScreen from '../screens/howitworks/HowItWorksScreen';
 import SupportContactScreen from '../screens/support/SupportContactScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
+import SettingsScreen from '../screens/settings/SettingsScreen';
 import AlertsScreen from '../screens/alerts/AlertsScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import ReportsScreen from '../screens/reports/ReportsScreen';
@@ -26,6 +27,23 @@ const CustomDrawer = ({visible, onClose, navigation}: {visible: boolean; onClose
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const [activeScreen, setActiveScreen] = useState('Home');
+  
+  // Get user name - use email if name is not available
+  const userName = user?.name || user?.email?.split('@')[0] || 'User';
+  
+  // Get time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) {
+      return 'Good Morning';
+    } else if (hour < 17) {
+      return 'Good Afternoon';
+    } else {
+      return 'Good Evening';
+    }
+  };
+  
+  const greeting = getGreeting();
 
   useEffect(() => {
     if (visible) {
@@ -77,18 +95,20 @@ const CustomDrawer = ({visible, onClose, navigation}: {visible: boolean; onClose
       onRequestClose={onClose}>
       <View style={styles.drawerContainer}>
         {/* Drawer Content - Left Side */}
-        <LinearGradient
-          colors={['#60A5FA', '#2563EB', '#1E40AF']}
-          style={styles.drawerContent}
-          start={{x: 0, y: 0}}
-          end={{x: 0, y: 1}}>
-          {/* Profile/Logo Section */}
-          <View style={styles.profileSection}>
-            <View style={styles.logoCircle}>
-              <MaterialIcons name="security" size={40} color="#2563EB" />
+        <View style={styles.drawerContent}>
+          {/* Profile/User Section - White background matching home screen */}
+          <TouchableOpacity
+            style={styles.profileSection}
+            onPress={() => {
+              handleNavigate('Profile');
+            }}
+            activeOpacity={0.7}>
+            <View style={styles.userIconCircle}>
+              <MaterialIcons name="account-circle" size={60} color="#2563EB" />
             </View>
-            <Text style={styles.appName}>SafeTNet</Text>
-          </View>
+            <Text style={styles.greetingText}>{greeting}</Text>
+            <Text style={styles.userNameText}>{userName}</Text>
+          </TouchableOpacity>
 
           {/* Menu Items */}
           <View style={styles.menuContainer}>
@@ -104,10 +124,10 @@ const CustomDrawer = ({visible, onClose, navigation}: {visible: boolean; onClose
                   <IconComponent
                     name={item.icon}
                     size={24}
-                    color="#FFFFFF"
+                    color={isActive ? "#2563EB" : "#6B7280"}
                     style={styles.menuIcon}
                   />
-                  <Text style={styles.menuText}>{item.name}</Text>
+                  <Text style={[styles.menuText, isActive && {color: '#2563EB', fontWeight: '600'}]}>{item.name}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -118,10 +138,10 @@ const CustomDrawer = ({visible, onClose, navigation}: {visible: boolean; onClose
             style={styles.logoutButton}
             onPress={handleLogout}
             activeOpacity={0.7}>
-            <MaterialIcons name="logout" size={24} color="#FFFFFF" style={styles.menuIcon} />
+            <MaterialIcons name="logout" size={24} color="#EF4444" style={styles.menuIcon} />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
-        </LinearGradient>
+        </View>
         
         {/* Overlay - Right Side */}
         <TouchableOpacity
@@ -138,14 +158,10 @@ const AppNavigator = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const navigation = useNavigation<any>();
 
-  // Common header left component with drawer button
-  const DrawerButton = () => (
-    <TouchableOpacity
-      onPress={() => setDrawerVisible(true)}
-      style={{marginLeft: 16}}>
-      <Text style={{color: '#FFFFFF', fontSize: 24}}>☰</Text>
-    </TouchableOpacity>
-  );
+  const handleSettingsPress = () => {
+    // Navigate to settings page
+    navigation.navigate('Settings');
+  };
 
   return (
     <>
@@ -153,32 +169,87 @@ const AppNavigator = () => {
         initialRouteName="Home"
         screenOptions={{
           headerShown: true,
-          headerStyle: {backgroundColor: '#2563EB'},
-          headerTintColor: '#FFFFFF',
-          headerTitleStyle: {fontWeight: 'bold'},
-          headerLeft: () => <DrawerButton />,
+          header: ({route, options}) => (
+            <CustomHeader
+              title={options.headerTitle as string || route.name}
+              onMenuPress={() => setDrawerVisible(true)}
+              onSettingsPress={handleSettingsPress}
+              showNotification={route.name === 'Alert'}
+            />
+          ),
           gestureEnabled: false, // Disable swipe back gesture
         }}>
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{
-            headerTitle: 'HOME',
-          }}
+          options={{headerTitle: 'HOME'}}
         />
-        <Stack.Screen name="Alert" component={AlertsScreen} options={{headerTitle: 'ALERT'}} />
-        <Stack.Screen name="Community" component={ChatScreen} options={{headerTitle: 'COMMUNITY'}} />
-        <Stack.Screen name="Family" component={EmergencyContactScreen} options={{headerTitle: 'FAMILY'}} />
-        <Stack.Screen name="SafetyTips" component={SafetyTipsScreen} options={{headerTitle: 'SAFETY TIPS'}} />
-        <Stack.Screen name="HowItWorks" component={HowItWorksScreen} options={{headerTitle: 'HOW IT WORKS'}} />
-        <Stack.Screen name="More" component={ReportsScreen} options={{headerTitle: 'MORE'}} />
+        <Stack.Screen
+          name="Alert"
+          component={AlertsScreen}
+          options={{headerTitle: 'ALERT'}}
+        />
+        <Stack.Screen
+          name="Community"
+          component={ChatScreen}
+          options={{headerTitle: 'COMMUNITY'}}
+        />
+        <Stack.Screen
+          name="Family"
+          component={EmergencyContactScreen}
+          options={{headerTitle: 'FAMILY'}}
+        />
+        <Stack.Screen
+          name="SafetyTips"
+          component={SafetyTipsScreen}
+          options={{headerTitle: 'SAFETY TIPS'}}
+        />
+        <Stack.Screen
+          name="HowItWorks"
+          component={HowItWorksScreen}
+          options={{headerTitle: 'HOW IT WORKS'}}
+        />
+        <Stack.Screen
+          name="More"
+          component={ReportsScreen}
+          options={{headerTitle: 'MORE'}}
+        />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{headerTitle: 'PROFILE'}}
+        />
+        <Stack.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{headerTitle: 'SETTINGS'}}
+        />
         {/* Keep other screens for backwards compatibility */}
-        <Stack.Screen name="TraceMe" component={TraceMeScreen} options={{headerTitle: 'TRACE ME'}} />
-        <Stack.Screen name="EmergencyContact" component={EmergencyContactScreen} options={{headerTitle: 'EMERGENCY CONTACT'}} />
-        <Stack.Screen name="GeofenceArea" component={GeofenceAreaScreen} options={{headerTitle: 'GEOFENCE AREA'}} />
-        <Stack.Screen name="AreaMap" component={AreaMapScreen} options={{headerTitle: 'AREA MAP'}} />
-        <Stack.Screen name="SupportContact" component={SupportContactScreen} options={{headerTitle: 'SUPPORT CONTACTS'}} />
-        <Stack.Screen name="Profile" component={ProfileScreen} options={{headerTitle: 'PROFILE'}} />
+        <Stack.Screen
+          name="TraceMe"
+          component={TraceMeScreen}
+          options={{headerTitle: 'TRACE ME'}}
+        />
+        <Stack.Screen
+          name="EmergencyContact"
+          component={EmergencyContactScreen}
+          options={{headerTitle: 'EMERGENCY CONTACT'}}
+        />
+        <Stack.Screen
+          name="GeofenceArea"
+          component={GeofenceAreaScreen}
+          options={{headerTitle: 'GEOFENCE AREA'}}
+        />
+        <Stack.Screen
+          name="AreaMap"
+          component={AreaMapScreen}
+          options={{headerTitle: 'AREA MAP'}}
+        />
+        <Stack.Screen
+          name="SupportContact"
+          component={SupportContactScreen}
+          options={{headerTitle: 'SUPPORT CONTACTS'}}
+        />
       </Stack.Navigator>
       <CustomDrawer visible={drawerVisible} onClose={() => setDrawerVisible(false)} navigation={navigation} />
     </>
@@ -190,80 +261,87 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
   },
-  drawerContent: {
-    width: 280,
-    height: '100%',
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    paddingTop: Platform.OS === 'ios' ? 50 : 40,
-    paddingBottom: 20,
-    paddingHorizontal: 0,
-  },
-  profileSection: {
-    alignItems: 'center',
-    paddingBottom: 30,
-    paddingTop: 20,
-  },
-  logoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  appName: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
+        drawerContent: {
+          width: 280,
+          height: '100%',
+          backgroundColor: '#FFFFFF',
+          borderTopRightRadius: 0,
+          borderBottomRightRadius: 0,
+          paddingTop: Platform.OS === 'ios' ? 50 : 40,
+          paddingBottom: 20,
+          paddingHorizontal: 0,
+        },
+        profileSection: {
+          alignItems: 'center',
+          paddingBottom: 24,
+          paddingTop: 20,
+          paddingHorizontal: 20,
+          borderBottomWidth: 1,
+          borderBottomColor: '#E5E7EB',
+        },
+        userIconCircle: {
+          width: 80,
+          height: 80,
+          borderRadius: 40,
+          backgroundColor: '#F3F4F6',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 12,
+        },
+        greetingText: {
+          color: '#2563EB',
+          fontSize: 16,
+          fontWeight: '600',
+          marginBottom: 4,
+        },
+        userNameText: {
+          color: '#6B7280',
+          fontSize: 14,
+          fontWeight: '500',
+        },
   menuContainer: {
     flex: 1,
     paddingTop: 10,
     paddingBottom: 20,
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    marginHorizontal: 12,
-    marginVertical: 1,
-    borderRadius: 12,
-  },
-  menuItemActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  menuIcon: {
-    marginRight: 16,
-  },
-  menuText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    marginHorizontal: 12,
-    marginTop: 20,
-    marginBottom: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  logoutText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+        menuItem: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 14,
+          paddingHorizontal: 24,
+          marginHorizontal: 12,
+          marginVertical: 1,
+          borderRadius: 8,
+        },
+        menuItemActive: {
+          backgroundColor: '#EFF6FF',
+        },
+        menuIcon: {
+          marginRight: 16,
+        },
+        menuText: {
+          color: '#374151',
+          fontSize: 16,
+          fontWeight: '500',
+        },
+        logoutButton: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 16,
+          paddingHorizontal: 24,
+          marginHorizontal: 12,
+          marginTop: 20,
+          marginBottom: 10,
+          borderRadius: 8,
+          backgroundColor: '#F3F4F6',
+          borderTopWidth: 1,
+          borderTopColor: '#E5E7EB',
+        },
+        logoutText: {
+          color: '#EF4444',
+          fontSize: 16,
+          fontWeight: '600',
+        },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
