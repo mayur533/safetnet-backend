@@ -1,25 +1,50 @@
-import React from 'react';
-import {View, Text, ScrollView, StyleSheet} from 'react-native';
+import React, {useState, useEffect} from 'react';
+import {View, Text, ScrollView, StyleSheet, Switch} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import {useSettingsStore} from '../../stores/settingsStore';
+import {shakeDetectionService} from '../../services/shakeDetectionService';
 
 const SettingsScreen = () => {
+  const shakeToSendSOS = useSettingsStore((state) => state.shakeToSendSOS);
+  const setShakeToSendSOS = useSettingsStore((state) => state.setShakeToSendSOS);
+  const [isAccelerometerAvailable, setIsAccelerometerAvailable] = useState(false);
+
+  useEffect(() => {
+    // Check if accelerometer is available
+    setIsAccelerometerAvailable(shakeDetectionService.isAccelerometerAvailable());
+  }, []);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <MaterialIcons name="settings" size={32} color="#2563EB" />
-        <Text style={styles.title}>Settings</Text>
-      </View>
-      
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-        <Text style={styles.sectionDescription}>
-          Manage your application preferences and configuration
-        </Text>
-      </View>
-      
-      <View style={styles.placeholder}>
-        <MaterialIcons name="settings" size={64} color="#9CA3AF" />
-        <Text style={styles.placeholderText}>Settings content coming soon</Text>
+        <View style={styles.settingItem}>
+          <View style={styles.settingInfo}>
+            <MaterialIcons name="vibration" size={24} color="#2563EB" />
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingTitle}>Send SOS by shaking phone 3 times</Text>
+              <Text style={styles.settingDescription}>
+                Enable shake gesture to quickly send SOS alerts
+              </Text>
+              {!isAccelerometerAvailable && (
+                <Text style={styles.warningText}>
+                  Accelerometer not available. Please rebuild the app.
+                </Text>
+              )}
+            </View>
+          </View>
+          <Switch
+            value={shakeToSendSOS && isAccelerometerAvailable}
+            onValueChange={(value) => {
+              if (isAccelerometerAvailable) {
+                setShakeToSendSOS(value);
+              }
+            }}
+            disabled={!isAccelerometerAvailable}
+            trackColor={{false: '#D1D5DB', true: '#93C5FD'}}
+            thumbColor={shakeToSendSOS && isAccelerometerAvailable ? '#2563EB' : '#F3F4F6'}
+            ios_backgroundColor="#D1D5DB"
+          />
+        </View>
       </View>
     </ScrollView>
   );
@@ -33,43 +58,46 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
   },
-  header: {
+  section: {
+    marginTop: 20,
+  },
+  settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
+  settingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 16,
+  },
+  settingTextContainer: {
+    flex: 1,
     marginLeft: 12,
   },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
+  settingTitle: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    color: '#111827',
+    marginBottom: 4,
   },
-  sectionDescription: {
+  settingDescription: {
     fontSize: 14,
     color: '#6B7280',
     lineHeight: 20,
   },
-  placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    marginTop: 16,
+  warningText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });
 

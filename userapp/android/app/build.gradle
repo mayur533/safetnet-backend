@@ -116,4 +116,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+    
+    // Exclude old support library to avoid conflicts with AndroidX
+    configurations.all {
+        exclude group: 'com.android.support', module: 'support-compat'
+        exclude group: 'com.android.support', module: 'support-annotations'
+    }
 }

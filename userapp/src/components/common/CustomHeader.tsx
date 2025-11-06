@@ -8,6 +8,9 @@ interface CustomHeaderProps {
   onMenuPress: () => void;
   onSettingsPress?: () => void;
   showNotification?: boolean;
+  subtitle?: string;
+  icon?: string;
+  showSettings?: boolean;
 }
 
 const CustomHeader: React.FC<CustomHeaderProps> = ({
@@ -15,27 +18,38 @@ const CustomHeader: React.FC<CustomHeaderProps> = ({
   onMenuPress,
   onSettingsPress,
   showNotification = false,
+  subtitle,
+  icon,
+  showSettings = false,
 }) => {
   const insets = useSafeAreaInsets();
   const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : insets.top;
 
   return (
     <View style={[styles.header, {paddingTop: statusBarHeight}]}>
-      <View style={styles.headerContent}>
+      {/* Top row - Drawer, Title with icon, Settings */}
+      <View style={styles.headerTopRow}>
+        {/* Left side - Drawer icon */}
         <TouchableOpacity onPress={onMenuPress} style={styles.menuButton}>
           <MaterialIcons name="menu" size={24} color="#374151" />
         </TouchableOpacity>
         
-        <Text style={styles.title}>{title}</Text>
+        {/* Left - Title aligned to left */}
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>{title}</Text>
+        </View>
         
-        <TouchableOpacity
-          onPress={onSettingsPress}
-          style={styles.settingsButton}>
-          <View style={styles.settingsContainer}>
-            <MaterialIcons name="settings" size={24} color="#374151" />
-            {showNotification && <View style={styles.notificationDot} />}
-          </View>
-        </TouchableOpacity>
+        {/* Right side - Settings icon (only on Home page) */}
+        {showSettings && (
+          <TouchableOpacity
+            onPress={onSettingsPress}
+            style={styles.settingsButton}>
+            <View style={styles.settingsContainer}>
+              <MaterialIcons name="settings" size={24} color="#374151" />
+              {showNotification && <View style={styles.notificationDot} />}
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -46,26 +60,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    paddingBottom: 8,
+    minHeight: 48,
   },
-  headerContent: {
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 56,
     paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   menuButton: {
-    padding: 8,
+    padding: 4,
+    width: 40,
+    alignItems: 'flex-start',
+  },
+  titleContainer: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginLeft: 12,
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#374151',
-    flex: 1,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   settingsButton: {
-    padding: 8,
+    padding: 4,
+    width: 40,
+    alignItems: 'flex-end',
   },
   settingsContainer: {
     position: 'relative',

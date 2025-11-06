@@ -1,4 +1,5 @@
 import React, {useState, useEffect, useRef} from 'react';
+import {useRoute} from '@react-navigation/native';
 import {
   View,
   Text,
@@ -10,19 +11,35 @@ import {
   Animated,
   PanResponder,
   Vibration,
+  Modal,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
+import {useSettingsStore} from '../../stores/settingsStore';
 import {CustomVibration} from '../../modules/VibrationModule';
+import {shakeDetectionService} from '../../services/shakeDetectionService';
 
 const {width, height} = Dimensions.get('window');
 
 const HomeScreen = ({navigation}: any) => {
+  const route = useRoute();
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const shakeToSendSOS = useSettingsStore((state) => state.shakeToSendSOS);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSendingAlert, setIsSendingAlert] = useState(false);
   const [isButtonPressed, setIsButtonPressed] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Check route params for showLoginModal
+  useEffect(() => {
+    if (route?.params?.showLoginModal) {
+      setShowLoginModal(true);
+      // Clear the param after showing modal
+      navigation.setParams({showLoginModal: undefined});
+    }
+  }, [route?.params?.showLoginModal, navigation]);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const alertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hapticIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -50,6 +67,11 @@ const HomeScreen = ({navigation}: any) => {
   };
 
   const handleSOSPressIn = () => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    
     setIsButtonPressed(true);
     // Haptic feedback on initial press - short pulse that stops
     triggerVibration(200);
@@ -145,7 +167,26 @@ const HomeScreen = ({navigation}: any) => {
     }, 1000);
   };
 
-  const sendAlert = () => {
+  const sendAlert = (fromShake: boolean = false) => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    // If called from shake detection, skip UI updates and just send
+    if (fromShake) {
+      // Send alert directly without UI countdown
+      // Haptic feedback when alert is sent - use pattern for success
+      try {
+        CustomVibration.vibratePattern([0, 1000, 200, 1000], -1);
+      } catch (err) {
+        console.warn('Vibration pattern error:', err);
+        CustomVibration.vibrate(1000);
+      }
+      // Notification is already shown by shakeDetectionService
+      return;
+    }
+
+    // Normal UI flow
     setShowSuccess(true);
     // Haptic feedback when alert is sent - use pattern for success
     try {
@@ -247,6 +288,25 @@ const HomeScreen = ({navigation}: any) => {
     resetState();
   };
 
+  // Shake detection setup
+  useEffect(() => {
+    if (shakeToSendSOS && isAuthenticated) {
+      // Start shake detection
+      shakeDetectionService.start(() => {
+        // This callback is called when shake is detected
+        sendAlert(true); // Pass true to indicate it's from shake
+      });
+    } else {
+      // Stop shake detection
+      shakeDetectionService.stop();
+    }
+
+    // Cleanup on unmount or when settings change
+    return () => {
+      shakeDetectionService.stop();
+    };
+  }, [shakeToSendSOS, isAuthenticated]);
+
   useEffect(() => {
     // Test vibration on component mount after a short delay
     const testTimer = setTimeout(() => {
@@ -269,6 +329,11 @@ const HomeScreen = ({navigation}: any) => {
   }, []);
 
   const handleCategoryPress = (category: string) => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    
     // Vibrate on category button press
     triggerVibration(200);
     
@@ -411,6 +476,40 @@ const HomeScreen = ({navigation}: any) => {
           <Text style={styles.footerText}>Safe T Net</Text>
         </View>
       )}
+
+      {/* Modern Login Modal */}
+      <Modal
+        visible={showLoginModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLoginModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <MaterialIcons name="lock" size={48} color="#2563EB" />
+            </View>
+            <Text style={styles.modalTitle}>Login Required</Text>
+            <Text style={styles.modalMessage}>Login to use this feature</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowLoginModal(false)}
+                activeOpacity={0.7}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalLoginButton}
+                onPress={() => {
+                  setShowLoginModal(false);
+                  navigation.navigate('Login');
+                }}
+                activeOpacity={0.7}>
+                <Text style={styles.modalLoginText}>Login</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -576,6 +675,77 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
     letterSpacing: -0.2,
     marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '85%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  modalIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  modalLoginButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+  },
+  modalLoginText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
