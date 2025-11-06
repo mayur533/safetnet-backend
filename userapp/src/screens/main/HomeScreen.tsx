@@ -173,15 +173,10 @@ const HomeScreen = ({navigation}: any) => {
     }
 
     // If called from shake detection, skip UI updates and just send
+    // Vibration is already handled in shakeDetectionService when 3 shakes are detected
     if (fromShake) {
-      // Send alert directly without UI countdown
-      // Haptic feedback when alert is sent - use pattern for success
-      try {
-        CustomVibration.vibratePattern([0, 1000, 200, 1000], -1);
-      } catch (err) {
-        console.warn('Vibration pattern error:', err);
-        CustomVibration.vibrate(1000);
-      }
+      // Send alert directly without UI countdown or vibration
+      // Vibration already happened when 3 shakes were detected
       // Notification is already shown by shakeDetectionService
       return;
     }
@@ -288,6 +283,15 @@ const HomeScreen = ({navigation}: any) => {
     resetState();
   };
 
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      const {loadSettings} = useSettingsStore.getState();
+      await loadSettings();
+    };
+    loadSettings();
+  }, []);
+
   // Shake detection setup
   useEffect(() => {
     if (shakeToSendSOS && isAuthenticated) {
@@ -297,13 +301,18 @@ const HomeScreen = ({navigation}: any) => {
         sendAlert(true); // Pass true to indicate it's from shake
       });
     } else {
-      // Stop shake detection
-      shakeDetectionService.stop();
+      // Stop shake detection only if setting is disabled
+      if (!shakeToSendSOS) {
+        shakeDetectionService.stop();
+      }
     }
 
     // Cleanup on unmount or when settings change
     return () => {
-      shakeDetectionService.stop();
+      // Don't stop if setting is enabled - let it run in background
+      if (!shakeToSendSOS) {
+        shakeDetectionService.stop();
+      }
     };
   }, [shakeToSendSOS, isAuthenticated]);
 

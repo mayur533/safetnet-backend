@@ -14,11 +14,13 @@ class MainApplication : Application(), ReactApplication {
     getDefaultReactHost(
       context = applicationContext,
       packageList =
-        PackageList(this).packages.apply {
+            PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
-          add(VibrationPackage())
-          add(RNSensorsPackage())
+            add(VibrationPackage())
+            add(RNSensorsPackage())
+            add(DevMenuPackage())
+            add(ShakeDetectionServicePackage())
         },
     )
   }

@@ -10,8 +10,32 @@ const SettingsScreen = () => {
   const [isAccelerometerAvailable, setIsAccelerometerAvailable] = useState(false);
 
   useEffect(() => {
-    // Check if accelerometer is available
-    setIsAccelerometerAvailable(shakeDetectionService.isAccelerometerAvailable());
+    // Check if accelerometer is available immediately
+    const checkAvailability = () => {
+      const available = shakeDetectionService.isAccelerometerAvailable();
+      setIsAccelerometerAvailable(available);
+      return available;
+    };
+
+    // Initial check
+    checkAvailability();
+
+    // Retry checking after a delay in case module loads later
+    const retryInterval = setInterval(() => {
+      if (checkAvailability()) {
+        clearInterval(retryInterval); // Stop retrying once available
+      }
+    }, 2000); // Check every 2 seconds
+
+    // Stop retrying after 10 seconds
+    const timeout = setTimeout(() => {
+      clearInterval(retryInterval);
+    }, 10000);
+
+    return () => {
+      clearInterval(retryInterval);
+      clearTimeout(timeout);
+    };
   }, []);
 
   return (
@@ -34,9 +58,17 @@ const SettingsScreen = () => {
           </View>
           <Switch
             value={shakeToSendSOS && isAccelerometerAvailable}
-            onValueChange={(value) => {
+            onValueChange={async (value) => {
               if (isAccelerometerAvailable) {
-                setShakeToSendSOS(value);
+                await setShakeToSendSOS(value);
+                // Start/stop service based on setting
+                if (value) {
+                  shakeDetectionService.start(() => {
+                    // This will be handled by HomeScreen
+                  });
+                } else {
+                  shakeDetectionService.stop();
+                }
               }
             }}
             disabled={!isAccelerometerAvailable}
