@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
 import {useNavigation} from '@react-navigation/native';
+import {Alert} from 'react-native';
 import CustomHeader from '../components/common/CustomHeader';
 import CustomDrawer from '../components/common/CustomDrawer';
 import {useAuthStore} from '../stores/authStore';
@@ -27,9 +28,8 @@ const AppNavigator = () => {
   const navigation = useNavigation<any>();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
-  const handleSettingsPress = () => {
-    // Navigate to settings page
-    navigation.navigate('Settings');
+  const handleUpgradePress = () => {
+    Alert.alert('Upgrade to Premium', 'Premium purchase options will be available soon.');
   };
 
   // Screen configurations with icons and subtitles
@@ -59,12 +59,9 @@ const AppNavigator = () => {
             return (
               <CustomHeader
                 title={config.title}
-                icon={config.icon}
-                subtitle={config.subtitle}
                 onMenuPress={() => setDrawerVisible(true)}
-                onSettingsPress={handleSettingsPress}
-                showNotification={route.name === 'Alert'}
-                showSettings={route.name === 'Home'}
+                onUpgradePress={handleUpgradePress}
+                showPremiumCTA={route.name === 'Home'}
               />
             );
           },

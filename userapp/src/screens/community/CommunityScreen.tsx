@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useMemo} from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import {useNavigation} from '@react-navigation/native';
-import {useAuthStore} from '../../stores/authStore';
+import {useNavigation, useTheme} from '@react-navigation/native';
+import type {Theme} from '@react-navigation/native';
+import {useSubscription, FREE_TRUSTED_CIRCLE_LIMIT} from '../../lib/hooks/useSubscription';
 
 interface Group {
   id: string;
@@ -32,10 +33,39 @@ interface User {
   avatar?: string;
 }
 
+const withAlpha = (hex: string, alpha: number) => {
+  const sanitized = hex.replace('#', '');
+  const expanded =
+    sanitized.length === 3
+      ? sanitized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : sanitized;
+  const bigint = parseInt(expanded, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 const CommunityScreen = () => {
   const navigation = useNavigation<any>();
-  const user = useAuthStore((state) => state.user);
+  const {isPremium, requirePremium} = useSubscription();
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const {colors} = theme;
+  const isDarkMode = theme.dark;
+  const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
+  const mutedTextColor = isDarkMode ? 'rgba(226, 232, 240, 0.72)' : '#6B7280';
+  const secondaryTextColor = isDarkMode ? 'rgba(148, 163, 184, 0.8)' : '#9CA3AF';
+  const noticeIconColor = isDarkMode ? withAlpha(colors.primary, 0.85) : '#C026D3';
+  const noticeTextColor = isDarkMode ? withAlpha(colors.primary, 0.85) : '#4C1D95';
+  const noticeBackground = isDarkMode ? withAlpha(colors.primary, 0.18) : '#F5F3FF';
+  const noticeBorder = isDarkMode ? withAlpha(colors.primary, 0.35) : '#E0E7FF';
+  const disabledButtonColor = isDarkMode ? withAlpha(colors.primary, 0.25) : '#9CA3AF';
+  const highlightBackground = isDarkMode ? withAlpha(colors.primary, 0.22) : '#EFF6FF';
   const [groups, setGroups] = useState<Group[]>([
     {
       id: '1',
@@ -102,28 +132,34 @@ const CommunityScreen = () => {
 
   const renderGroupItem = ({item}: {item: Group}) => (
     <TouchableOpacity
-      style={[styles.groupItem, item.isUnread && styles.groupItemUnread]}
+      style={[
+        styles.groupItem,
+        {backgroundColor: colors.card},
+        item.isUnread && {backgroundColor: highlightBackground, borderLeftColor: colors.primary, borderLeftWidth: 3},
+      ]}
       onPress={() => handleGroupPress(item)}
       activeOpacity={0.7}>
-      <View style={styles.groupAvatar}>
-        <MaterialIcons name="groups" size={32} color="#2563EB" />
+      <View style={[styles.groupAvatar, {backgroundColor: highlightBackground}]}>
+        <MaterialIcons name="groups" size={32} color={colors.primary} />
       </View>
       <View style={styles.groupContent}>
         <View style={styles.groupHeader}>
-          <Text style={styles.groupName}>{item.name}</Text>
+          <Text style={[styles.groupName, {color: colors.text}]}>{item.name}</Text>
           {item.lastMessageTime && (
-            <Text style={styles.groupTime}>{formatTime(item.lastMessageTime)}</Text>
+            <Text style={[styles.groupTime, {color: secondaryTextColor}]}>{formatTime(item.lastMessageTime)}</Text>
           )}
         </View>
-        {item.description && <Text style={styles.groupDescription}>{item.description}</Text>}
+        {item.description && (
+          <Text style={[styles.groupDescription, {color: mutedTextColor}]}>{item.description}</Text>
+        )}
         {item.lastMessage && (
-          <Text style={styles.groupLastMessage} numberOfLines={1}>
+          <Text style={[styles.groupLastMessage, {color: mutedTextColor}]} numberOfLines={1}>
             {item.lastMessage}
           </Text>
         )}
         <View style={styles.groupFooter}>
-          <Text style={styles.memberCount}>{item.memberCount} members</Text>
-          {item.isUnread && <View style={styles.unreadBadge} />}
+          <Text style={[styles.memberCount, {color: secondaryTextColor}]}>{item.memberCount} members</Text>
+          {item.isUnread && <View style={[styles.unreadBadge, {backgroundColor: colors.primary}]} />}
         </View>
       </View>
     </TouchableOpacity>
@@ -131,25 +167,51 @@ const CommunityScreen = () => {
 
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+    <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       <ScrollView
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={styles.scrollContent}>
+        contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}>
         <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => navigation.navigate('CreateGroup', {onGroupCreated: handleCreateGroup})}
+          style={[
+            styles.createButton,
+            {backgroundColor: colors.primary},
+            !isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT && {backgroundColor: disabledButtonColor},
+          ]}
+          onPress={() => {
+            if (!isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT) {
+              requirePremium('Free members can create up to 2 trusted circles. Upgrade for unlimited circles and premium community support.');
+              return;
+            }
+            navigation.navigate('CreateGroup', {onGroupCreated: handleCreateGroup});
+          }}
           activeOpacity={0.7}>
           <MaterialIcons name="add" size={24} color="#FFFFFF" />
           <Text style={styles.createButtonText}>Create Group</Text>
         </TouchableOpacity>
 
+        {!isPremium && (
+          <View style={[styles.noticeCard, {backgroundColor: noticeBackground, borderColor: noticeBorder}]}>
+            <MaterialIcons name="workspace-premium" size={20} color={noticeIconColor} />
+            <Text style={[styles.noticeText, {color: noticeTextColor}]}>
+              Premium Community Support unlocks unlimited trusted circles and access to our verified responder network.
+            </Text>
+          </View>
+        )}
+
+        {!isPremium && (
+          <View style={styles.limitRow}>
+            <Text style={[styles.limitLabel, {color: colors.text}]}>Trusted Circles</Text>
+            <Text style={[styles.limitValue, {color: colors.primary}]}>{Math.min(groups.length, FREE_TRUSTED_CIRCLE_LIMIT)} / {FREE_TRUSTED_CIRCLE_LIMIT}</Text>
+          </View>
+        )}
+
         {groups.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialIcons name="groups" size={64} color="#9CA3AF" />
-            <Text style={styles.emptyStateText}>No groups yet</Text>
-            <Text style={styles.emptyStateSubtext}>Create your first group to get started</Text>
+            <MaterialIcons name="groups" size={64} color={secondaryTextColor} />
+            <Text style={[styles.emptyStateText, {color: colors.text}]}>No groups yet</Text>
+            <Text style={[styles.emptyStateSubtext, {color: mutedTextColor}]}>Create your first group to get started</Text>
           </View>
         ) : (
           <FlatList
@@ -165,261 +227,142 @@ const CommunityScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    gap: 8,
-    marginBottom: 20,
-  },
-  createButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-    marginTop: 16,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 8,
-  },
-  groupItem: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  groupItemUnread: {
-    backgroundColor: '#EFF6FF',
-    borderLeftWidth: 3,
-    borderLeftColor: '#2563EB',
-  },
-  groupAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  groupContent: {
-    flex: 1,
-  },
-  groupHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  groupName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    flex: 1,
-  },
-  groupTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginLeft: 8,
-  },
-  groupDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  groupLastMessage: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  groupFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  memberCount: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  unreadBadge: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2563EB',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-    paddingBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  form: {
-    padding: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-    marginTop: 16,
-  },
-  input: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#111827',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  memberSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    padding: 12,
-  },
-  memberSelectorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  memberSelectorText: {
-    fontSize: 16,
-    color: '#111827',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: '#2563EB',
-  },
-  confirmButtonDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  confirmButtonTextDisabled: {
-    color: '#9CA3AF',
-  },
-  userItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  userItemSelected: {
-    backgroundColor: '#EFF6FF',
-  },
-  userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  userAvatarText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-});
+const createStyles = (colors: Theme['colors'], isDarkMode: boolean) => {
+  const cardShadowColor = isDarkMode ? 'rgba(15, 23, 42, 0.45)' : '#000000';
+
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 24,
+    },
+    createButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      gap: 8,
+      marginBottom: 20,
+    },
+    createButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    noticeCard: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 12,
+      borderRadius: 12,
+      padding: 14,
+      borderWidth: 1,
+      marginBottom: 20,
+    },
+    noticeText: {
+      flex: 1,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '500',
+    },
+    limitRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 8,
+      marginBottom: 12,
+    },
+    limitLabel: {
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    limitValue: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    emptyState: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 60,
+    },
+    emptyStateText: {
+      fontSize: 18,
+      fontWeight: '600',
+      marginTop: 16,
+    },
+    emptyStateSubtext: {
+      fontSize: 14,
+      marginTop: 8,
+      textAlign: 'center',
+    },
+    groupItem: {
+      flexDirection: 'row',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      shadowColor: cardShadowColor,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: isDarkMode ? 0.25 : 0.08,
+      shadowRadius: isDarkMode ? 4 : 2,
+      elevation: isDarkMode ? 4 : 2,
+    },
+    groupAvatar: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    groupContent: {
+      flex: 1,
+    },
+    groupHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    groupName: {
+      fontSize: 16,
+      fontWeight: '600',
+      flex: 1,
+    },
+    groupTime: {
+      fontSize: 12,
+      marginLeft: 8,
+    },
+    groupDescription: {
+      fontSize: 14,
+      marginBottom: 4,
+    },
+    groupLastMessage: {
+      fontSize: 14,
+      marginBottom: 8,
+    },
+    groupFooter: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    memberCount: {
+      fontSize: 12,
+    },
+    unreadBadge: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+  });
+};
+
+export default CommunityScreen;
 
 export default CommunityScreen;

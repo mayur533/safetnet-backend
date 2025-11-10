@@ -26,9 +26,6 @@ const AuthNavigator = () => {
                 <CustomHeader
                   title="HOME"
                   onMenuPress={() => setDrawerVisible(true)}
-                  onSettingsPress={() => navigation.navigate('Login')}
-                  showNotification={false}
-                  showSettings={false}
                 />
               );
             }

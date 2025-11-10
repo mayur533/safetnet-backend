@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,11 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import {useTheme} from '@react-navigation/native';
+import type {Theme} from '@react-navigation/native';
+import {useSubscription, FREE_CONTACT_LIMIT} from '../../lib/hooks/useSubscription';
 
 interface Contact {
   id: string;
@@ -21,7 +25,63 @@ interface Contact {
   relationship?: string;
 }
 
+const withAlpha = (hex: string, alpha: number) => {
+  const sanitized = hex.replace('#', '');
+  const expanded =
+    sanitized.length === 3
+      ? sanitized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : sanitized;
+  const bigint = parseInt(expanded, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+type ThemeTokens = {
+  mutedTextColor: string;
+  secondaryTextColor: string;
+  iconMutedColor: string;
+  noticeBackground: string;
+  noticeBorder: string;
+  noticeTextColor: string;
+  disabledButtonColor: string;
+  softSurfaceColor: string;
+  borderColor: string;
+  cardShadowColor: string;
+  dividerColor: string;
+  emptyIconColor: string;
+};
+
 const EmergencyContactScreen = () => {
+  const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const {colors} = theme;
+  const isDarkMode = theme.dark;
+
+  const themeTokens = useMemo<ThemeTokens>(() => ({
+    mutedTextColor: isDarkMode ? 'rgba(226, 232, 240, 0.75)' : '#6B7280',
+    secondaryTextColor: isDarkMode ? 'rgba(148, 163, 184, 0.85)' : '#9CA3AF',
+    iconMutedColor: isDarkMode ? 'rgba(203, 213, 225, 0.85)' : '#6B7280',
+    noticeBackground: isDarkMode ? withAlpha('#EF4444', 0.18) : '#FEF2F2',
+    noticeBorder: isDarkMode ? withAlpha('#EF4444', 0.35) : '#FECACA',
+    noticeTextColor: isDarkMode ? withAlpha('#FCA5A5', 0.88) : '#B91C1C',
+    disabledButtonColor: isDarkMode ? withAlpha(colors.primary, 0.35) : '#9CA3AF',
+    softSurfaceColor: isDarkMode ? withAlpha(colors.primary, 0.1) : '#F9FAFB',
+    borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1),
+    cardShadowColor: isDarkMode ? 'rgba(15, 23, 42, 0.45)' : '#000000',
+    dividerColor: isDarkMode ? withAlpha(colors.border, 0.6) : '#F3F4F6',
+    emptyIconColor: isDarkMode ? withAlpha(colors.notification, 0.7) : '#D1D5DB',
+  }), [colors, isDarkMode]);
+
+  const styles = useMemo(() => createStyles(colors, themeTokens, isDarkMode), [colors, themeTokens, isDarkMode]);
+  const {mutedTextColor, secondaryTextColor, iconMutedColor, noticeTextColor, emptyIconColor} = themeTokens;
+
+  const {isPremium, requirePremium} = useSubscription();
   const [refreshing, setRefreshing] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([
     {id: '1', name: 'Emergency Services', phone: '911', type: 'Emergency'},
@@ -45,7 +105,14 @@ const EmergencyContactScreen = () => {
     setRefreshing(false);
   };
 
+  const maxContacts = useMemo(() => (isPremium ? Infinity : FREE_CONTACT_LIMIT), [isPremium]);
+  const reachedFreeLimit = !isPremium && contacts.length >= FREE_CONTACT_LIMIT;
+
   const handleAddContact = () => {
+    if (reachedFreeLimit) {
+      requirePremium('Add unlimited emergency contacts with Premium.');
+      return;
+    }
     setEditingContact(null);
     setFormData({
       name: '',
@@ -99,6 +166,10 @@ const EmergencyContactScreen = () => {
           : c
       ));
     } else {
+      if (contacts.length >= maxContacts) {
+        requirePremium('You have reached the contact limit. Upgrade to add more.');
+        return;
+      }
       const newContact: Contact = {
         ...formData,
         id: Date.now().toString(),
@@ -145,28 +216,52 @@ const EmergencyContactScreen = () => {
     }
   };
 
+  const getContactTint = (type: string, alpha: number) => withAlpha(getContactColor(type), alpha);
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+        contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}
+        refreshControl={(
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            progressBackgroundColor={colors.card}
+          />
+        )}>
         
         {/* Add Contact Button */}
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, reachedFreeLimit && styles.addButtonDisabled]}
           onPress={handleAddContact}
-          activeOpacity={0.8}>
+          activeOpacity={0.8}
+          disabled={reachedFreeLimit}>
           <MaterialIcons name="add" size={24} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Add Contact</Text>
         </TouchableOpacity>
+        {reachedFreeLimit && (
+          <View style={styles.limitNotice}>
+            <MaterialIcons name="workspace-premium" size={18} color={noticeTextColor} />
+            <Text style={styles.limitNoticeText}>
+              Premium unlocks unlimited emergency contacts and advanced safety automations.
+            </Text>
+          </View>
+        )}
 
         {/* Contacts List */}
+        <View style={styles.limitHeader}>
+          <Text style={styles.limitHeaderText}>Emergency Contacts</Text>
+          <Text style={styles.limitCount}>
+            {Math.min(contacts.length, FREE_CONTACT_LIMIT)} / {isPremium ? '∞' : FREE_CONTACT_LIMIT}
+          </Text>
+        </View>
         <View style={styles.contactsList}>
           {contacts.map((contact) => (
             <View key={contact.id} style={styles.contactCard}>
               <View style={styles.contactHeader}>
-                <View style={[styles.contactIconContainer, {backgroundColor: getContactColor(contact.type) + '15'}]}>
+                <View style={[styles.contactIconContainer, {backgroundColor: getContactTint(contact.type, isDarkMode ? 0.32 : 0.12)}]}>
                   <MaterialIcons 
                     name={getContactIcon(contact.type)} 
                     size={28} 
@@ -180,7 +275,7 @@ const EmergencyContactScreen = () => {
                   )}
                 </View>
                 <View style={styles.contactTypeBadge}>
-                  <View style={[styles.badge, {backgroundColor: getContactColor(contact.type) + '20'}]}>
+                  <View style={[styles.badge, {backgroundColor: getContactTint(contact.type, isDarkMode ? 0.35 : 0.18)}]}>
                     <Text style={[styles.badgeText, {color: getContactColor(contact.type)}]}>
                       {contact.type}
                     </Text>
@@ -193,14 +288,14 @@ const EmergencyContactScreen = () => {
                   style={styles.contactDetailRow}
                   onPress={() => handleCall(contact.phone)}
                   activeOpacity={0.7}>
-                  <MaterialIcons name="phone" size={20} color="#6B7280" />
+                  <MaterialIcons name="phone" size={20} color={iconMutedColor} />
                   <Text style={styles.contactDetailText}>{contact.phone}</Text>
-                  <MaterialIcons name="call" size={20} color="#2563EB" />
+                  <MaterialIcons name="call" size={20} color={colors.primary} />
                 </TouchableOpacity>
 
                 {contact.email && (
                   <View style={styles.contactDetailRow}>
-                    <MaterialIcons name="email" size={20} color="#6B7280" />
+                    <MaterialIcons name="email" size={20} color={iconMutedColor} />
                     <Text style={styles.contactDetailText}>{contact.email}</Text>
                   </View>
                 )}
@@ -211,8 +306,8 @@ const EmergencyContactScreen = () => {
                   style={styles.actionButton}
                   onPress={() => handleEditContact(contact)}
                   activeOpacity={0.7}>
-                  <MaterialIcons name="edit" size={20} color="#2563EB" />
-                  <Text style={[styles.actionButtonText, {color: '#2563EB'}]}>Edit</Text>
+                  <MaterialIcons name="edit" size={20} color={colors.primary} />
+                  <Text style={[styles.actionButtonText, {color: colors.primary}]}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionButton}
@@ -228,7 +323,7 @@ const EmergencyContactScreen = () => {
 
         {contacts.length === 0 && (
           <View style={styles.emptyState}>
-            <MaterialIcons name="contacts" size={64} color="#D1D5DB" />
+            <MaterialIcons name="contacts" size={64} color={emptyIconColor} />
             <Text style={styles.emptyStateText}>No contacts added yet</Text>
             <Text style={styles.emptyStateSubtext}>Add your first emergency contact</Text>
           </View>
@@ -250,7 +345,7 @@ const EmergencyContactScreen = () => {
               <TouchableOpacity
                 onPress={() => setShowAddModal(false)}
                 style={styles.closeButton}>
-                <MaterialIcons name="close" size={24} color="#6B7280" />
+                <MaterialIcons name="close" size={24} color={iconMutedColor} />
               </TouchableOpacity>
             </View>
 
@@ -258,11 +353,11 @@ const EmergencyContactScreen = () => {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Name *</Text>
                 <View style={styles.inputContainer}>
-                  <MaterialIcons name="person" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <MaterialIcons name="person" size={20} color={iconMutedColor} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter name"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={secondaryTextColor}
                     value={formData.name}
                     onChangeText={(text) => setFormData({...formData, name: text})}
                   />
@@ -272,11 +367,11 @@ const EmergencyContactScreen = () => {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Phone Number *</Text>
                 <View style={styles.inputContainer}>
-                  <MaterialIcons name="phone" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <MaterialIcons name="phone" size={20} color={iconMutedColor} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter phone number"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={secondaryTextColor}
                     value={formData.phone}
                     onChangeText={(text) => setFormData({...formData, phone: text})}
                     keyboardType="phone-pad"
@@ -287,11 +382,11 @@ const EmergencyContactScreen = () => {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Email</Text>
                 <View style={styles.inputContainer}>
-                  <MaterialIcons name="email" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <MaterialIcons name="email" size={20} color={iconMutedColor} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter email (optional)"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={secondaryTextColor}
                     value={formData.email}
                     onChangeText={(text) => setFormData({...formData, email: text})}
                     keyboardType="email-address"
@@ -303,11 +398,11 @@ const EmergencyContactScreen = () => {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Relationship</Text>
                 <View style={styles.inputContainer}>
-                  <MaterialIcons name="family-restroom" size={20} color="#6B7280" style={styles.inputIcon} />
+                  <MaterialIcons name="family-restroom" size={20} color={iconMutedColor} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., Father, Mother, Friend"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={secondaryTextColor}
                     value={formData.relationship}
                     onChangeText={(text) => setFormData({...formData, relationship: text})}
                   />
@@ -323,14 +418,14 @@ const EmergencyContactScreen = () => {
                       style={[
                         styles.typeOption,
                         formData.type === type && styles.typeOptionActive,
-                        formData.type === type && {backgroundColor: getContactColor(type) + '20', borderColor: getContactColor(type)},
+                        formData.type === type && {backgroundColor: getContactTint(type, isDarkMode ? 0.35 : 0.2), borderColor: getContactColor(type)},
                       ]}
                       onPress={() => setFormData({...formData, type})}
                       activeOpacity={0.7}>
                       <MaterialIcons
                         name={getContactIcon(type)}
                         size={20}
-                        color={formData.type === type ? getContactColor(type) : '#6B7280'}
+                        color={formData.type === type ? getContactColor(type) : iconMutedColor}
                       />
                       <Text
                         style={[
@@ -366,307 +461,317 @@ const EmergencyContactScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  headerSection: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  headerTextContainer: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  contactsList: {
-    paddingHorizontal: 20,
-  },
-  contactCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  contactHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  contactIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  contactInfo: {
-    flex: 1,
-  },
-  contactName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  contactRelationship: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  contactTypeBadge: {
-    marginLeft: 8,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  contactDetails: {
-    marginBottom: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  contactDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingVertical: 4,
-  },
-  contactDetailText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#374151',
-    marginLeft: 12,
-  },
-  contactActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F9FAFB',
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 16,
-    marginBottom: 4,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '90%',
-    paddingBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalForm: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 50,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    paddingVertical: 0,
-  },
-  typeSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  typeOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
-  },
-  typeOptionActive: {
-    borderWidth: 2,
-  },
-  typeOptionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#6B7280',
-    marginLeft: 6,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  saveButton: {
-    backgroundColor: '#2563EB',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});
+const createStyles = (colors: Theme['colors'], tokens: ThemeTokens, isDarkMode: boolean) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingBottom: 24,
+    },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+      marginHorizontal: 20,
+      marginTop: 20,
+      marginBottom: 16,
+      paddingVertical: 14,
+      borderRadius: 12,
+      elevation: isDarkMode ? 4 : 2,
+      shadowColor: tokens.cardShadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: isDarkMode ? 0.25 : 0.1,
+      shadowRadius: isDarkMode ? 6 : 4,
+    },
+    addButtonDisabled: {
+      backgroundColor: tokens.disabledButtonColor,
+    },
+    addButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
+    limitNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: tokens.noticeBackground,
+      borderRadius: 12,
+      marginHorizontal: 20,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderWidth: 1,
+      borderColor: tokens.noticeBorder,
+    },
+    limitNoticeText: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: '500',
+      color: tokens.noticeTextColor,
+    },
+    limitHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 12,
+      paddingHorizontal: 20,
+      paddingBottom: 8,
+    },
+    limitHeaderText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    limitCount: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    contactsList: {
+      paddingHorizontal: 20,
+    },
+    contactCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: tokens.borderColor,
+      shadowColor: tokens.cardShadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: isDarkMode ? 0.2 : 0.08,
+      shadowRadius: isDarkMode ? 6 : 4,
+      elevation: isDarkMode ? 4 : 2,
+    },
+    contactHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    contactIconContainer: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+      backgroundColor: tokens.softSurfaceColor,
+    },
+    contactInfo: {
+      flex: 1,
+    },
+    contactName: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    contactRelationship: {
+      fontSize: 13,
+      color: tokens.mutedTextColor,
+    },
+    contactTypeBadge: {
+      marginLeft: 8,
+    },
+    badge: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    badgeText: {
+      fontSize: 11,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      color: tokens.iconMutedColor,
+    },
+    contactDetails: {
+      marginBottom: 12,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: tokens.dividerColor,
+    },
+    contactDetailRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 8,
+      paddingVertical: 4,
+    },
+    contactDetailText: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.text,
+      marginLeft: 12,
+    },
+    contactActions: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: tokens.dividerColor,
+    },
+    actionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      backgroundColor: tokens.softSurfaceColor,
+    },
+    actionButtonText: {
+      fontSize: 14,
+      fontWeight: '500',
+      marginLeft: 6,
+      color: colors.text,
+    },
+    emptyState: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 60,
+      paddingHorizontal: 40,
+    },
+    emptyStateText: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginTop: 16,
+      marginBottom: 4,
+    },
+    emptyStateSubtext: {
+      fontSize: 14,
+      color: tokens.secondaryTextColor,
+      textAlign: 'center',
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      maxHeight: '90%',
+      paddingBottom: 20,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: tokens.borderColor,
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: colors.text,
+    },
+    closeButton: {
+      padding: 4,
+    },
+    modalForm: {
+      paddingHorizontal: 20,
+      paddingTop: 20,
+    },
+    inputGroup: {
+      marginBottom: 20,
+    },
+    inputLabel: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    inputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: tokens.softSurfaceColor,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: tokens.borderColor,
+      paddingHorizontal: 12,
+      height: 50,
+    },
+    inputIcon: {
+      marginRight: 10,
+    },
+    input: {
+      flex: 1,
+      fontSize: 15,
+      color: colors.text,
+      paddingVertical: 0,
+    },
+    typeSelector: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    typeOption: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: tokens.borderColor,
+      backgroundColor: tokens.softSurfaceColor,
+    },
+    typeOptionActive: {
+      borderWidth: 2,
+    },
+    typeOptionText: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: tokens.iconMutedColor,
+      marginLeft: 6,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      paddingHorizontal: 20,
+      paddingTop: 20,
+      gap: 12,
+    },
+    modalButton: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cancelButton: {
+      backgroundColor: tokens.softSurfaceColor,
+      borderWidth: 1,
+      borderColor: tokens.borderColor,
+    },
+    cancelButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    saveButton: {
+      backgroundColor: colors.primary,
+      shadowColor: tokens.cardShadowColor,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: isDarkMode ? 0.25 : 0.1,
+      shadowRadius: isDarkMode ? 6 : 4,
+      elevation: isDarkMode ? 4 : 2,
+    },
+    saveButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+  });
+
+export default EmergencyContactScreen;
 
 export default EmergencyContactScreen;

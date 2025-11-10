@@ -162,6 +162,8 @@ class ShakeDetectionService {
     try {
       // Configure push notifications only if available
       if (PushNotification && typeof PushNotification.configure === 'function') {
+        const shouldRequestPermissions = Platform.OS === 'ios';
+
         const config: any = {
           onRegister: function (token: any) {
             console.log('Push notification token:', token);
@@ -175,8 +177,12 @@ class ShakeDetectionService {
             sound: true,
           },
           popInitialNotification: false, // Changed to false to avoid getInitialNotification error
-          requestPermissions: true, // Request permissions on both iOS and Android
+          requestPermissions: shouldRequestPermissions, // Only request permissions automatically where supported
         };
+
+        if (!shouldRequestPermissions) {
+          console.log('Skipping automatic push notification permission request (unsupported on this platform or Firebase not configured).');
+        }
 
         // Only add getInitialNotification if it exists
         if (PushNotification.getInitialNotification) {
@@ -708,21 +714,8 @@ class ShakeDetectionService {
 
         console.log('Sending notification with config:', JSON.stringify(notificationConfig, null, 2));
         
-        // Request permissions if available (Android 13+)
-        if (Platform.OS === 'android' && PushNotification.requestPermissions) {
-          PushNotification.requestPermissions().then((permissions: any) => {
-            console.log('Notification permissions:', JSON.stringify(permissions));
-            PushNotification.localNotification(notificationConfig);
-            console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
-          }).catch((err: any) => {
-            console.error('Error requesting permissions:', err);
-            // Try to send anyway
-            PushNotification.localNotification(notificationConfig);
-          });
-        } else {
-          PushNotification.localNotification(notificationConfig);
-          console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
-        }
+        PushNotification.localNotification(notificationConfig);
+        console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
       } else {
         // Fallback to Alert
         const {Alert} = require('react-native');

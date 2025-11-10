@@ -1,7 +1,9 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {View, Text, TouchableOpacity, Modal, BackHandler, StyleSheet} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {useTheme} from '@react-navigation/native';
+import type {Theme} from '@react-navigation/native';
 import {useAuthStore} from '../../stores/authStore';
 
 interface CustomDrawerProps {
@@ -11,7 +13,49 @@ interface CustomDrawerProps {
   showLoginModal?: () => void;
 }
 
+const withAlpha = (hex: string, alpha: number) => {
+  const sanitized = hex.replace('#', '');
+  const expanded =
+    sanitized.length === 3
+      ? sanitized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : sanitized;
+  const bigint = parseInt(expanded, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+type DrawerThemeTokens = {
+  borderColor: string;
+  cardShadowColor: string;
+  mutedTextColor: string;
+  iconMutedColor: string;
+  activeBackground: string;
+  overlayColor: string;
+};
+
 const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDrawerProps) => {
+  const theme = useTheme();
+  const {colors} = theme;
+  const isDarkMode = theme.dark;
+
+  const themeTokens = useMemo<DrawerThemeTokens>(() => ({
+    borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1),
+    cardShadowColor: isDarkMode ? 'rgba(15, 23, 42, 0.5)' : '#000000',
+    mutedTextColor: isDarkMode ? 'rgba(226, 232, 240, 0.75)' : '#6B7280',
+    iconMutedColor: isDarkMode ? 'rgba(203, 213, 225, 0.85)' : '#6B7280',
+    activeBackground: isDarkMode ? withAlpha(colors.primary, 0.3) : withAlpha(colors.primary, 0.12),
+    overlayColor: 'rgba(0, 0, 0, 0.5)',
+  }), [colors, isDarkMode]);
+
+  const styles = useMemo(() => createStyles(colors, themeTokens, isDarkMode), [colors, themeTokens, isDarkMode]);
+  const {mutedTextColor, iconMutedColor} = themeTokens;
+
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -138,7 +182,7 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
             onPress={handleProfile}
             activeOpacity={0.7}>
             <View style={styles.userIconCircle}>
-              <MaterialIcons name="account-circle" size={60} color="#2563EB" />
+              <MaterialIcons name="account-circle" size={60} color={colors.primary} />
             </View>
             <Text style={styles.greetingText}>{greeting}</Text>
             <Text style={styles.userNameText}>{userName}</Text>
@@ -158,10 +202,10 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
                   <IconComponent
                     name={item.icon}
                     size={24}
-                    color={isActive ? "#2563EB" : "#6B7280"}
+                    color={isActive ? colors.primary : iconMutedColor}
                     style={styles.menuIcon}
                   />
-                  <Text style={[styles.menuText, isActive && {color: '#2563EB', fontWeight: '600'}]}>{item.name}</Text>
+                  <Text style={[styles.menuText, isActive && styles.menuTextActive]}>{item.name}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -172,7 +216,7 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
             style={styles.settingsButton}
             onPress={handleSettings}
             activeOpacity={0.7}>
-            <MaterialIcons name="settings" size={24} color="#2563EB" style={styles.menuIcon} />
+            <MaterialIcons name="settings" size={24} color={colors.primary} style={styles.menuIcon} />
             <Text style={styles.settingsText}>Settings</Text>
           </TouchableOpacity>
         </View>
@@ -188,84 +232,91 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
   );
 };
 
-const styles = StyleSheet.create({
-  drawerContainer: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  drawerContent: {
-    width: '75%',
-    maxWidth: 320,
-    backgroundColor: '#FFFFFF',
-    paddingTop: 20,
-    paddingBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {width: 2, height: 0},
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  profileSection: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    marginBottom: 8,
-  },
-  userIconCircle: {
-    marginBottom: 12,
-  },
-  greetingText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  userNameText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  menuContainer: {
-    paddingVertical: 8,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  },
-  menuItemActive: {
-    backgroundColor: '#EFF6FF',
-    borderLeftWidth: 4,
-    borderLeftColor: '#2563EB',
-  },
-  menuIcon: {
-    marginRight: 16,
-  },
-  menuText: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  settingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    marginTop: 'auto',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  settingsText: {
-    fontSize: 16,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-});
+const createStyles = (colors: Theme['colors'], tokens: DrawerThemeTokens, isDarkMode: boolean) =>
+  StyleSheet.create({
+    drawerContainer: {
+      flex: 1,
+      flexDirection: 'row',
+    },
+    drawerContent: {
+      width: '75%',
+      maxWidth: 320,
+      backgroundColor: colors.card,
+      paddingTop: 20,
+      paddingBottom: 20,
+      shadowColor: tokens.cardShadowColor,
+      shadowOffset: {width: 2, height: 0},
+      shadowOpacity: isDarkMode ? 0.35 : 0.25,
+      shadowRadius: isDarkMode ? 6 : 3.84,
+      elevation: isDarkMode ? 6 : 5,
+    },
+    profileSection: {
+      alignItems: 'center',
+      paddingVertical: 24,
+      paddingHorizontal: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: tokens.borderColor,
+      marginBottom: 8,
+    },
+    userIconCircle: {
+      marginBottom: 12,
+    },
+    greetingText: {
+      fontSize: 14,
+      color: tokens.mutedTextColor,
+      marginBottom: 4,
+    },
+    userNameText: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: colors.text,
+    },
+    menuContainer: {
+      paddingVertical: 8,
+    },
+    menuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+    },
+    menuItemActive: {
+      backgroundColor: tokens.activeBackground,
+      borderLeftWidth: 4,
+      borderLeftColor: colors.primary,
+    },
+    menuIcon: {
+      marginRight: 16,
+    },
+    menuText: {
+      fontSize: 16,
+      color: colors.text,
+    },
+    menuTextActive: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    settingsButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      marginTop: 'auto',
+      borderTopWidth: 1,
+      borderTopColor: tokens.borderColor,
+    },
+    settingsText: {
+      fontSize: 16,
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    overlay: {
+      flex: 1,
+      backgroundColor: tokens.overlayColor,
+    },
+  });
+
+export default CustomDrawer;
 
 export default CustomDrawer;
 
