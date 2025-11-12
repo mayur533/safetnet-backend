@@ -14,7 +14,11 @@ from pathlib import Path
 from decouple import config
 import os
 import dj_database_url
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*_args, **_kwargs):
+        return None
 
 load_dotenv()
 
