@@ -368,98 +368,53 @@ class OfficerLoginView(APIView):
     """
     API endpoint for security officer login.
     
-    Accepts POST request with either username or email and password.
-    Returns JWT access and refresh tokens along with officer information.
+    Accepts POST request with username and password.
+    Returns JWT access and refresh tokens along with user information.
+    
+    User must have role="security_officer" to login.
     
     Example request:
     {
-        "username": "officer123",
-        "password": "password123"
+        "username": "officer1@example.com",
+        "password": "OfficerPassword123!"
     }
     
-    OR
-    
+    Example response:
     {
-        "email": "officer@example.com",
-        "password": "password123"
+        "access": "eyJhbGci...",
+        "refresh": "eyJhbGci...",
+        "user": {
+            "id": 12,
+            "username": "officer1@example.com",
+            "email": "officer1@example.com",
+            "role": "security_officer"
+        }
     }
     """
     authentication_classes = []
     permission_classes = []
 
     def post(self, request):
-        from django.contrib.auth import get_user_model
         from rest_framework_simplejwt.tokens import RefreshToken
 
-        # Validate input using serializer
+        # Validate input and authenticate using serializer
         serializer = OfficerLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        username = serializer.validated_data.get('username')
-        email = serializer.validated_data.get('email')
-        password = serializer.validated_data.get('password')
-
-        # Authenticate against SecurityOfficer directly
-        try:
-            if username:
-                officer = SecurityOfficer.objects.get(username=username, is_active=True)
-            elif email:
-                officer = SecurityOfficer.objects.get(email=email, is_active=True)
-            else:
-                return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Check password
-        if not officer.password or not officer.check_password(password):
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Get or create User object for this officer (needed for JWT tokens)
-        # Use username if available, otherwise generate one from email or name
-        User = get_user_model()
-        user_username = officer.username
-        if not user_username:
-            # Generate username from email or name
-            if officer.email:
-                user_username = officer.email.split('@')[0]
-            else:
-                user_username = f'officer_{officer.id}'
-            # Ensure uniqueness
-            counter = 1
-            original_username = user_username
-            while User.objects.filter(username=user_username).exists():
-                user_username = f'{original_username}_{counter}'
-                counter += 1
+        # Get authenticated user from serializer
+        user = serializer.validated_data['user']
         
-        user, created = User.objects.get_or_create(
-            username=user_username,
-            defaults={
-                'email': officer.email or f'{user_username}@safetnet.com',
-                'first_name': officer.name.split()[0] if officer.name.split() else '',
-                'last_name': ' '.join(officer.name.split()[1:]) if len(officer.name.split()) > 1 else '',
-                'role': 'USER',  # Security officers use USER role
-                'organization': officer.organization,
-                'is_active': True,
-            }
-        )
-        
-        # Update user email if it changed
-        if officer.email and user.email != officer.email:
-            user.email = officer.email
-            user.save()
-
-        # Determine final username to return (officer's username or generated one)
-        final_username = officer.username or user_username
-        
+        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
+        
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'officer': {
-                'id': officer.id,
-                'name': officer.name,
-                'username': final_username,
-                'email': officer.email,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'role': user.role,
             }
         }, status=status.HTTP_200_OK)
 

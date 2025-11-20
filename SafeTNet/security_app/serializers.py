@@ -1,5 +1,8 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification  # new models for security_app
+
+User = get_user_model()
 
 
 class SOSAlertSerializer(serializers.ModelSerializer):
@@ -118,23 +121,36 @@ class NotificationAcknowledgeSerializer(serializers.Serializer):
 class OfficerLoginSerializer(serializers.Serializer):
     """
     Serializer for security officer login.
-    Accepts either username or email along with password.
+    Accepts username and password.
     """
-    username = serializers.CharField(required=False, allow_blank=True, help_text="Officer username")
-    email = serializers.EmailField(required=False, allow_blank=True, help_text="Officer email address")
-    password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'}, help_text="Officer password")
+    username = serializers.CharField(required=True)
+    password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'})
 
     def validate(self, attrs):
-        username = attrs.get('username')
-        email = attrs.get('email')
-        password = attrs.get('password')
+        username = attrs.get("username")
+        password = attrs.get("password")
 
+        if not username:
+            raise serializers.ValidationError({"username": "Username is required."})
+        
         if not password:
-            raise serializers.ValidationError({'password': 'Password is required.'})
+            raise serializers.ValidationError({"password": "Password is required."})
 
-        if not username and not email:
-            raise serializers.ValidationError({
-                'non_field_errors': 'Either username or email is required.'
-            })
+        # Authenticate user
+        try:
+            user = User.objects.get(username=username, is_active=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"non_field_errors": "Invalid credentials."})
 
+        # Check password
+        if not user.check_password(password):
+            raise serializers.ValidationError({"non_field_errors": "Invalid credentials."})
+
+        # Check role - must be security_officer
+        if user.role != "security_officer":
+            raise serializers.ValidationError({"non_field_errors": "This account is not a security officer."})
+
+        # Return authenticated user
+        attrs["user"] = user
         return attrs
+
