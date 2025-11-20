@@ -116,14 +116,29 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Check if we're using a local or Render internal database (no SSL)
 database_url = os.environ.get('DATABASE_URL', '')
 is_local_db = database_url and ('localhost' in database_url or '127.0.0.1' in database_url)
-is_render_internal = database_url and ('.internal' in database_url)
+is_render_internal = database_url and ('.internal' in database_url or '-a/' in database_url)
+
+# Default database URL - Use external URL for production, internal for Render services
+# For local development, set DATABASE_URL in .env file to use local database
+default_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
+
+# Configure database with proper SSL handling
+# Note: Render databases may require external connection access to be enabled
+db_config = dj_database_url.config(
+    default=default_db_url,
+    conn_max_age=600,
+    ssl_require=not (is_local_db or is_render_internal) if database_url else True,
+)
+
+# For Render external databases, configure SSL for psycopg3
+if db_config and not (is_local_db or is_render_internal):
+    if 'OPTIONS' not in db_config:
+        db_config['OPTIONS'] = {}
+    # Use require SSL mode for external connections
+    db_config['OPTIONS']['sslmode'] = 'require'
 
 DATABASES = {
-    "default": dj_database_url.config(
-        default="postgresql://safetnet_xcfb_user:WUNcLHaZUEeC7OauMEpf9cOpD0NYyBL1@dpg-d4a5huali9vc73fbrko0-a.oregon-postgres.render.com/safetnet_xcfb",
-        conn_max_age=600,
-        ssl_require=not (is_local_db or is_render_internal) if database_url else True,
-    )
+    "default": db_config if db_config else {}
 }
 
 # Password validation
