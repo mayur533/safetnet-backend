@@ -21,6 +21,7 @@ from .serializers import (
     IncidentSerializer,
     NotificationSerializer,
     NotificationAcknowledgeSerializer,
+    OfficerLoginSerializer,
 )
 
 
@@ -364,6 +365,25 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
 
 
 class OfficerLoginView(APIView):
+    """
+    API endpoint for security officer login.
+    
+    Accepts POST request with either username or email and password.
+    Returns JWT access and refresh tokens along with officer information.
+    
+    Example request:
+    {
+        "username": "officer123",
+        "password": "password123"
+    }
+    
+    OR
+    
+    {
+        "email": "officer@example.com",
+        "password": "password123"
+    }
+    """
     authentication_classes = []
     permission_classes = []
 
@@ -371,15 +391,13 @@ class OfficerLoginView(APIView):
         from django.contrib.auth import get_user_model
         from rest_framework_simplejwt.tokens import RefreshToken
 
-        username = request.data.get('username')
-        email = request.data.get('email')  # Allow email as alternative identifier
-        password = request.data.get('password')
+        # Validate input using serializer
+        serializer = OfficerLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         
-        if not password:
-            return Response({'detail': 'Password is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not username and not email:
-            return Response({'detail': 'Username or email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        username = serializer.validated_data.get('username')
+        email = serializer.validated_data.get('email')
+        password = serializer.validated_data.get('password')
 
         # Authenticate against SecurityOfficer directly
         try:
@@ -443,7 +461,7 @@ class OfficerLoginView(APIView):
                 'username': final_username,
                 'email': officer.email,
             }
-        })
+        }, status=status.HTTP_200_OK)
 
 
 class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):

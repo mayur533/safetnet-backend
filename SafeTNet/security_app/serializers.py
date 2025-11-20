@@ -114,3 +114,27 @@ class NotificationAcknowledgeSerializer(serializers.Serializer):
         help_text="List of notification IDs to mark as read"
     )
 
+
+class OfficerLoginSerializer(serializers.Serializer):
+    """
+    Serializer for security officer login.
+    Accepts either username or email along with password.
+    """
+    username = serializers.CharField(required=False, allow_blank=True, help_text="Officer username")
+    email = serializers.EmailField(required=False, allow_blank=True, help_text="Officer email address")
+    password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'}, help_text="Officer password")
+
+    def validate(self, attrs):
+        username = attrs.get('username')
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        if not password:
+            raise serializers.ValidationError({'password': 'Password is required.'})
+
+        if not username and not email:
+            raise serializers.ValidationError({
+                'non_field_errors': 'Either username or email is required.'
+            })
+
+        return attrs
