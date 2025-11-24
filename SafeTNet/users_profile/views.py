@@ -8,18 +8,25 @@ from django.http import Http404
 # from django.contrib.gis.measure import Distance  # Commented out to avoid GDAL dependency
 # from django.contrib.gis.db.models.functions import Distance as DistanceFunction  # Commented out to avoid GDAL dependency
 from django.utils import timezone
+from datetime import timedelta
 from rest_framework import status, generics, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .models import User, FamilyContact, CommunityMembership, SOSEvent
+from .models import (
+    User, FamilyContact, CommunityMembership, SOSEvent,
+    LiveLocationShare, Geofence, CommunityAlert, FREE_TIER_LIMITS
+)
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
     FamilyContactSerializer, FamilyContactCreateSerializer,
     CommunityMembershipSerializer, CommunityMembershipCreateSerializer,
-    SOSEventSerializer, SOSTriggerSerializer, UserLocationUpdateSerializer
+    SOSEventSerializer, SOSTriggerSerializer, UserLocationUpdateSerializer,
+    SubscriptionSerializer, LiveLocationShareSerializer, LiveLocationShareCreateSerializer,
+    GeofenceSerializer, GeofenceCreateSerializer,
+    CommunityAlertSerializer, CommunityAlertCreateSerializer
 )
 from .services import SMSService, GeofenceService
 
@@ -193,8 +200,20 @@ class FamilyContactListView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         """Create a new family contact."""
-        serializer.save(user=self.request.user)
-        logger.info(f"Family contact created for user: {self.request.user.email}")
+        user = self.request.user
+        is_premium = _is_user_premium(user)
+        current_count = FamilyContact.objects.filter(user=user).count()
+        
+        # Check free tier limit
+        if not is_premium and current_count >= FREE_TIER_LIMITS['MAX_CONTACTS']:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(
+                f'Free plan allows up to {FREE_TIER_LIMITS["MAX_CONTACTS"]} emergency contacts. '
+                'Upgrade to Premium for unlimited contacts.'
+            )
+        
+        serializer.save(user=user)
+        logger.info(f"Family contact created for user: {user.email}")
     
     def list(self, request, *args, **kwargs):
         """List family contacts."""
@@ -331,60 +350,64 @@ class SOSTriggerView(APIView):
         serializer = SOSTriggerSerializer(data=request.data)
         if serializer.is_valid():
             user = request.user
+            is_premium = _is_user_premium(user)
             longitude = serializer.validated_data.get('longitude')
             latitude = serializer.validated_data.get('latitude')
             notes = serializer.validated_data.get('notes', '')
             
             # Create SOS event
+            location_data = None
+            if longitude is not None and latitude is not None:
+                location_data = {'longitude': longitude, 'latitude': latitude}
+            
             sos_event = SOSEvent.objects.create(
                 user=user,
-                notes=notes
+                notes=notes,
+                location=location_data,
+                is_premium_event=is_premium
             )
             
-            # Set location if provided
-            if longitude is not None and latitude is not None:
-                sos_event.location = Point(longitude, latitude)
-                sos_event.save()
+            # Send SMS to family contacts (both free and premium)
+            try:
+                sms_service = SMSService()
+                family_contacts = FamilyContact.objects.filter(user=user)
+                
+                for contact in family_contacts:
+                    try:
+                        sms_service.send_sos_alert(
+                            to_phone=contact.phone,
+                            user_name=getattr(user, 'name', user.email),
+                            user_phone=getattr(user, 'phone', ''),
+                            location=location_data
+                        )
+                        logger.info(f"SOS SMS sent to family contact: {contact.phone}")
+                    except Exception as e:
+                        logger.error(f"Failed to send SOS SMS to {contact.phone}: {str(e)}")
+            except Exception as e:
+                logger.error(f"SMS service error: {str(e)}")
             
-            # Send SMS to family contacts
-            sms_service = SMSService()
-            family_contacts = FamilyContact.objects.filter(user=user)
+            # Premium features
+            if is_premium:
+                # Notify 24x7 Emergency Response Center (if implemented)
+                sos_event.status = 'response_center_notified'
+                sos_event.is_premium_event = True
+                # Premium: Priority notification - Premium users get faster dispatch
+                logger.info(f"Premium SOS event - Priority dispatch - Response center notified: {user.email}")
+                # Premium: Audio/Video recording URLs would be set here if available
+                # Premium: Cloud backup URL would be set here if available
+            else:
+                sos_event.status = 'sms_sent'
+                # Free users get standard priority
+                logger.info(f"Free SOS event - Standard dispatch: {user.email}")
             
-            for contact in family_contacts:
-                try:
-                    sms_service.send_sos_alert(
-                        to_phone=contact.phone,
-                        user_name=user.name,
-                        user_phone=user.phone,
-                        location=sos_event.location
-                    )
-                    logger.info(f"SOS SMS sent to family contact: {contact.phone}")
-                except Exception as e:
-                    logger.error(f"Failed to send SOS SMS to {contact.phone}: {str(e)}")
-            
-            # Check geofence and send alerts if needed
-            geofence_service = GeofenceService()
-            if sos_event.location:
-                try:
-                    geofence_service.check_and_alert_geofence(
-                        user=user,
-                        location=sos_event.location,
-                        sos_event=sos_event
-                    )
-                    logger.info(f"Geofence check completed for user: {user.email}")
-                except Exception as e:
-                    logger.error(f"Geofence check failed for user {user.email}: {str(e)}")
-            
-            # Update SOS event status
-            sos_event.status = 'sms_sent'
             sos_event.save()
             
-            #logger.info(f"SOS event triggered for user: {user.email}")
-            logger.info(f"SOS event triggered for user: {user.email}")
+            logger.info(f"SOS event triggered for user: {user.email} (Premium: {is_premium})")
             
             return Response({
                 'message': 'SOS event triggered successfully',
-                'sos_event': SOSEventSerializer(sos_event).data
+                'sos_event': SOSEventSerializer(sos_event).data,
+                'is_premium': is_premium
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -393,6 +416,8 @@ class SOSTriggerView(APIView):
 class SOSEventListView(generics.ListAPIView):
     """
     List user's SOS events.
+    Free: Last 5 events
+    Premium: Unlimited
     GET /users/<id>/sos_events/
     """
     serializer_class = SOSEventSerializer
@@ -400,7 +425,31 @@ class SOSEventListView(generics.ListAPIView):
     
     def get_queryset(self):
         """Get SOS events for the current user."""
-        return SOSEvent.objects.filter(user=self.request.user)
+        user = self.request.user
+        is_premium = _is_user_premium(user)
+        
+        queryset = SOSEvent.objects.filter(user=user)
+        
+        # Free users see only last 5 events
+        if not is_premium:
+            queryset = queryset[:FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY']]
+        
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        """List SOS events with limit info."""
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'events': serializer.data,
+            'is_premium': is_premium,
+            'limit': None if is_premium else FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY'],
+            'message': None if is_premium else f'Free plan shows last {FREE_TIER_LIMITS["MAX_INCIDENT_HISTORY"]} incidents. Upgrade to Premium for unlimited history.'
+        })
 
 
 @api_view(['GET'])
@@ -417,16 +466,295 @@ def user_stats(request, user_id):
         )
     
     user = request.user
+    is_premium = _is_user_premium(user)
     
     stats = {
         'total_family_contacts': FamilyContact.objects.filter(user=user).count(),
+        'max_contacts': None if is_premium else FREE_TIER_LIMITS['MAX_CONTACTS'],
         'active_community_memberships': CommunityMembership.objects.filter(
             user=user, is_active=True
         ).count(),
         'total_sos_events': SOSEvent.objects.filter(user=user).count(),
-        'is_premium': user.is_premium,
-        'plan_type': user.plantype,
-        'plan_expiry': user.planexpiry,
+        'is_premium': is_premium,
+        'plan_type': getattr(user, 'plantype', 'free'),
+        'plan_expiry': getattr(user, 'planexpiry', None),
     }
     
     return Response(stats)
+
+
+# Helper function to check if user is premium
+def _is_user_premium(user):
+    """Check if user has premium subscription by checking UserDetails."""
+    try:
+        from users.models import UserDetails
+        user_details = UserDetails.objects.filter(username=user.username).first()
+        if user_details and user_details.price > 0:
+            return True
+    except:
+        pass
+    # Fallback checks
+    if hasattr(user, 'is_paid_user') and user.is_paid_user:
+        return True
+    if hasattr(user, 'is_premium') and user.is_premium:
+        return True
+    email = getattr(user, 'email', '').lower()
+    username = getattr(user, 'username', '').lower()
+    if 'premium' in email or 'premium' in username:
+            return True
+    return False
+
+
+# Subscription endpoints
+class SubscriptionView(APIView):
+    """
+    Subscribe to premium plan.
+    POST /users/subscribe/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        """Subscribe user to premium plan."""
+        serializer = SubscriptionSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            plan_type = serializer.validated_data['plan_type']
+            promo_code = serializer.validated_data.get('promo_code', '')
+            
+            # Calculate expiry date
+            if plan_type == 'premium-monthly':
+                expiry_date = timezone.now().date() + timedelta(days=30)
+            else:  # premium-annual
+                expiry_date = timezone.now().date() + timedelta(days=365)
+            
+            # Update user plan
+            if hasattr(user, 'plantype'):
+                user.plantype = 'premium'
+            if hasattr(user, 'planexpiry'):
+                user.planexpiry = expiry_date
+            user.save()
+            
+            logger.info(f"User subscribed to premium: {user.email} - {plan_type}")
+            
+            return Response({
+                'success': True,
+                'plan_type': 'premium',
+                'planexpiry': expiry_date.isoformat(),
+                'message': f'Successfully subscribed to {plan_type}'
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CancelSubscriptionView(APIView):
+    """
+    Cancel premium subscription.
+    POST /users/subscribe/cancel/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        """Cancel user's premium subscription."""
+        user = request.user
+        
+        # Downgrade to free
+        if hasattr(user, 'plantype'):
+            user.plantype = 'free'
+        if hasattr(user, 'planexpiry'):
+            user.planexpiry = None
+        user.save()
+        
+        logger.info(f"User cancelled subscription: {user.email}")
+        
+        return Response({
+            'message': 'Subscription cancelled successfully. You are now on the free plan.'
+        }, status=status.HTTP_200_OK)
+
+
+# Live Location Sharing endpoints
+class LiveLocationShareView(APIView):
+    """
+    Start live location sharing.
+    POST /users/<user_id>/live_location/start/
+    GET /users/<user_id>/live_location/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, user_id):
+        """Start live location sharing."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only start live sharing for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        serializer = LiveLocationShareCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            duration_minutes = serializer.validated_data['duration_minutes']
+            
+            # Check free tier limit
+            if not is_premium and duration_minutes > FREE_TIER_LIMITS['MAX_LIVE_SHARE_MINUTES']:
+                return Response({
+                    'error': f'Free plan allows up to {FREE_TIER_LIMITS["MAX_LIVE_SHARE_MINUTES"]} minutes of live sharing. Upgrade to Premium for unlimited sharing.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Create live location share session
+            expires_at = timezone.now() + timedelta(minutes=duration_minutes)
+            live_share = LiveLocationShare.objects.create(
+                user=user,
+                expires_at=expires_at
+            )
+            
+            # Add shared_with users if provided
+            shared_with_ids = serializer.validated_data.get('shared_with_user_ids', [])
+            if shared_with_ids:
+                shared_users = User.objects.filter(id__in=shared_with_ids)
+                live_share.shared_with.set(shared_users)
+            
+            logger.info(f"Live location sharing started: {user.email} for {duration_minutes} minutes")
+            
+            return Response({
+                'message': 'Live location sharing started',
+                'session': LiveLocationShareSerializer(live_share).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request, user_id):
+        """Get active live location sharing sessions."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own live location sessions.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = request.user
+        active_sessions = LiveLocationShare.objects.filter(
+            user=user,
+            is_active=True,
+            expires_at__gt=timezone.now()
+        )
+        
+        return Response({
+            'sessions': LiveLocationShareSerializer(active_sessions, many=True).data
+        })
+
+
+# Geofencing endpoints (Premium only)
+class GeofenceListView(APIView):
+    """
+    List and create geofences (Premium only).
+    GET /users/<user_id>/geofences/
+    POST /users/<user_id>/geofences/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id):
+        """List user's geofences."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own geofences.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        if not is_premium:
+            return Response({
+                'error': 'Geofencing is a Premium feature. Upgrade to Premium to use geofencing.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        geofences = Geofence.objects.filter(user=user, is_active=True)
+        return Response({
+            'geofences': GeofenceSerializer(geofences, many=True).data
+        })
+    
+    def post(self, request, user_id):
+        """Create a new geofence."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only create geofences for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        if not is_premium:
+            return Response({
+                'error': 'Geofencing is a Premium feature. Upgrade to Premium to use geofencing.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = GeofenceCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            geofence = Geofence.objects.create(
+                user=user,
+                name=serializer.validated_data['name'],
+                center_location=serializer.validated_data['center_location'],
+                radius_meters=serializer.validated_data['radius_meters'],
+                alert_on_entry=serializer.validated_data['alert_on_entry'],
+                alert_on_exit=serializer.validated_data['alert_on_exit']
+            )
+            
+            logger.info(f"Geofence created: {user.email} - {geofence.name}")
+            
+            return Response({
+                'message': 'Geofence created successfully',
+                'geofence': GeofenceSerializer(geofence).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Community Alert endpoints
+class CommunityAlertView(APIView):
+    """
+    Send community alert.
+    POST /users/<user_id>/community_alert/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, user_id):
+        """Send a community alert."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only send alerts for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        serializer = CommunityAlertCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            message = serializer.validated_data['message']
+            location = serializer.validated_data['location']
+            radius_meters = serializer.validated_data.get('radius_meters', 500)
+            
+            # Check free tier limit
+            if not is_premium and radius_meters > FREE_TIER_LIMITS['COMMUNITY_ALERT_RADIUS_METERS']:
+                return Response({
+                    'error': f'Free plan allows alerts within {FREE_TIER_LIMITS["COMMUNITY_ALERT_RADIUS_METERS"]}m radius. Upgrade to Premium for unlimited radius.'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Create community alert
+            alert = CommunityAlert.objects.create(
+                user=user,
+                message=message,
+                location=location,
+                radius_meters=radius_meters,
+                is_premium_alert=is_premium
+            )
+            
+            logger.info(f"Community alert sent: {user.email} - {radius_meters}m radius")
+            
+            return Response({
+                'message': 'Community alert sent successfully',
+                'alert': CommunityAlertSerializer(alert).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

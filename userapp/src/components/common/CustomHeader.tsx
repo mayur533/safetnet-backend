@@ -20,13 +20,18 @@ const CustomHeader: React.FC<CustomHeaderProps> = ({
   showPremiumCTA = true,
 }) => {
   const insets = useSafeAreaInsets();
-  const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : insets.top;
+  // Use safe area insets for proper spacing on both platforms
+  const statusBarHeight = insets.top > 0 ? insets.top : (Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 0);
   const user = useAuthStore((state) => state.user);
   const isFreeUser = showPremiumCTA && (user?.plan !== 'premium');
   const theme = useTheme();
   const colors = theme.colors;
+  // Determine if dark mode by checking background color
+  const isDarkMode = colors.background === '#0F172A' || colors.background === '#1E293B';
 
   return (
+    <>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} translucent={false} />
     <View
       style={[styles.header, {paddingTop: statusBarHeight, backgroundColor: colors.card, borderBottomColor: colors.border}]}> 
       {/* Top row - Drawer, Title with icon, Settings */}
@@ -61,6 +66,7 @@ const CustomHeader: React.FC<CustomHeaderProps> = ({
         </View>
       </View>
     </View>
+    </>
   );
 };
 

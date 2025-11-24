@@ -16,14 +16,18 @@ import {useAuthStore} from '../../stores/authStore';
 import {useNavigation} from '@react-navigation/native';
 
 const LoginScreen = () => {
-  // Pre-fill with sample credentials
-  const [email, setEmail] = useState('user@example.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{message: string; type: 'validation' | 'critical'} | null>(null);
   const login = useAuthStore((state) => state.login);
   const navigation = useNavigation<any>();
+
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const handleLogin = async () => {
     setError(null);
@@ -33,11 +37,19 @@ const LoginScreen = () => {
       return;
     }
 
+    // Validate email format
+    if (!validateEmail(email)) {
+      setError({message: 'Please enter a valid email address', type: 'validation'});
+      return;
+    }
+
     setLoading(true);
     try {
       await login(email, password);
-    } catch (error) {
-      setError({message: 'Login failed. Please check your credentials and try again.', type: 'critical'});
+    } catch (error: any) {
+      // Show the actual error message from the backend
+      const errorMessage = error?.message || 'Login failed. Please check your credentials and try again.';
+      setError({message: errorMessage, type: 'critical'});
     } finally {
       setLoading(false);
     }

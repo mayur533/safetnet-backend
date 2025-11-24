@@ -26,7 +26,7 @@ const RegistrationScreen = () => {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{message: string; type: 'validation' | 'critical'} | null>(null);
-  const login = useAuthStore((state) => state.login);
+  const register = useAuthStore((state) => state.register);
   const navigation = useNavigation<any>();
 
   const handleRegister = async () => {
@@ -42,15 +42,20 @@ const RegistrationScreen = () => {
       return;
     }
 
+    // Validate password strength (minimum 8 characters)
+    if (password.length < 8) {
+      setError({message: 'Password must be at least 8 characters long', type: 'validation'});
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Implement actual registration logic
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      // Auto login after registration
-      login(email, password);
-    } catch (error) {
-      setError({message: 'Registration failed. Please try again.', type: 'critical'});
+      const fullName = `${firstName} ${lastName}`.trim();
+      await register(email, password, fullName, phoneNo);
+      // Registration successful - user is automatically logged in
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Registration failed. Please try again.';
+      setError({message: errorMessage, type: 'critical'});
     } finally {
       setLoading(false);
     }

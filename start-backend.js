@@ -21,11 +21,11 @@ let args;
 if (isWindows) {
   // Windows: use venv\Scripts\python.exe
   command = path.join(venvPath, 'Scripts', 'python.exe');
-  args = ['manage.py', 'runserver', '8000'];
+  args = ['manage.py', 'runserver', '0.0.0.0:8000'];
 } else {
   // Linux/Mac: use venv/bin/python
   command = path.join(venvPath, 'bin', 'python');
-  args = ['manage.py', 'runserver', '8000'];
+  args = ['manage.py', 'runserver', '0.0.0.0:8000'];
 }
 
 console.log(`📦 Using Python: ${command}\n`);

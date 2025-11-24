@@ -4,3 +4,15 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autoli
 rootProject.name = 'userapp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
+// Manually include react-native-safe-area-context if autolinking fails
+include ':react-native-safe-area-context'
+project(':react-native-safe-area-context').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-safe-area-context/android')
+// Manually include react-native-screens if autolinking fails
+include ':react-native-screens'
+project(':react-native-screens').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-screens/android')
+// Manually include react-native-linear-gradient if autolinking fails
+include ':react-native-linear-gradient'
+project(':react-native-linear-gradient').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-linear-gradient/android')
+// Manually include AsyncStorage if autolinking fails
+include ':react-native-async-storage_async-storage'
+project(':react-native-async-storage_async-storage').projectDir = new File(rootProject.projectDir, '../node_modules/@react-native-async-storage/async-storage/android')

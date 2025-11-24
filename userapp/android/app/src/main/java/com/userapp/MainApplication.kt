@@ -8,7 +8,11 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.google.firebase.FirebaseApp
-import com.sensors.RNSensorsPackage
+import com.swmansion.gesturehandler.RNGestureHandlerPackage
+import com.reactnativecommunity.asyncstorage.AsyncStoragePackage
+import com.th3rdwave.safeareacontext.SafeAreaContextPackage
+import com.swmansion.rnscreens.RNScreensPackage
+import com.BV.LinearGradient.LinearGradientPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -19,10 +23,18 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+            // AsyncStorage is autolinked - don't add manually to avoid conflicts
             add(VibrationPackage())
-            add(RNSensorsPackage())
             add(DevMenuPackage())
             add(ShakeDetectionServicePackage())
+            // Manually add gesture handler package to ensure it's registered
+            add(RNGestureHandlerPackage())
+            // Manually add SafeAreaContext package to ensure ViewManagers are registered
+            add(SafeAreaContextPackage())
+            // Manually add Screens package to ensure ViewManagers are registered
+            add(RNScreensPackage())
+            // Manually add LinearGradient package to ensure ViewManagers are registered
+            add(LinearGradientPackage())
         },
     )
   }

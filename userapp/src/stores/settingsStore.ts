@@ -1,5 +1,18 @@
 import {create} from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// Import AsyncStorage with error handling
+let AsyncStorage: any;
+try {
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+} catch (e) {
+  console.error('Failed to import AsyncStorage in settingsStore:', e);
+  // Create a mock AsyncStorage that won't crash
+  AsyncStorage = {
+    getItem: async () => null,
+    setItem: async () => {},
+    removeItem: async () => {},
+    clear: async () => {},
+  };
+}
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 

@@ -8,3 +8,8 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# Keep AsyncStorage classes
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keepclassmembers class com.reactnativecommunity.asyncstorage.** { *; }
+-dontwarn com.reactnativecommunity.asyncstorage.**

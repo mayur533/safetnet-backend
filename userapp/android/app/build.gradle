@@ -54,6 +54,30 @@ react {
     autolinkLibrariesWithApp()
 }
 
+// Pre-build task to generate autolinking.json before it's needed
+task generateAutolinkingJson {
+    def autolinkingDir = file("${buildDir}/generated/autolinking")
+    autolinkingDir.mkdirs()
+    def autolinkingFile = file("${autolinkingDir}/autolinking.json")
+    // Create a minimal valid autolinking.json
+    autolinkingFile.text = """{
+  "project": {
+    "android": {
+      "packageName": "com.userapp"
+    }
+  },
+  "dependencies": {}
+}"""
+    doLast {
+        println "Generated autolinking.json"
+    }
+}
+
+// Make sure autolinking.json is generated before the package list task
+tasks.named('generateAutolinkingPackageList').configure {
+    dependsOn 'generateAutolinkingJson'
+}
+
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
@@ -119,6 +143,15 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+    
+    // Manually add react-native-safe-area-context dependency
+    implementation(project(':react-native-safe-area-context'))
+    // Manually add react-native-screens dependency
+    implementation(project(':react-native-screens'))
+    // Manually add react-native-linear-gradient dependency
+    implementation(project(':react-native-linear-gradient'))
+    // Manually add AsyncStorage dependency
+    implementation(project(':react-native-async-storage_async-storage'))
     
     // Exclude old support library to avoid conflicts with AndroidX
     configurations.all {

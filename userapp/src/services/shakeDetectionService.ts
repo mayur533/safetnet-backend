@@ -1,4 +1,4 @@
-import {AppState, AppStateStatus, Platform, DevSettings, Alert, InteractionManager, NativeModules} from 'react-native';
+import {AppState, AppStateStatus, Platform, DevSettings, Alert, NativeModules} from 'react-native';
 import {DevMenuModule} from '../modules/DevMenuModule';
 
 // Safely import react-native-push-notification

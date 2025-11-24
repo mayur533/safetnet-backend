@@ -38,6 +38,12 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS.append('safetnet.onrender.com')
 ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
+# Add local network IPs for development (physical device access)
+ALLOWED_HOSTS.append('192.168.0.107')
+ALLOWED_HOSTS.append('192.168.0.125')
+# Allow all hosts in development mode (for easier testing)
+if DEBUG:
+    ALLOWED_HOSTS.append('*')
 # Application definition
 
 INSTALLED_APPS = [
@@ -282,7 +288,8 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = False  # Set to False for security, only allow listed origins
+# Allow all origins in development mode for React Native app
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Set to True in development, False in production
 CORS_PREFLIGHT_MAX_AGE = 86400  # Cache preflight requests for 24 hours
 
 # Allow all common headers

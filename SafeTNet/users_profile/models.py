@@ -4,8 +4,20 @@ Simplified user-related models; rely on the project's AUTH_USER_MODEL.
 from django.db import models
 from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
 User = get_user_model()
+
+# Free tier limits
+FREE_TIER_LIMITS = {
+    'MAX_CONTACTS': 5,  # Free users can have up to 5 contacts
+    'MAX_LIVE_SHARE_MINUTES': 30,  # Free users get 30 minutes of live sharing
+    'MAX_INCIDENT_HISTORY': 5,  # Free users see last 5 incidents
+    'COMMUNITY_ALERT_RADIUS_METERS': 500,  # Free users can alert within 500m
+    'MAX_GEOFENCES': 0,  # Free users cannot use geofencing
+    'MAX_TRUSTED_CIRCLES': 2,  # Free users can have 2 trusted circles
+}
 
 
 
@@ -13,7 +25,8 @@ User = get_user_model()
 class FamilyContact(models.Model):
     """
     Family contact model for storing emergency contacts.
-    Each user can have up to 3 family contacts.
+    Free users: up to 5 contacts
+    Premium users: unlimited contacts
     """
     
     user = models.ForeignKey(
@@ -53,7 +66,7 @@ class FamilyContact(models.Model):
         unique_together = ['user', 'phone']  # Prevent duplicate phone numbers per user
     
     def __str__(self):
-        return f"{self.name} ({self.phone}) - {self.user.name}"
+        return f"{self.name} ({self.phone}) - {self.user.email if hasattr(self.user, 'email') else 'User'}"
     
     def save(self, *args, **kwargs):
         # Ensure only one primary contact per user
@@ -63,12 +76,37 @@ class FamilyContact(models.Model):
                 is_primary=True
             ).exclude(id=self.id).update(is_primary=False)
         
-        # Ensure maximum 3 contacts per user
+        # Check contact limits based on user's premium status
         if not self.pk:  # Only check on creation
-            if FamilyContact.objects.filter(user=self.user).count() >= 3:
-                raise ValueError("Maximum 3 family contacts allowed per user")
+            user = self.user
+            is_premium = self._is_user_premium(user)
+            current_count = FamilyContact.objects.filter(user=user).count()
+            
+            if not is_premium and current_count >= FREE_TIER_LIMITS['MAX_CONTACTS']:
+                raise ValueError(
+                    f"Free plan allows up to {FREE_TIER_LIMITS['MAX_CONTACTS']} emergency contacts. "
+                    "Upgrade to Premium for unlimited contacts."
+                )
         
         super().save(*args, **kwargs)
+    
+    @staticmethod
+    def _is_user_premium(user):
+        """Check if user has premium subscription."""
+        # Check is_paid_user property if it exists
+        if hasattr(user, 'is_paid_user') and user.is_paid_user:
+            return True
+        # Check is_premium property
+        if hasattr(user, 'is_premium') and user.is_premium:
+            return True
+        # Check plantype
+        if hasattr(user, 'plantype'):
+            if user.plantype and user.plantype.lower() == 'premium':
+                # Check if plan hasn't expired
+                if hasattr(user, 'planexpiry') and user.planexpiry:
+                    return user.planexpiry > timezone.now().date()
+                return True
+        return False
 
 
 class CommunityMembership(models.Model):
@@ -106,6 +144,8 @@ class CommunityMembership(models.Model):
 class SOSEvent(models.Model):
     """
     Model for tracking SOS events triggered by users.
+    Free: Basic SOS with location and SMS alerts
+    Premium: Advanced features (audio/video recording, cloud backup, priority dispatch)
     """
     
     STATUS_CHOICES = [
@@ -113,6 +153,9 @@ class SOSEvent(models.Model):
         ('sms_sent', 'SMS Sent'),
         ('police_called', 'Police Called'),
         ('geofence_alerted', 'Geofence Alerted'),
+        ('response_center_notified', 'Response Center Notified'),  # Premium only
+        ('audio_recording', 'Audio Recording'),  # Premium only
+        ('video_recording', 'Video Recording'),  # Premium only
         ('resolved', 'Resolved'),
     ]
     
@@ -129,7 +172,7 @@ class SOSEvent(models.Model):
         help_text="Location where SOS was triggered (longitude, latitude)"
     )
     status = models.CharField(
-        max_length=20,
+        max_length=30,
         choices=STATUS_CHOICES,
         default='triggered',
         help_text="Current status of the SOS event"
@@ -140,6 +183,26 @@ class SOSEvent(models.Model):
         blank=True,
         help_text="Additional notes about the SOS event"
     )
+    # Premium features
+    audio_recording_url = models.URLField(
+        null=True,
+        blank=True,
+        help_text="URL to audio recording (Premium feature)"
+    )
+    video_recording_url = models.URLField(
+        null=True,
+        blank=True,
+        help_text="URL to video recording (Premium feature)"
+    )
+    cloud_backup_url = models.URLField(
+        null=True,
+        blank=True,
+        help_text="URL to cloud backup of SOS evidence (Premium feature)"
+    )
+    is_premium_event = models.BooleanField(
+        default=False,
+        help_text="Whether this SOS event used premium features"
+    )
     
     class Meta:
         db_table = 'users_sos_event'
@@ -148,4 +211,132 @@ class SOSEvent(models.Model):
         ordering = ['-triggered_at']
     
     def __str__(self):
-        return f"SOS Event - {self.user.name} at {self.triggered_at}"
+        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+        return f"SOS Event - {user_email} at {self.triggered_at}"
+
+
+class LiveLocationShare(models.Model):
+    """
+    Model for tracking live location sharing sessions.
+    Free: 15-30 minutes max
+    Premium: Unlimited
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='live_location_sessions',
+        help_text="User sharing their location"
+    )
+    shared_with = models.ManyToManyField(
+        User,
+        related_name='shared_locations',
+        help_text="Users who can see this live location"
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        help_text="When the live sharing session expires"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether the session is currently active"
+    )
+    current_location = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Current location (longitude, latitude)"
+    )
+    
+    class Meta:
+        db_table = 'users_live_location_share'
+        verbose_name = 'Live Location Share'
+        verbose_name_plural = 'Live Location Shares'
+        ordering = ['-started_at']
+    
+    def __str__(self):
+        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+        return f"Live Share - {user_email}"
+
+
+class Geofence(models.Model):
+    """
+    Model for geofencing (Premium feature only).
+    Alerts family when user enters/exits marked zones.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='geofences',
+        help_text="User who owns this geofence"
+    )
+    name = models.CharField(
+        max_length=200,
+        help_text="Name of the geofence (e.g., 'Home', 'Work')"
+    )
+    center_location = models.JSONField(
+        help_text="Center point of geofence (longitude, latitude)"
+    )
+    radius_meters = models.IntegerField(
+        default=100,
+        help_text="Radius of the geofence in meters"
+    )
+    alert_on_entry = models.BooleanField(
+        default=True,
+        help_text="Alert when user enters the geofence"
+    )
+    alert_on_exit = models.BooleanField(
+        default=True,
+        help_text="Alert when user exits the geofence"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether the geofence is active"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'users_profile_geofence'
+        verbose_name = 'Geofence'
+        verbose_name_plural = 'Geofences'
+    
+    def __str__(self):
+        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+        return f"Geofence {self.name} - {user_email}"
+
+
+class CommunityAlert(models.Model):
+    """
+    Model for community alerts.
+    Free: 500m radius
+    Premium: Unlimited radius, verified responders
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='community_alerts',
+        help_text="User who sent the alert"
+    )
+    message = models.TextField(
+        help_text="Alert message"
+    )
+    location = models.JSONField(
+        help_text="Location where alert was sent (longitude, latitude)"
+    )
+    radius_meters = models.IntegerField(
+        default=500,
+        help_text="Alert radius in meters"
+    )
+    sent_at = models.DateTimeField(auto_now_add=True)
+    is_premium_alert = models.BooleanField(
+        default=False,
+        help_text="Whether this is a premium alert (reaches verified responders)"
+    )
+    
+    class Meta:
+        db_table = 'users_community_alert'
+        verbose_name = 'Community Alert'
+        verbose_name_plural = 'Community Alerts'
+        ordering = ['-sent_at']
+    
+    def __str__(self):
+        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+        return f"Community Alert - {user_email} at {self.sent_at}"
