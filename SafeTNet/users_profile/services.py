@@ -190,18 +190,29 @@ class EmergencyService:
         Coordinate emergency response for SOS event.
         """
         try:
-            # Send SMS to family contacts
-            family_contacts = user.family_contacts.all()
-            for contact in family_contacts:
-                try:
-                    self.sms_service.send_sos_alert(
-                        to_phone=contact.phone,
-                        user_name=user.name,
-                        user_phone=user.phone,
-                        location=sos_event.location
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send emergency SMS to {contact.phone}: {str(e)}")
+            if not user or not sos_event:
+                logger.warning("Emergency response called with None user or sos_event")
+                return False
+            
+            # Send SMS to family contacts (if relationship exists)
+            try:
+                if hasattr(user, 'family_contacts'):
+                    family_contacts = user.family_contacts.all()
+                    for contact in family_contacts:
+                        try:
+                            if hasattr(contact, 'phone') and contact.phone:
+                                self.sms_service.send_sos_alert(
+                                    to_phone=contact.phone,
+                                    user_name=getattr(user, 'name', 'User'),
+                                    user_phone=getattr(user, 'phone', ''),
+                                    location=getattr(sos_event, 'location', None)
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to send emergency SMS to {getattr(contact, 'phone', 'unknown')}: {str(e)}")
+                else:
+                    logger.warning(f"User {getattr(user, 'email', 'unknown')} has no family_contacts relationship")
+            except Exception as e:
+                logger.error(f"Error accessing family contacts: {str(e)}")
             
             # In a real implementation, you would also:
             # 1. Call emergency services API
@@ -209,9 +220,9 @@ class EmergencyService:
             # 3. Notify security officers
             # 4. Log the emergency event
             
-            logger.info(f"Emergency response triggered for user: {user.email}")
+            logger.info(f"Emergency response triggered for user: {getattr(user, 'email', 'unknown')}")
             return True
             
         except Exception as e:
-            logger.error(f"Emergency response failed for user {user.email}: {str(e)}")
+            logger.error(f"Emergency response failed for user {getattr(user, 'email', 'unknown') if user else 'None'}: {str(e)}")
             return False

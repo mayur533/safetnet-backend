@@ -1,4 +1,7 @@
 from django.apps import AppConfig
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UsersProfileConfig(AppConfig):
@@ -6,4 +9,8 @@ class UsersProfileConfig(AppConfig):
     name = 'users_profile'
     
     def ready(self):
-        import users_profile.signals
+        try:
+            import users_profile.signals
+        except Exception as e:
+            logger.warning(f"Could not import users_profile signals: {str(e)}")
+            # Don't crash the app if signals can't be imported
