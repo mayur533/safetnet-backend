@@ -392,7 +392,6 @@ class SOSEventSerializer(serializers.ModelSerializer):
     
     def get_location(self, obj):
         """Get location as a dictionary."""
-<<<<<<< HEAD
         if obj.location:
             # Handle JSONField format
             if isinstance(obj.location, dict):
@@ -403,10 +402,6 @@ class SOSEventSerializer(serializers.ModelSerializer):
                     'longitude': obj.location.x,
                     'latitude': obj.location.y
                 }
-=======
-        if obj.location and isinstance(obj.location, dict):
-            return obj.location
->>>>>>> d201f5d (delete migrations of users_profile app)
         return None
 
 
