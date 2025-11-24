@@ -14,9 +14,15 @@ from pathlib import Path
 from decouple import config
 import os
 import dj_database_url
-from dotenv import load_dotenv
 
-load_dotenv()
+# Try to load dotenv, but don't fail if it's not installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ModuleNotFoundError:
+    # dotenv is optional - environment variables can be set directly
+    def load_dotenv(*_args, **_kwargs):
+        pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
