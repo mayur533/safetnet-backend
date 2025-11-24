@@ -215,8 +215,23 @@ class FamilyContactListView(generics.ListCreateAPIView):
         serializer.save(user=user)
         logger.info(f"Family contact created for user: {user.email}")
     
+    def post(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only create family contacts for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().post(request, *args, **kwargs)
+    
     def list(self, request, *args, **kwargs):
         """List family contacts."""
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own family contacts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         queryset = self.get_queryset()
         serializer = FamilyContactSerializer(queryset, many=True)
         return Response(serializer.data)
@@ -231,13 +246,47 @@ class FamilyContactDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     serializer_class = FamilyContactSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'contact_id'
     
     def get_queryset(self):
         """Get family contacts for the current user."""
         return FamilyContact.objects.filter(user=self.request.user)
     
+    def get(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own family contacts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().get(request, *args, **kwargs)
+    
+    def put(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only update your own family contacts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().put(request, *args, **kwargs)
+    
+    def patch(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only update your own family contacts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().patch(request, *args, **kwargs)
+    
     def destroy(self, request, *args, **kwargs):
         """Delete a family contact."""
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only delete your own family contacts.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         instance = self.get_object()
         self.perform_destroy(instance)
         logger.info(f"Family contact deleted for user: {request.user.email}")
@@ -258,6 +307,15 @@ class CommunityMembershipListView(generics.ListAPIView):
             user=self.request.user,
             is_active=True
         )
+    
+    def list(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own community memberships.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().list(request, *args, **kwargs)
 
 
 class CommunityJoinView(APIView):
@@ -367,6 +425,7 @@ class SOSTriggerView(APIView):
                 is_premium_event=is_premium
             )
             
+<<<<<<< HEAD
             # Send SMS to family contacts (both free and premium)
             try:
                 sms_service = SMSService()
@@ -385,6 +444,15 @@ class SOSTriggerView(APIView):
                         logger.error(f"Failed to send SOS SMS to {contact.phone}: {str(e)}")
             except Exception as e:
                 logger.error(f"SMS service error: {str(e)}")
+=======
+            # Set location if provided
+            if longitude is not None and latitude is not None:
+                sos_event.location = {
+                    'longitude': longitude,
+                    'latitude': latitude
+                }
+                sos_event.save()
+>>>>>>> d201f5d (delete migrations of users_profile app)
             
             # Premium features
             if is_premium:
@@ -425,6 +493,7 @@ class SOSEventListView(generics.ListAPIView):
     
     def get_queryset(self):
         """Get SOS events for the current user."""
+<<<<<<< HEAD
         user = self.request.user
         is_premium = _is_user_premium(user)
         
@@ -450,6 +519,18 @@ class SOSEventListView(generics.ListAPIView):
             'limit': None if is_premium else FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY'],
             'message': None if is_premium else f'Free plan shows last {FREE_TIER_LIMITS["MAX_INCIDENT_HISTORY"]} incidents. Upgrade to Premium for unlimited history.'
         })
+=======
+        return SOSEvent.objects.filter(user=self.request.user)
+    
+    def list(self, request, *args, **kwargs):
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own SOS events.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().list(request, *args, **kwargs)
+>>>>>>> d201f5d (delete migrations of users_profile app)
 
 
 @api_view(['GET'])
