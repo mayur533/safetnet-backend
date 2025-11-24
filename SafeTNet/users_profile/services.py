@@ -17,17 +17,20 @@ class SMSService:
     
     def __init__(self):
         self.twilio_client = None
-        self.exotel_sid = settings.EXOTEL_SID
-        self.exotel_token = settings.EXOTEL_TOKEN
-        self.exotel_app_id = settings.EXOTEL_APP_ID
+        self.exotel_sid = getattr(settings, 'EXOTEL_SID', None)
+        self.exotel_token = getattr(settings, 'EXOTEL_TOKEN', None)
+        self.exotel_app_id = getattr(settings, 'EXOTEL_APP_ID', None)
+        self.twilio_phone_number = getattr(settings, 'TWILIO_PHONE_NUMBER', None)
         
         # Initialize Twilio client if credentials are available
-        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
+        twilio_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None)
+        twilio_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None)
+        if twilio_sid and twilio_token:
             try:
                 from twilio.rest import Client as TwilioClient
                 self.twilio_client = TwilioClient(
-                    settings.TWILIO_ACCOUNT_SID,
-                    settings.TWILIO_AUTH_TOKEN
+                    twilio_sid,
+                    twilio_token
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio client: {str(e)}")
@@ -73,7 +76,7 @@ class SMSService:
         try:
             message_obj = self.twilio_client.messages.create(
                 body=message,
-                from_=settings.TWILIO_PHONE_NUMBER,
+                from_=self.twilio_phone_number or '+1234567890',  # Fallback if not set
                 to=to_phone
             )
             logger.info(f"SMS sent via Twilio to {to_phone}: {message_obj.sid}")
@@ -88,7 +91,7 @@ class SMSService:
             url = f"https://api.exotel.com/v1/Accounts/{self.exotel_sid}/Sms/send.json"
             
             data = {
-                'From': settings.TWILIO_PHONE_NUMBER,  # Use configured phone number
+                'From': self.twilio_phone_number or '+1234567890',  # Use configured phone number or fallback
                 'To': to_phone,
                 'Body': message
             }
