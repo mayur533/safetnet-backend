@@ -124,108 +124,15 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # # Internal URL for connections from within Render network
 # internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
 
-# # Determine which URL to use
-# if database_url:
-#     # Use DATABASE_URL if provided
-#     db_url_to_use = database_url
-#     is_local_db = 'localhost' in database_url or '127.0.0.1' in database_url
-#     is_render_internal = '.internal' in database_url or '-a/' in database_url or not '.oregon-postgres.render.com' in database_url
-# else:
-#     # Use internal URL if on Render, external otherwise
-#     if is_render_service:
-#         db_url_to_use = internal_db_url
-#         is_local_db = False
-#         is_render_internal = True
-#     else:
-#         db_url_to_use = external_db_url
-#         is_local_db = False
-#         is_render_internal = False
 
-# # Configure database connection
-# db_config = dj_database_url.config(
-#     default=db_url_to_use,
-#     conn_max_age=600,
-#     ssl_require=True,
-# )
-
-# # Configure SSL options for external connections
-# if db_config and not (is_local_db or is_render_internal):
-#     if 'OPTIONS' not in db_config:
-#         db_config['OPTIONS'] = {}
-#     # Try prefer mode first (attempts SSL but doesn't fail if unavailable)
-#     # This helps with Render databases that may have SSL issues
-#     db_config['OPTIONS']['sslmode'] = 'prefer'
-    
-#     # For psycopg3, also configure SSL context to be more permissive
-#     try:
-#         import ssl
-#         # Create a more permissive SSL context
-#         ssl_context = ssl.create_default_context()
-#         ssl_context.check_hostname = False
-#         ssl_context.verify_mode = ssl.CERT_NONE
-#         # Note: psycopg3 may use this differently, but sslmode should handle it
-#     except Exception:
-#         pass
-
-# DATABASES = {
-#     "default": db_config
-# }
-
-# Database configuration
-# External URL: For connections from outside Render network (requires SSL, external access must be enabled)
-external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
-# Internal URL: For connections from within Render network (no SSL needed, only works on Render)
-internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
-
-# Check if we're on Render
-is_render_service = os.environ.get('RENDER') == 'true'
-
-# Get DATABASE_URL from environment (empty string if not set)
-DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
-
-# For local development: Use SQLite if DATABASE_URL is not set and not on Render
-# This avoids connection issues while Render database external access is being configured
-if not DATABASE_URL:
-    if is_render_service:
-        # On Render but no DATABASE_URL - use internal URL
-        DATABASE_URL = internal_db_url
-    else:
-        # Local development - use SQLite to avoid Render connection issues
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
-else:
-    # DATABASE_URL is set - configure PostgreSQL
-    # Detect if using internal URL
-    is_internal_url = ('.internal' in DATABASE_URL or '-a/' in DATABASE_URL or 
-                      (not '.oregon-postgres.render.com' in DATABASE_URL and not 'localhost' in DATABASE_URL and not '127.0.0.1' in DATABASE_URL))
-    is_local_db = ('localhost' in DATABASE_URL or '127.0.0.1' in DATABASE_URL)
-
-    # Configure database connection
-    db_config = dj_database_url.config(
-        default=DATABASE_URL,
+DATABASES = {
+    "default": dj_database_url.config(
+        default="postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg",
         conn_max_age=600,
-        ssl_require=not (is_local_db or is_internal_url)  # No SSL for local or internal connections
+        ssl_require=True,
     )
+}
 
-    # Add SSL mode configuration for psycopg3
-    if db_config:
-        if 'OPTIONS' not in db_config:
-            db_config['OPTIONS'] = {}
-        
-        if is_local_db or is_internal_url:
-            # No SSL for local or internal connections
-            db_config['OPTIONS']['sslmode'] = 'disable'
-        else:
-            # Use require SSL mode for external connections
-            db_config['OPTIONS']['sslmode'] = 'require'
-
-    DATABASES = {
-        'default': db_config
-    }
 
 
 # Password validation
