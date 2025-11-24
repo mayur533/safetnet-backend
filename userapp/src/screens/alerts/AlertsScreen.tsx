@@ -181,7 +181,6 @@ const AlertsScreen = () => {
               refreshing={refreshing}
               onRefresh={onRefresh}
               tintColor={colors.primary}
-              progressBackgroundColor={colors.card}
             />
           }
           showsVerticalScrollIndicator={true}>

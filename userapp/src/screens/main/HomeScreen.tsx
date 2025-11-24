@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useCallback} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {useRoute, useTheme} from '@react-navigation/native';
 import {
   View,
@@ -13,12 +13,12 @@ import {
   Modal,
   Linking,
   TextInput,
-  PermissionsAndroid,
   Alert,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
 import {useSettingsStore} from '../../stores/settingsStore';
+import {useSubscription} from '../../lib/hooks/useSubscription';
 import {CustomVibration} from '../../modules/VibrationModule';
 import {shakeDetectionService} from '../../services/shakeDetectionService';
 
@@ -45,6 +45,7 @@ const categoryCards = [
     phone: '9561606066',
     smsBody: 'Emergency! Please send help immediately.',
     type: 'call' as const,
+    isPremium: false,
   },
   {
     key: 'security',
@@ -56,6 +57,7 @@ const categoryCards = [
     phone: '+18005550101',
     smsBody: 'Security alert needed. Please respond ASAP.',
     type: 'call' as const,
+    isPremium: false,
   },
   {
     key: 'family',
@@ -67,6 +69,7 @@ const categoryCards = [
     phone: '+18005550123',
     smsBody: 'I need your help. Please call me back.',
     type: 'sms' as const,
+    isPremium: false,
   },
   {
     key: 'community',
@@ -80,6 +83,7 @@ const categoryCards = [
     type: 'community' as const,
     contacts: COMMUNITY_CONTACTS,
     quickMessages: COMMUNITY_MESSAGES,
+    isPremium: false, // Free users get 500m radius
   },
   {
     key: 'ambulance',
@@ -91,6 +95,7 @@ const categoryCards = [
     phone: '108',
     smsBody: 'Medical emergency. Please dispatch assistance immediately.',
     type: 'call' as const,
+    isPremium: false,
   },
   {
     key: 'location',
@@ -102,6 +107,7 @@ const categoryCards = [
     phone: '+18005550155',
     smsBody: 'Here is my current location. Please monitor me closely.',
     type: 'sms' as const,
+    isPremium: false, // Free users get 30min limit
   },
 ];
 
@@ -113,9 +119,39 @@ const HomeScreen = ({navigation}: any) => {
   const route = useRoute();
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const {isPremium} = useSubscription();
   const shakeToSendSOS = useSettingsStore((state) => state.shakeToSendSOS);
   const theme = useTheme();
   const colors = theme.colors;
+  
+  // Theme-dependent colors
+  const isDarkMode = theme.dark || false;
+  const cardShadowColor = isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)';
+  const mutedTextColor = isDarkMode ? 'rgba(255, 255, 255, 0.6)' : '#6B7280';
+  const subtleTextColor = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : '#9CA3AF';
+  const softSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F3F4F6';
+  const inputSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F9FAFB';
+  const placeholderColor = isDarkMode ? 'rgba(255, 255, 255, 0.4)' : '#9CA3AF';
+  const sliderTrackColor = isDarkMode ? 'rgba(255, 255, 255, 0.15)' : '#E5E7EB';
+  const sliderBorderColor = isDarkMode ? 'rgba(255, 255, 255, 0.2)' : '#D1D5DB';
+  const sliderThumbColor = '#EF4444';
+  
+  // Helper function to add alpha to colors
+  const withAlpha = (color: string, alpha: number): string => {
+    if (color.startsWith('#')) {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    if (color.startsWith('rgba')) {
+      return color.replace(/[\d.]+\)$/g, `${alpha})`);
+    }
+    if (color.startsWith('rgb')) {
+      return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+    }
+    return color;
+  };
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSendingAlert, setIsSendingAlert] = useState(false);
   const [isButtonPressed, setIsButtonPressed] = useState(false);
@@ -126,7 +162,6 @@ const HomeScreen = ({navigation}: any) => {
   const [selectedCommunityContact, setSelectedCommunityContact] = useState(COMMUNITY_CONTACTS[0]);
   const [selectedQuickMessage, setSelectedQuickMessage] = useState(COMMUNITY_MESSAGES[0]);
   const [customCommunityMessage, setCustomCommunityMessage] = useState(COMMUNITY_MESSAGES[0]);
-  const hasRequestedInitialPermissions = useRef(false);
 
   const cardRows: CategoryCard[][] = [];
   for (let i = 0; i < categoryCards.length; i += 2) {
@@ -150,12 +185,7 @@ const HomeScreen = ({navigation}: any) => {
   const sliderThumbSize = 64;
   const sliderStartX = useRef(0);
 
-  useEffect(() => {
-    if (Platform.OS === 'android' && !hasRequestedInitialPermissions.current) {
-      hasRequestedInitialPermissions.current = true;
-      void requestInitialPermissions();
-    }
-  }, [requestInitialPermissions]);
+  // Permissions are now handled automatically by the system on app start
 
   const triggerVibration = (duration: number = 200) => {
     try {
@@ -451,6 +481,19 @@ const HomeScreen = ({navigation}: any) => {
       return;
     }
 
+    // Check if premium feature and user is not premium
+    if (card.isPremium && !isPremium) {
+      Alert.alert(
+        'Premium Feature',
+        'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {text: 'Upgrade', onPress: () => navigation.navigate('Billing' as never)}
+        ]
+      );
+      return;
+    }
+
     triggerVibration(200);
 
     if (card.type === 'community') {
@@ -471,48 +514,13 @@ const HomeScreen = ({navigation}: any) => {
     setActionCard(null);
   };
 
-  const requestCallPermission = async () => {
-    if (Platform.OS !== 'android') {
-      return true;
-    }
-
-    try {
-      const permission = PermissionsAndroid.PERMISSIONS.CALL_PHONE;
-      const hasPermission = await PermissionsAndroid.check(permission);
-      if (hasPermission) {
-        return true;
-      }
-
-      const status = await PermissionsAndroid.request(permission, {
-        title: 'Allow Phone Calls',
-        message: 'Grant phone call access to contact emergency services directly.',
-        buttonPositive: 'Allow',
-        buttonNegative: 'Deny',
-      });
-
-      return status === PermissionsAndroid.RESULTS.GRANTED;
-    } catch (error) {
-      console.warn('Call permission request failed:', error);
-      return false;
-    }
-  };
-
   const handleCall = async (phone?: string) => {
     if (!phone) {
       closeActionModal();
       return;
     }
 
-    const canCall = await requestCallPermission();
-    if (!canCall) {
-      Alert.alert(
-        'Permission Required',
-        'Please allow phone call access in settings to place emergency calls automatically.',
-      );
-      closeActionModal();
-      return;
-    }
-
+    // System will handle permission automatically if not granted
     try {
       await Linking.openURL(`tel:${phone}`);
     } catch (error) {
@@ -522,37 +530,6 @@ const HomeScreen = ({navigation}: any) => {
       closeActionModal();
     }
   };
-
-  const requestInitialPermissions = useCallback(async () => {
-    if (Platform.OS !== 'android') {
-      return;
-    }
-
-    try {
-      const permissions: string[] = [
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        PermissionsAndroid.PERMISSIONS.CALL_PHONE,
-        PermissionsAndroid.PERMISSIONS.SEND_SMS,
-      ];
-
-      if (Platform.Version >= 29 && PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION) {
-        permissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
-      }
-
-      const results = await PermissionsAndroid.requestMultiple(permissions);
-      const denied = Object.entries(results).filter(([, value]) => value !== PermissionsAndroid.RESULTS.GRANTED);
-
-      if (denied.length > 0) {
-        Alert.alert(
-          'Permissions Needed',
-          'Some permissions were denied. Certain safety features may be limited until they are granted.',
-        );
-      }
-    } catch (error) {
-      console.warn('Initial permission request failed:', error);
-    }
-  }, []);
 
   const handleSendSMS = (phone?: string, message?: string) => {
     if (phone) {
@@ -885,6 +862,12 @@ const HomeScreen = ({navigation}: any) => {
                   </View>
                   <View style={styles.cardTextContainer}>
                     <Text style={[styles.cardTitle, {color: colors.text}]}>{card.title}</Text>
+                    {card.isPremium && !isPremium && (
+                      <View style={styles.premiumBadge}>
+                        <MaterialIcons name="workspace-premium" size={12} color="#F59E0B" />
+                        <Text style={styles.premiumBadgeText}>Premium</Text>
+                      </View>
+                    )}
                   </View>
                 </TouchableOpacity>
               ))}
@@ -1118,6 +1101,22 @@ const styles = StyleSheet.create({
   cardTextContainer: {
     flex: 1,
     justifyContent: 'center',
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  premiumBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#F59E0B',
+    marginLeft: 4,
   },
   cardTitle: {
     fontSize: 13,

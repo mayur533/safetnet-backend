@@ -14,16 +14,16 @@ from pathlib import Path
 from decouple import config
 import os
 import dj_database_url
-try:
-    from dotenv import load_dotenv
-except ModuleNotFoundError:
-    def load_dotenv(*_args, **_kwargs):
-        return None
+from dotenv import load_dotenv
 
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Check DATABASE_URL after load_dotenv() (it might be set in .env file)
+database_url = os.environ.get('DATABASE_URL', '').strip()
+is_render_service = os.environ.get('RENDER') == 'true'  # Render sets this automatically
 
 
 # Quick-start development settings - unsuitable for production
@@ -109,61 +109,31 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 # Database configuration
-# External URL: For connections from outside Render network (requires SSL, external access must be enabled)
-# NOTE: Your IP (103.182.147.13/32) must be whitelisted in Render database settings for external connections
-external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
-# Internal URL: For connections from within Render network (no SSL needed, only works on Render)
-internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
+# Uses DATABASE_URL environment variable (automatically different for local vs production)
+# 
+# Local development: Set DATABASE_URL in .env file
+#   Example: DATABASE_URL=postgresql://postgres:Rsl@2015@localhost:5432/SafeTNet
+#
+# Render production: DATABASE_URL is automatically set when database is linked
+#   If not set, falls back to the hardcoded Render database URL below
 
-# Check if we're on Render
-is_render_service = os.environ.get('RENDER') == 'true'
+# Database configuration
+# Use the new database URL provided
+# External URL for connections from outside Render network
+# external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
+# # Internal URL for connections from within Render network
+# internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
 
-# Get DATABASE_URL from environment (empty string if not set)
-DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 
-# For local development: Use SQLite if DATABASE_URL is not set and not on Render
-# This avoids connection issues while Render database external access is being configured
-if not DATABASE_URL:
-    if is_render_service:
-        # On Render but no DATABASE_URL - use internal URL
-        DATABASE_URL = internal_db_url
-    else:
-        # Local development - use SQLite to avoid Render connection issues
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
-else:
-    # DATABASE_URL is set - configure PostgreSQL
-    # Detect if using internal URL
-    is_internal_url = ('.internal' in DATABASE_URL or '-a/' in DATABASE_URL or 
-                      (not '.oregon-postgres.render.com' in DATABASE_URL and not 'localhost' in DATABASE_URL and not '127.0.0.1' in DATABASE_URL))
-    is_local_db = ('localhost' in DATABASE_URL or '127.0.0.1' in DATABASE_URL)
-
-    # Configure database connection
-    db_config = dj_database_url.config(
-        default=DATABASE_URL,
+DATABASES = {
+    "default": dj_database_url.config(
+        default="postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg",
         conn_max_age=600,
-        ssl_require=not (is_local_db or is_internal_url)  # No SSL for local or internal connections
+        ssl_require=True,
     )
+}
 
-    # Add SSL mode configuration for psycopg3
-    if db_config:
-        if 'OPTIONS' not in db_config:
-            db_config['OPTIONS'] = {}
-        
-        if is_local_db or is_internal_url:
-            # No SSL for local or internal connections
-            db_config['OPTIONS']['sslmode'] = 'disable'
-        else:
-            # Use require SSL mode for external connections
-            db_config['OPTIONS']['sslmode'] = 'require'
 
-    DATABASES = {
-        'default': db_config
-    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

@@ -1,10 +1,11 @@
 import React, {useState, useEffect, useMemo} from 'react';
-import {View, Text, TouchableOpacity, Modal, BackHandler, StyleSheet} from 'react-native';
+import {View, Text, TouchableOpacity, Modal, BackHandler, StyleSheet, Alert, ScrollView} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '@react-navigation/native';
 import type {Theme} from '@react-navigation/native';
 import {useAuthStore} from '../../stores/authStore';
+import {useSubscription} from '../../lib/hooks/useSubscription';
 
 interface CustomDrawerProps {
   visible: boolean;
@@ -59,6 +60,7 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const {isPremium} = useSubscription();
   const [activeScreen, setActiveScreen] = useState('Home');
   
   // Get user name - use email if name is not available
@@ -99,7 +101,7 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
     return unsubscribe;
   }, [navigation]);
 
-  const handleNavigate = (screenName: string) => {
+  const handleNavigate = (screenName: string, isPremiumFeature: boolean = false) => {
     // Check if user is authenticated for protected screens
     const protectedScreens = ['Alert', 'Community', 'Family', 'Profile', 'Settings'];
     
@@ -112,8 +114,22 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
       return;
     }
 
+    // Check premium features
+    if (isPremiumFeature && !isPremium) {
+      onClose();
+      Alert.alert(
+        'Premium Feature',
+        'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {text: 'Upgrade', onPress: () => navigation.navigate('Billing' as never)}
+        ]
+      );
+      return;
+    }
+
     // Allow navigation to Home and HowItWorks without authentication
-    if (screenName === 'Home' || screenName === 'HowItWorks' || screenName === 'SafetyTips') {
+    if (screenName === 'Home' || screenName === 'HowItWorks' || screenName === 'SafetyTips' || screenName === 'AreaMap') {
       setActiveScreen(screenName);
       navigation.navigate(screenName);
       onClose();
@@ -159,12 +175,18 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
   };
 
   const menuItems = [
-    {name: 'Home', screen: 'Home', icon: 'home', iconType: 'MaterialIcons'},
-    {name: 'Alert', screen: 'Alert', icon: 'notifications', iconType: 'MaterialIcons'},
-    {name: 'Community', screen: 'Community', icon: 'groups', iconType: 'MaterialIcons'},
-    {name: 'Family', screen: 'Family', icon: 'family-restroom', iconType: 'MaterialIcons'},
-    {name: 'Safety Tips', screen: 'SafetyTips', icon: 'security', iconType: 'MaterialIcons'},
-    {name: 'How it works', screen: 'HowItWorks', icon: 'help-outline', iconType: 'MaterialIcons'},
+    {name: 'Home', screen: 'Home', icon: 'home', iconType: 'MaterialIcons', premium: false},
+    {name: 'Alert', screen: 'Alert', icon: 'notifications', iconType: 'MaterialIcons', premium: false},
+    {name: 'Community', screen: 'Community', icon: 'groups', iconType: 'MaterialIcons', premium: false},
+    {name: 'Family', screen: 'Family', icon: 'family-restroom', iconType: 'MaterialIcons', premium: false},
+    {name: 'Live Location', screen: 'LiveLocationShare', icon: 'my-location', iconType: 'MaterialIcons', premium: false},
+    {name: 'Geofencing', screen: 'GeofenceArea', icon: 'fence', iconType: 'MaterialIcons', premium: true},
+    {name: 'Trusted Circle', screen: 'TrustedCheckIn', icon: 'verified-user', iconType: 'MaterialIcons', premium: true},
+    {name: 'Response Center', screen: 'ResponseCenter', icon: 'support-agent', iconType: 'MaterialIcons', premium: true},
+    {name: 'Nearby Help', screen: 'AreaMap', icon: 'local-hospital', iconType: 'MaterialIcons', premium: false},
+    {name: 'Billing', screen: 'Billing', icon: 'payment', iconType: 'MaterialIcons', premium: false},
+    {name: 'Safety Tips', screen: 'SafetyTips', icon: 'security', iconType: 'MaterialIcons', premium: false},
+    {name: 'How it works', screen: 'HowItWorks', icon: 'help-outline', iconType: 'MaterialIcons', premium: false},
   ];
 
   return (
@@ -185,31 +207,50 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
               <MaterialIcons name="account-circle" size={60} color={colors.primary} />
             </View>
             <Text style={styles.greetingText}>{greeting}</Text>
-            <Text style={styles.userNameText}>{userName}</Text>
+            <View style={styles.userNameRow}>
+              <Text style={styles.userNameText}>{userName}</Text>
+              {isPremium && (
+                <View style={styles.premiumBadge}>
+                  <MaterialIcons name="workspace-premium" size={12} color="#FFFFFF" />
+                  <Text style={styles.premiumBadgeText}>Premium</Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
 
-          {/* Menu Items */}
-          <View style={styles.menuContainer}>
+          {/* Menu Items - Scrollable */}
+          <ScrollView style={styles.menuScrollContainer} contentContainerStyle={styles.menuContainer}>
             {menuItems.map((item, index) => {
               const isActive = activeScreen === item.screen;
               const IconComponent = item.iconType === 'MaterialIcons' ? MaterialIcons : Ionicons;
+              const isPremiumOnly = item.premium && !isPremium;
               return (
                 <TouchableOpacity
                   key={index}
-                  style={[styles.menuItem, isActive && styles.menuItemActive]}
-                  onPress={() => handleNavigate(item.screen)}
+                  style={[styles.menuItem, isActive && styles.menuItemActive, isPremiumOnly && styles.menuItemPremium]}
+                  onPress={() => handleNavigate(item.screen, item.premium)}
                   activeOpacity={0.7}>
                   <IconComponent
                     name={item.icon}
                     size={24}
-                    color={isActive ? colors.primary : iconMutedColor}
+                    color={isActive ? colors.primary : (isPremiumOnly ? mutedTextColor : iconMutedColor)}
                     style={styles.menuIcon}
                   />
-                  <Text style={[styles.menuText, isActive && styles.menuTextActive]}>{item.name}</Text>
+                  <View style={styles.menuItemTextContainer}>
+                    <Text style={[styles.menuText, isActive && styles.menuTextActive, isPremiumOnly && styles.menuTextPremium]}>
+                      {item.name}
+                    </Text>
+                    {item.premium && (
+                      <View style={styles.premiumMenuBadge}>
+                        <MaterialIcons name="workspace-premium" size={12} color="#FBBF24" />
+                        <Text style={styles.premiumMenuBadgeText}>Premium</Text>
+                      </View>
+                    )}
+                  </View>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Settings Button */}
           <TouchableOpacity
@@ -239,8 +280,8 @@ const createStyles = (colors: Theme['colors'], tokens: DrawerThemeTokens, isDark
       flexDirection: 'row',
     },
     drawerContent: {
-      width: '75%',
-      maxWidth: 320,
+      width: '80%',
+      maxWidth: 400,
       backgroundColor: colors.card,
       paddingTop: 20,
       paddingBottom: 20,
@@ -266,13 +307,37 @@ const createStyles = (colors: Theme['colors'], tokens: DrawerThemeTokens, isDark
       color: tokens.mutedTextColor,
       marginBottom: 4,
     },
+    userNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    menuScrollContainer: {
+      flex: 1,
+    },
     userNameText: {
       fontSize: 18,
       fontWeight: 'bold',
       color: colors.text,
     },
+    premiumBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: '#FBBF24',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      gap: 4,
+    },
+    premiumBadgeText: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: '600',
+    },
     menuContainer: {
       paddingVertical: 8,
+      flexGrow: 1,
     },
     menuItem: {
       flexDirection: 'row',
@@ -296,6 +361,32 @@ const createStyles = (colors: Theme['colors'], tokens: DrawerThemeTokens, isDark
       color: colors.primary,
       fontWeight: '600',
     },
+    menuItemPremium: {
+      opacity: 0.6,
+    },
+    menuTextPremium: {
+      opacity: 0.7,
+    },
+    menuItemTextContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+      justifyContent: 'space-between',
+    },
+    premiumMenuBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: isDarkMode ? 'rgba(251, 191, 36, 0.2)' : '#FEF3C7',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      gap: 4,
+    },
+    premiumMenuBadgeText: {
+      color: '#FBBF24',
+      fontSize: 10,
+      fontWeight: '600',
+    },
     settingsButton: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -317,6 +408,3 @@ const createStyles = (colors: Theme['colors'], tokens: DrawerThemeTokens, isDark
   });
 
 export default CustomDrawer;
-
-export default CustomDrawer;
-

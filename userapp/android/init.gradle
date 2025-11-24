@@ -1,0 +1,13 @@
+gradle.projectsLoaded {
+    rootProject.allprojects {
+        buildscript {
+            repositories {
+                // repositories
+            }
+        }
+    }
+}
+
+// Set PATH for all gradle processes
+System.setProperty("PATH", System.getenv("PATH") ?: "/usr/bin:/usr/local/bin")
+

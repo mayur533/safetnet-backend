@@ -3,7 +3,6 @@ package com.userapp
 import android.view.KeyEvent
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
@@ -17,9 +16,15 @@ class MainActivity : ReactActivity() {
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
    * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
+   * Disabled New Architecture due to ProgressBar compatibility issues with RefreshControl
+   * and TurboModule registry errors with gesture handler
    */
-  override fun createReactActivityDelegate(): ReactActivityDelegate =
-      DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+  override fun createReactActivityDelegate(): ReactActivityDelegate {
+    // Enable New Architecture for AsyncStorage TurboModule support
+    // AsyncStorage requires New Architecture to work properly
+    val fabricEnabled = true // Enable New Architecture for TurboModule support
+    return DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+  }
 
   /**
    * Override onKeyUp to prevent dev menu from opening when shake detection is active

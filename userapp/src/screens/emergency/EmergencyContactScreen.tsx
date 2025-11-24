@@ -228,7 +228,6 @@ const EmergencyContactScreen = () => {
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={colors.primary}
-            progressBackgroundColor={colors.card}
           />
         )}>
         
