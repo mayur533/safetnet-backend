@@ -394,6 +394,37 @@ class OfficerLoginView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    def get(self, request):
+        """Return API documentation for login endpoint"""
+        return Response({
+            'endpoint': '/api/security/login/',
+            'method': 'POST',
+            'description': 'Security Officer Login API',
+            'requirements': {
+                'user_role': 'security_officer',
+                'user_status': 'is_active=True'
+            },
+            'request_body': {
+                'username': 'string (required)',
+                'password': 'string (required)'
+            },
+            'example_request': {
+                'username': 'test_officer',
+                'password': 'TestOfficer123!'
+            },
+            'response': {
+                'access': 'JWT access token (string)',
+                'refresh': 'JWT refresh token (string)',
+                'user': {
+                    'id': 'integer',
+                    'username': 'string',
+                    'email': 'string',
+                    'role': 'security_officer'
+                }
+            },
+            'curl_example': 'curl -X POST "https://your-domain.com/api/security/login/" -H "Content-Type: application/json" -d \'{"username": "test_officer", "password": "TestOfficer123!"}\''
+        }, status=status.HTTP_200_OK)
+
     def post(self, request):
         from rest_framework_simplejwt.tokens import RefreshToken
 

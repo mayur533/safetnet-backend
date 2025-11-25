@@ -27,6 +27,7 @@ class User(AbstractUser):
         ('SUPER_ADMIN', 'Super Admin'),
         ('SUB_ADMIN', 'Sub Admin'),
         ('USER', 'User'),
+        ('security_officer', 'Security Officer'),
     ]
     
     role = models.CharField(

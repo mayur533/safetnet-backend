@@ -496,6 +496,13 @@ class SOSEventListView(generics.ListAPIView):
     
     def list(self, request, *args, **kwargs):
         """List SOS events with limit info."""
+        user_id = kwargs.get('user_id')
+        if user_id is not None and request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own SOS events.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         user = request.user
         is_premium = _is_user_premium(user)
         

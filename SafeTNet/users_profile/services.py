@@ -17,17 +17,20 @@ class SMSService:
     
     def __init__(self):
         self.twilio_client = None
-        self.exotel_sid = settings.EXOTEL_SID
-        self.exotel_token = settings.EXOTEL_TOKEN
-        self.exotel_app_id = settings.EXOTEL_APP_ID
+        self.exotel_sid = getattr(settings, 'EXOTEL_SID', None)
+        self.exotel_token = getattr(settings, 'EXOTEL_TOKEN', None)
+        self.exotel_app_id = getattr(settings, 'EXOTEL_APP_ID', None)
+        self.twilio_phone_number = getattr(settings, 'TWILIO_PHONE_NUMBER', None)
         
         # Initialize Twilio client if credentials are available
-        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
+        twilio_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None)
+        twilio_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None)
+        if twilio_sid and twilio_token:
             try:
                 from twilio.rest import Client as TwilioClient
                 self.twilio_client = TwilioClient(
-                    settings.TWILIO_ACCOUNT_SID,
-                    settings.TWILIO_AUTH_TOKEN
+                    twilio_sid,
+                    twilio_token
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio client: {str(e)}")
@@ -73,7 +76,7 @@ class SMSService:
         try:
             message_obj = self.twilio_client.messages.create(
                 body=message,
-                from_=settings.TWILIO_PHONE_NUMBER,
+                from_=self.twilio_phone_number or '+1234567890',  # Fallback if not set
                 to=to_phone
             )
             logger.info(f"SMS sent via Twilio to {to_phone}: {message_obj.sid}")
@@ -88,7 +91,7 @@ class SMSService:
             url = f"https://api.exotel.com/v1/Accounts/{self.exotel_sid}/Sms/send.json"
             
             data = {
-                'From': settings.TWILIO_PHONE_NUMBER,  # Use configured phone number
+                'From': self.twilio_phone_number or '+1234567890',  # Use configured phone number or fallback
                 'To': to_phone,
                 'Body': message
             }
@@ -187,18 +190,29 @@ class EmergencyService:
         Coordinate emergency response for SOS event.
         """
         try:
-            # Send SMS to family contacts
-            family_contacts = user.family_contacts.all()
-            for contact in family_contacts:
-                try:
-                    self.sms_service.send_sos_alert(
-                        to_phone=contact.phone,
-                        user_name=user.name,
-                        user_phone=user.phone,
-                        location=sos_event.location
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send emergency SMS to {contact.phone}: {str(e)}")
+            if not user or not sos_event:
+                logger.warning("Emergency response called with None user or sos_event")
+                return False
+            
+            # Send SMS to family contacts (if relationship exists)
+            try:
+                if hasattr(user, 'family_contacts'):
+                    family_contacts = user.family_contacts.all()
+                    for contact in family_contacts:
+                        try:
+                            if hasattr(contact, 'phone') and contact.phone:
+                                self.sms_service.send_sos_alert(
+                                    to_phone=contact.phone,
+                                    user_name=getattr(user, 'name', 'User'),
+                                    user_phone=getattr(user, 'phone', ''),
+                                    location=getattr(sos_event, 'location', None)
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to send emergency SMS to {getattr(contact, 'phone', 'unknown')}: {str(e)}")
+                else:
+                    logger.warning(f"User {getattr(user, 'email', 'unknown')} has no family_contacts relationship")
+            except Exception as e:
+                logger.error(f"Error accessing family contacts: {str(e)}")
             
             # In a real implementation, you would also:
             # 1. Call emergency services API
@@ -206,9 +220,9 @@ class EmergencyService:
             # 3. Notify security officers
             # 4. Log the emergency event
             
-            logger.info(f"Emergency response triggered for user: {user.email}")
+            logger.info(f"Emergency response triggered for user: {getattr(user, 'email', 'unknown')}")
             return True
             
         except Exception as e:
-            logger.error(f"Emergency response failed for user {user.email}: {str(e)}")
+            logger.error(f"Emergency response failed for user {getattr(user, 'email', 'unknown') if user else 'None'}: {str(e)}")
             return False

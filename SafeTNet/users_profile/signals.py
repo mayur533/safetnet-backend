@@ -14,10 +14,13 @@ def user_post_save(sender, instance, created, **kwargs):
     """
     Handle user creation and updates.
     """
-    if created:
-        logger.info(f"New user created: {instance.email}")
-    else:
-        logger.info(f"User updated: {instance.email}")
+    try:
+        if created:
+            logger.info(f"New user created: {instance.email if hasattr(instance, 'email') else 'Unknown'}")
+        else:
+            logger.info(f"User updated: {instance.email if hasattr(instance, 'email') else 'Unknown'}")
+    except Exception as e:
+        logger.error(f"Error in user_post_save signal: {str(e)}")
 
 
 @receiver(pre_save, sender=FamilyContact)
@@ -25,15 +28,23 @@ def family_contact_pre_save(sender, instance, **kwargs):
     """
     Handle family contact creation and updates.
     """
-    if not instance.pk:  # New contact being created
-        # Ensure maximum 3 contacts per user
-        existing_count = FamilyContact.objects.filter(user=instance.user).count()
-        if existing_count >= 3:
-            raise ValueError("Maximum 3 family contacts allowed per user")
-        
-        logger.info(f"New family contact being created for user: {instance.user.email}")
-    else:
-        logger.info(f"Family contact being updated for user: {instance.user.email}")
+    try:
+        if not instance.pk:  # New contact being created
+            # Ensure maximum 3 contacts per user
+            if instance.user:
+                existing_count = FamilyContact.objects.filter(user=instance.user).count()
+                if existing_count >= 3:
+                    raise ValueError("Maximum 3 family contacts allowed per user")
+                
+                logger.info(f"New family contact being created for user: {instance.user.email}")
+        else:
+            if instance.user:
+                logger.info(f"Family contact being updated for user: {instance.user.email}")
+    except Exception as e:
+        logger.error(f"Error in family_contact_pre_save signal: {str(e)}")
+        # Re-raise if it's a validation error, otherwise log and continue
+        if isinstance(e, ValueError):
+            raise
 
 
 @receiver(post_save, sender=SOSEvent)
@@ -41,12 +52,19 @@ def sos_event_post_save(sender, instance, created, **kwargs):
     """
     Handle SOS event creation and updates.
     """
-    if created:
-        logger.info(f"SOS event created for user: {instance.user.email}")
-        
-        # Trigger emergency response
-        from .services import EmergencyService
-        emergency_service = EmergencyService()
-        emergency_service.trigger_emergency_response(instance.user, instance)
-    else:
-        logger.info(f"SOS event updated for user: {instance.user.email}")
+    try:
+        if created:
+            logger.info(f"SOS event created for user: {instance.user.email if instance.user else 'Unknown'}")
+            
+            # Trigger emergency response (only if user exists)
+            if instance.user:
+                try:
+                    from .services import EmergencyService
+                    emergency_service = EmergencyService()
+                    emergency_service.trigger_emergency_response(instance.user, instance)
+                except Exception as e:
+                    logger.error(f"Failed to trigger emergency response: {str(e)}")
+        else:
+            logger.info(f"SOS event updated for user: {instance.user.email if instance.user else 'Unknown'}")
+    except Exception as e:
+        logger.error(f"Error in sos_event_post_save signal: {str(e)}")
