@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
-from .models import User, FamilyContact, CommunityMembership, SOSEvent
+from .models import User, FamilyContact, CommunityMembership, SOSEvent, UserDevice, Notification, GeofenceZone
 
 # -------------------- User Registration --------------------
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -69,20 +70,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'email', 'date_joined', 'last_login')
 
     def get_location(self, obj):
-        # User model has NO latitude/longitude → return default values
         return {
-            "latitude": None,
-            "longitude": None,
-            "address": None,
+            "latitude": obj.latitude,
+            "longitude": obj.longitude,
+            "last_updated": obj.last_location_update,
         }
 
     def update(self, instance, validated_data):
-        # Since User model has no latitude/longitude, ignore location updates safely
-        # (Prevents crashes)
-        if 'location' in self.initial_data:
-            # Do nothing for now
-            pass
-
+        location_data = self.initial_data.get('location')
+        if location_data:
+            instance.latitude = location_data.get('latitude', instance.latitude)
+            instance.longitude = location_data.get('longitude', instance.longitude)
+            instance.last_location_update = timezone.now()
+        
         return super().update(instance, validated_data)
 
 
@@ -176,3 +176,32 @@ class UserLocationUpdateSerializer(serializers.Serializer):
         if not (-90 <= lat <= 90):
             raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
         return attrs
+
+    def update(self, instance, validated_data):
+        instance.longitude = validated_data.get('longitude')
+        instance.latitude = validated_data.get('latitude')
+        instance.last_location_update = timezone.now()
+        instance.save()
+        return instance
+
+# -------------------- User Device --------------------
+class UserDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserDevice
+        fields = ('id', 'device_id', 'device_type', 'last_active')
+        read_only_fields = ('id', 'last_active')
+
+
+# -------------------- Notifications --------------------
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ('id', 'title', 'message', 'is_read', 'created_at')
+        read_only_fields = ('id', 'created_at')
+
+
+# -------------------- Geofence Zones --------------------
+class GeofenceZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GeofenceZone
+        fields = ('id', 'name', 'latitude', 'longitude', 'radius_meters')

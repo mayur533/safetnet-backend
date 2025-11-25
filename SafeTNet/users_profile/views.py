@@ -425,7 +425,6 @@ class SOSTriggerView(APIView):
                 is_premium_event=is_premium
             )
             
-<<<<<<< HEAD
             # Send SMS to family contacts (both free and premium)
             try:
                 sms_service = SMSService()
@@ -444,15 +443,6 @@ class SOSTriggerView(APIView):
                         logger.error(f"Failed to send SOS SMS to {contact.phone}: {str(e)}")
             except Exception as e:
                 logger.error(f"SMS service error: {str(e)}")
-=======
-            # Set location if provided
-            if longitude is not None and latitude is not None:
-                sos_event.location = {
-                    'longitude': longitude,
-                    'latitude': latitude
-                }
-                sos_event.save()
->>>>>>> d201f5d (delete migrations of users_profile app)
             
             # Premium features
             if is_premium:
@@ -493,7 +483,6 @@ class SOSEventListView(generics.ListAPIView):
     
     def get_queryset(self):
         """Get SOS events for the current user."""
-<<<<<<< HEAD
         user = self.request.user
         is_premium = _is_user_premium(user)
         
@@ -519,18 +508,6 @@ class SOSEventListView(generics.ListAPIView):
             'limit': None if is_premium else FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY'],
             'message': None if is_premium else f'Free plan shows last {FREE_TIER_LIMITS["MAX_INCIDENT_HISTORY"]} incidents. Upgrade to Premium for unlimited history.'
         })
-=======
-        return SOSEvent.objects.filter(user=self.request.user)
-    
-    def list(self, request, *args, **kwargs):
-        user_id = kwargs.get('user_id')
-        if user_id is not None and request.user.id != int(user_id):
-            return Response(
-                {'error': 'You can only view your own SOS events.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        return super().list(request, *args, **kwargs)
->>>>>>> d201f5d (delete migrations of users_profile app)
 
 
 @api_view(['GET'])

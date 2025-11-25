@@ -30,4 +30,27 @@ urlpatterns = [
     # SOS functionality
     path('<int:user_id>/sos/', views.SOSTriggerView.as_view(), name='sos-trigger'),
     path('<int:user_id>/sos_events/', views.SOSEventListView.as_view(), name='sos-events-list'),
+
+    # -------------------- User Devices --------------------
+path('<int:user_id>/devices/', views.UserDeviceListCreateView.as_view(), name='user-devices-list'),
+path('<int:user_id>/devices/<int:pk>/', views.UserDeviceDetailView.as_view(), name='user-device-detail'),
+
+# -------------------- Notifications --------------------
+path('<int:user_id>/notifications/', views.NotificationListView.as_view(), name='notifications-list'),
+path('<int:user_id>/notifications/<int:notification_id>/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
+
+# -------------------- Geofence Zones --------------------
+path('geofences/', views.GeofenceZoneListView.as_view(), name='geofence-list'),
+path('geofences/<int:pk>/', views.GeofenceZoneDetailView.as_view(), name='geofence-detail'),
+
+# -------------------- Premium Plan --------------------
+path('<int:user_id>/upgrade_plan/', views.UpgradePlanView.as_view(), name='upgrade-plan'),
+
+# -------------------- SOS Event Filtering --------------------
+path('<int:user_id>/sos_events/filter/', views.SOSEventFilterView.as_view(), name='sos-event-filter'),
+
+# -------------------- Count APIs --------------------
+path('<int:user_id>/family_contacts/count/', views.family_contact_count, name='family-contact-count'),
+path('<int:user_id>/communities/count/', views.community_count, name='community-count'),
+
 ]
