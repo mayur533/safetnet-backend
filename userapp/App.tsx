@@ -8,30 +8,43 @@
 import React, {useEffect, useMemo} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {StatusBar, StyleSheet, useColorScheme, Platform, PermissionsAndroid} from 'react-native';
+import {StatusBar, StyleSheet, useColorScheme, Platform, PermissionsAndroid, View, ActivityIndicator, Text} from 'react-native';
 import {SafeGestureHandlerRootView} from './src/utils/gestureHandlerFallback';
 import {useAuthStore} from './src/stores/authStore';
 import {useSettingsStore} from './src/stores/settingsStore';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import AppNavigator from './src/navigation/AppNavigator';
 import {LightAppTheme, DarkAppTheme} from './src/theme/navigationThemes';
+import {getAsyncStorage} from './src/utils/asyncStorageInit';
 
 function App(): React.JSX.Element {
   // Always call hooks in the same order (before any conditional logic)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
   const loadAuth = useAuthStore((state) => state.load);
   const themeMode = useSettingsStore((state) => state.themeMode);
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const systemScheme = useColorScheme();
 
   useEffect(() => {
-    // Load auth state on app start to restore session
-    loadAuth().catch((error) => {
-      console.error('Error loading auth state:', error);
-    });
-    loadSettings().catch((error) => {
-      console.error('Error loading settings:', error);
-    });
+    // Initialize AsyncStorage first, then load app state
+    const initializeApp = async () => {
+      try {
+        // Initialize AsyncStorage early
+        await getAsyncStorage();
+        console.log('✓ AsyncStorage initialized in App.tsx');
+        
+        // Load auth state on app start to restore session
+        await loadAuth();
+        
+        // Load settings
+        await loadSettings();
+      } catch (error) {
+        console.error('Error initializing app:', error);
+      }
+    };
+    
+    initializeApp();
 
     // Request permissions after app is mounted and ready
     if (Platform.OS === 'android') {
@@ -78,6 +91,20 @@ function App(): React.JSX.Element {
 
   const statusBarStyle = resolvedScheme === 'dark' ? 'light-content' : 'dark-content';
 
+  // Show loading screen while checking auth state
+  if (isLoading) {
+    return (
+      <SafeGestureHandlerRootView style={styles.container}>
+        <SafeAreaProvider>
+          <View style={[styles.loadingContainer, {backgroundColor: navigationTheme.colors.background}]}>
+            <StatusBar barStyle={statusBarStyle} backgroundColor={navigationTheme.colors.background} />
+            {/* You can add a loading spinner here if needed */}
+          </View>
+        </SafeAreaProvider>
+      </SafeGestureHandlerRootView>
+    );
+  }
+
   return (
     <SafeGestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
@@ -93,6 +120,11 @@ function App(): React.JSX.Element {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

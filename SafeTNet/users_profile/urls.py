@@ -15,17 +15,13 @@ urlpatterns = [
     
     # User profile management
     path('profile/', views.UserProfileView.as_view(), name='user-profile-current'),
+    path('<int:user_id>/', views.UserProfileView.as_view(), name='user-profile'),
     path('<int:user_id>/location/', views.UserLocationUpdateView.as_view(), name='user-location-update'),
     path('<int:user_id>/stats/', views.user_stats, name='user-stats'),
     
     # Family contacts management
     path('<int:user_id>/family_contacts/', views.FamilyContactListView.as_view(), name='family-contacts-list'),
     path('<int:user_id>/family_contacts/<int:contact_id>/', views.FamilyContactDetailView.as_view(), name='family-contact-detail'),
-    
-    # Community management
-    path('<int:user_id>/communities/', views.CommunityMembershipListView.as_view(), name='community-memberships-list'),
-    path('<int:user_id>/communities/join/', views.CommunityJoinView.as_view(), name='community-join'),
-    path('<int:user_id>/communities/<str:community_id>/leave/', views.CommunityLeaveView.as_view(), name='community-leave'),
     
     # SOS functionality
     path('<int:user_id>/sos/', views.SOSTriggerView.as_view(), name='sos-trigger'),
@@ -35,25 +31,26 @@ urlpatterns = [
     path('subscribe/', views.SubscriptionView.as_view(), name='subscribe'),
     path('subscribe/cancel/', views.CancelSubscriptionView.as_view(), name='cancel-subscription'),
     
-    # Live Location Sharing
-    path('<int:user_id>/live_location/', views.LiveLocationShareView.as_view(), name='live-location'),
-    path('<int:user_id>/live_location/start/', views.LiveLocationShareView.as_view(), name='live-location-start'),
-    
     # Geofencing (Premium only)
     path('<int:user_id>/geofences/', views.GeofenceListView.as_view(), name='geofences'),
     
     # Community Alerts
     path('<int:user_id>/community_alert/', views.CommunityAlertView.as_view(), name='community-alert'),
     
-    # New APIs
+    # Nearby Help (for map view)
     path('nearby_help/', views_new_apis.nearby_help_map, name='nearby-help'),
-    path('safety_tips/', views_new_apis.safety_tips_feed, name='safety-tips'),
-    path('<int:user_id>/emergency_response/', views_new_apis.EmergencyResponseCenterView.as_view(), name='emergency-response'),
-    path('<int:user_id>/trusted_circle/', views_new_apis.TrustedCircleView.as_view(), name='trusted-circle'),
-    path('<int:user_id>/custom_alerts/', views_new_apis.CustomAlertMessagesView.as_view(), name='custom-alerts'),
-    path('<int:user_id>/ai_threat_detection/', views_new_apis.AIThreatDetectionView.as_view(), name='ai-threat-detection'),
-    path('<int:user_id>/recordings/', views_new_apis.RecordingView.as_view(), name='recordings'),
-    path('<int:user_id>/cloud_backup/', views_new_apis.CloudBackupView.as_view(), name='cloud-backup'),
-    path('<int:user_id>/panic_mode/', views_new_apis.PanicModeAutomationView.as_view(), name='panic-mode'),
-    path('<int:user_id>/devices/', views_new_apis.MultiDeviceSyncView.as_view(), name='multi-device-sync'),
+    
+    # Chat Groups
+    path('<int:user_id>/chat_groups/', views.ChatGroupListView.as_view(), name='chat-groups-list'),
+    path('<int:user_id>/chat_groups/<int:group_id>/', views.ChatGroupDetailView.as_view(), name='chat-group-detail'),
+    path('<int:user_id>/chat_groups/<int:group_id>/members/', views.ChatGroupMemberView.as_view(), name='chat-group-members'),
+    path('<int:user_id>/chat_groups/<int:group_id>/members/<int:member_id>/', views.ChatGroupMemberView.as_view(), name='chat-group-remove-member'),
+    path('<int:user_id>/chat_groups/<int:group_id>/leave/', views.ChatGroupMemberView.as_view(), name='chat-group-leave'),
+    
+    # Chat Messages
+    path('<int:user_id>/chat_groups/<int:group_id>/messages/', views.ChatMessageListView.as_view(), name='chat-messages-list'),
+    path('<int:user_id>/chat_groups/<int:group_id>/messages/<int:message_id>/', views.ChatMessageDetailView.as_view(), name='chat-message-detail'),
+    
+    # Get users for group creation
+    path('available_users/', views.AvailableUsersListView.as_view(), name='available-users-list'),
 ]

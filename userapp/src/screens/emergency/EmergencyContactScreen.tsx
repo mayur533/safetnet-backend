@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,17 @@ import {
   StyleSheet,
   Modal,
   TextInput,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useTheme} from '@react-navigation/native';
 import type {Theme} from '@react-navigation/native';
 import {useSubscription, FREE_CONTACT_LIMIT} from '../../lib/hooks/useSubscription';
+import {useAuthStore} from '../../stores/authStore';
+import {useContactStore} from '../../stores/contactStore';
+import {apiService} from '../../services/apiService';
+import {ThemedAlert} from '../../components/common/ThemedAlert';
 
 interface Contact {
   id: string;
@@ -82,13 +86,20 @@ const EmergencyContactScreen = () => {
   const {mutedTextColor, secondaryTextColor, iconMutedColor, noticeTextColor, emptyIconColor} = themeTokens;
 
   const {isPremium, requirePremium} = useSubscription();
+  const user = useAuthStore((state) => state.user);
+  const {contacts: storeContacts, loadContacts, addContact, updateContact, deleteContact} = useContactStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [contacts, setContacts] = useState<Contact[]>([
-    {id: '1', name: 'Emergency Services', phone: '911', type: 'Emergency'},
-    {id: '2', name: 'John Doe', phone: '+1 (234) 567-8900', email: 'john.doe@example.com', type: 'Family', relationship: 'Father'},
-    {id: '3', name: 'Jane Smith', phone: '+1 (987) 654-3210', email: 'jane.smith@example.com', type: 'Family', relationship: 'Mother'},
-    {id: '4', name: 'Sarah Johnson', phone: '+1 (555) 123-4567', email: 'sarah.j@example.com', type: 'Friend', relationship: 'Friend'},
-  ]);
+  const [loading, setLoading] = useState(true);
+  
+  // Use contacts from store (loaded from API)
+  const contacts = storeContacts.map((c: any) => ({
+    id: c.id?.toString() || Date.now().toString(),
+    name: c.name || c.full_name || '',
+    phone: c.phone || c.phone_number || '',
+    email: c.email || '',
+    type: (c.type || c.contact_type || 'Family') as 'Family' | 'Emergency' | 'Friend',
+    relationship: c.relationship || '',
+  }));
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [formData, setFormData] = useState({
@@ -99,10 +110,31 @@ const EmergencyContactScreen = () => {
     type: 'Family' as 'Family' | 'Emergency' | 'Friend',
   });
 
+  // Load contacts from API on mount
+  useEffect(() => {
+    if (user?.id) {
+      loadContactsFromAPI();
+    } else {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  const loadContactsFromAPI = async () => {
+    if (!user?.id) return;
+    try {
+      setLoading(true);
+      await loadContacts();
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise<void>((resolve) => setTimeout(() => resolve(), 1000));
-    setRefreshing(false);
+    await loadContactsFromAPI();
   };
 
   const maxContacts = useMemo(() => (isPremium ? Infinity : FREE_CONTACT_LIMIT), [isPremium]);
@@ -136,58 +168,130 @@ const EmergencyContactScreen = () => {
     setShowAddModal(true);
   };
 
-  const handleDeleteContact = (id: string) => {
-    Alert.alert(
-      'Delete Contact',
-      'Are you sure you want to delete this contact?',
-      [
-        {text: 'Cancel', style: 'cancel'},
+  const handleDeleteContact = async (id: string) => {
+    setAlertConfig({
+      title: 'Delete Contact',
+      message: 'Are you sure you want to delete this contact?',
+      type: 'warning',
+      buttons: [
+        {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            setContacts(contacts.filter(c => c.id !== id));
+          onPress: async () => {
+            setAlertVisible(false);
+            try {
+              const contactId = parseInt(id);
+              if (!isNaN(contactId) && user?.id) {
+                await apiService.deleteFamilyContact(user.id, contactId);
+                await deleteContact(contactId);
+              }
+            } catch (error) {
+              console.error('Error deleting contact:', error);
+              setAlertConfig({
+                title: 'Error',
+                message: 'Failed to delete contact. Please try again.',
+                type: 'error',
+                buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+              });
+              setAlertVisible(true);
+            }
           },
         },
-      ]
-    );
+      ],
+    });
+    setAlertVisible(true);
   };
 
-  const handleSaveContact = () => {
+  const handleSaveContact = async () => {
     if (!formData.name || !formData.phone) {
-      Alert.alert('Error', 'Please fill in name and phone number');
+      setAlertConfig({
+        title: 'Error',
+        message: 'Please fill in name and phone number',
+        type: 'error',
+        buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+      });
+      setAlertVisible(true);
       return;
     }
 
-    if (editingContact) {
-      setContacts(contacts.map(c => 
-        c.id === editingContact.id 
-          ? {...formData, id: editingContact.id}
-          : c
-      ));
-    } else {
-      if (contacts.length >= maxContacts) {
-        requirePremium('You have reached the contact limit. Upgrade to add more.');
-        return;
-      }
-      const newContact: Contact = {
-        ...formData,
-        id: Date.now().toString(),
-      };
-      setContacts([...contacts, newContact]);
+    if (!user?.id) {
+      setAlertConfig({
+        title: 'Error',
+        message: 'Please login to save contacts',
+        type: 'error',
+        buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+      });
+      setAlertVisible(true);
+      return;
     }
-    setShowAddModal(false);
-    setEditingContact(null);
+
+    try {
+      if (editingContact) {
+        // Update existing contact
+        const contactId = parseInt(editingContact.id);
+        if (!isNaN(contactId)) {
+          const contactData = {
+            name: formData.name,
+            phone: formData.phone,
+            email: formData.email || null,
+            relationship: formData.relationship || null,
+            type: formData.type.toLowerCase(),
+          };
+          await apiService.updateFamilyContact(user.id, contactId, contactData);
+          await updateContact(contactId, contactData);
+        }
+      } else {
+        // Add new contact
+        if (contacts.length >= maxContacts) {
+          requirePremium('You have reached the contact limit. Upgrade to add more.');
+          return;
+        }
+        const contactData = {
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email || null,
+          relationship: formData.relationship || null,
+          type: formData.type.toLowerCase(),
+        };
+        const result = await apiService.addFamilyContact(user.id, contactData);
+        await addContact(result);
+      }
+      setShowAddModal(false);
+      setEditingContact(null);
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      setAlertConfig({
+        title: 'Error',
+        message: 'Failed to save contact. Please try again.',
+        type: 'error',
+        buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+      });
+      setAlertVisible(true);
+    }
   };
 
   const handleCall = (phone: string) => {
-    Alert.alert('Call', `Call ${phone}?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {text: 'Call', onPress: () => {
-        // In a real app, you would use Linking.openURL(`tel:${phone}`)
-        Alert.alert('Call', `Calling ${phone}...`);
-      }},
-    ]);
+    setAlertConfig({
+      title: 'Call',
+      message: `Call ${phone}?`,
+      type: 'info',
+      buttons: [
+        {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
+        {text: 'Call', onPress: () => {
+          setAlertVisible(false);
+          // In a real app, you would use Linking.openURL(`tel:${phone}`)
+          setAlertConfig({
+            title: 'Call',
+            message: `Calling ${phone}...`,
+            type: 'info',
+            buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+          });
+          setAlertVisible(true);
+        }},
+      ],
+    });
+    setAlertVisible(true);
   };
 
   const getContactIcon = (type: string) => {
@@ -218,9 +322,26 @@ const EmergencyContactScreen = () => {
 
   const getContactTint = (type: string, alpha: number) => withAlpha(getContactColor(type), alpha);
 
+  if (loading) {
+    return (
+      <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top, justifyContent: 'center', alignItems: 'center'}]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
-      <ScrollView
+    <>
+      <ThemedAlert
+        visible={alertVisible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        buttons={alertConfig.buttons}
+        onDismiss={() => setAlertVisible(false)}
+      />
+      <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
+        <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}
         refreshControl={(
@@ -457,6 +578,7 @@ const EmergencyContactScreen = () => {
         </View>
       </Modal>
     </View>
+    </>
   );
 };
 
@@ -770,7 +892,5 @@ const createStyles = (colors: Theme['colors'], tokens: ThemeTokens, isDarkMode: 
       color: '#FFFFFF',
     },
   });
-
-export default EmergencyContactScreen;
 
 export default EmergencyContactScreen;

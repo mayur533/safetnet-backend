@@ -29,11 +29,28 @@ export const useNetworkStatus = (): NetworkStatus => {
 };
 
 export const checkNetworkStatus = async (): Promise<NetworkStatus> => {
-  const state = await NetInfo.fetch();
-  return {
-    isConnected: state.isConnected ?? true,
-    isInternetReachable: state.isInternetReachable ?? true,
-  };
+  try {
+    // Check if NetInfo is available
+    if (!NetInfo || typeof NetInfo.fetch !== 'function') {
+      console.warn('NetInfo is not available, assuming network is reachable');
+      return {
+        isConnected: true,
+        isInternetReachable: true,
+      };
+    }
+    const state = await NetInfo.fetch();
+    return {
+      isConnected: state.isConnected ?? true,
+      isInternetReachable: state.isInternetReachable ?? true,
+    };
+  } catch (error) {
+    console.warn('Error checking network status:', error);
+    // Return default values if NetInfo fails
+    return {
+      isConnected: true,
+      isInternetReachable: true,
+    };
+  }
 };
 
 

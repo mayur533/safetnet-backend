@@ -15,11 +15,53 @@ const SafetyTipsScreen = () => {
       console.error('Error loading safety tips:', error);
       // Fallback to default tips
       setTips([
-    {
-      id: '1',
-      title: 'Personal Safety',
+        {
+          id: '1',
+          title: 'Personal Safety',
           content: 'Always inform someone about your location when traveling alone. Keep emergency contacts easily accessible.',
           category: 'general',
+        },
+        {
+          id: '2',
+          title: 'Walking Safety',
+          content: 'Stay alert and aware of your surroundings. Walk in well-lit areas, avoid isolated paths, and keep your phone charged. Trust your instincts - if something feels wrong, leave immediately.',
+          category: 'walking',
+        },
+        {
+          id: '3',
+          title: 'Vehicle Safety',
+          content: 'Lock your doors immediately after entering your vehicle. Park in well-lit areas. Keep your keys ready before reaching your car. Check the back seat before getting in.',
+          category: 'vehicle',
+        },
+        {
+          id: '4',
+          title: 'Home Security',
+          content: 'Keep doors and windows locked, especially at night. Install security systems and motion-sensor lights. Never open the door to strangers. Keep emergency numbers near your phone.',
+          category: 'home',
+        },
+        {
+          id: '5',
+          title: 'Public Transportation',
+          content: 'Wait in well-lit, populated areas. Sit near the driver or conductor. Keep your belongings close. Be aware of exits and emergency buttons. Trust your instincts if someone makes you uncomfortable.',
+          category: 'transport',
+        },
+        {
+          id: '6',
+          title: 'Online Safety',
+          content: 'Never share your location in real-time on social media. Be cautious when meeting people from online platforms. Meet in public places and inform someone about your plans.',
+          category: 'online',
+        },
+        {
+          id: '7',
+          title: 'Emergency Preparedness',
+          content: 'Program emergency contacts in your phone. Know your location at all times. Keep a charged power bank with you. Save important numbers for quick access. Practice using the SOS feature.',
+          category: 'emergency',
+        },
+        {
+          id: '8',
+          title: 'Travel Safety',
+          content: 'Share your itinerary with trusted contacts. Keep copies of important documents. Stay in touch regularly. Research your destination beforehand. Know local emergency numbers.',
+          category: 'travel',
         },
       ]);
     } finally {

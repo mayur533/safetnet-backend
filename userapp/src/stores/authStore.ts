@@ -1,97 +1,27 @@
-// Import AsyncStorage with error handling and debug logging
-import { NativeModules, TurboModuleRegistry } from 'react-native';
+// Import AsyncStorage using the initialization utility
+import { getAsyncStorage, getAsyncStorageSync } from '../utils/asyncStorageInit';
 
-let AsyncStorage: any;
+// Get AsyncStorage - will be initialized asynchronously
+// For synchronous access, we'll use getAsyncStorage() in async functions
+let AsyncStorage: any = null;
 
-// Debug: Check what's available
-console.log('Checking AsyncStorage availability...');
-console.log('TurboModuleRegistry available:', !!TurboModuleRegistry);
-console.log('NativeModules available:', !!NativeModules);
-if (TurboModuleRegistry) {
-  console.log('Trying TurboModuleRegistry.get("RNCAsyncStorage"):', TurboModuleRegistry.get("RNCAsyncStorage"));
-}
-if (NativeModules) {
-  console.log('NativeModules.RNCAsyncStorage:', NativeModules.RNCAsyncStorage);
-  console.log('All NativeModules keys:', Object.keys(NativeModules).filter(k => k.includes('Async') || k.includes('Storage')));
-}
-
-try {
-  const module = require('@react-native-async-storage/async-storage');
-  AsyncStorage = module.default || module;
-  console.log('AsyncStorage from require:', !!AsyncStorage, typeof AsyncStorage);
-  
-  // If AsyncStorage is null/undefined, the native module isn't registered
+// Helper to get AsyncStorage (initializes if needed)
+const getStorage = async () => {
   if (!AsyncStorage) {
-    console.warn('AsyncStorage module is null - native module not registered');
-    // Try direct access to NativeModules
-    const RNCAsyncStorage = NativeModules.RNCAsyncStorage || NativeModules.RNC_AsyncSQLiteDBStorage;
-    if (RNCAsyncStorage) {
-      console.log('Found AsyncStorage in NativeModules, creating wrapper');
-      // Create a wrapper around the native module
-      AsyncStorage = {
-        getItem: (key: string) => new Promise((resolve, reject) => {
-          RNCAsyncStorage.multiGet([key], (errors: any, result: any) => {
-            if (errors) {
-              reject(errors[0]);
-            } else {
-              resolve(result && result[0] ? result[0][1] : null);
-            }
-          });
-        }),
-        setItem: (key: string, value: string) => new Promise((resolve, reject) => {
-          RNCAsyncStorage.multiSet([[key, value]], (errors: any) => {
-            if (errors) {
-              reject(errors[0]);
-            } else {
-              resolve();
-            }
-          });
-        }),
-        removeItem: (key: string) => new Promise((resolve, reject) => {
-          RNCAsyncStorage.multiRemove([key], (errors: any) => {
-            if (errors) {
-              reject(errors[0]);
-            } else {
-              resolve();
-            }
-          });
-        }),
-        clear: () => new Promise((resolve, reject) => {
-          RNCAsyncStorage.clear((error: any) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve();
-            }
-          });
-        }),
-      };
-    } else {
-      throw new Error('AsyncStorage native module not found in TurboModuleRegistry or NativeModules');
-    }
+    AsyncStorage = await getAsyncStorage();
   }
-} catch (e) {
-  console.error('Failed to import AsyncStorage:', e);
-  // Create a mock AsyncStorage that won't crash
-  AsyncStorage = {
-    getItem: async () => null,
-    setItem: async () => {},
-    removeItem: async () => {},
-    clear: async () => {},
-  };
-}
+  return AsyncStorage;
+};
 
 import {create} from 'zustand';
 import {User} from '../models/user.types';
 import {apiService, LoginResponse} from '../services/apiService';
 import {useContactStore} from './contactStore';
-import {useCheckInStore} from './checkInStore';
-import {useLiveTrackingStore} from './liveTrackingStore';
-import {useIncidentStore} from './incidentStore';
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string) => Promise<void>;
   loginAsTest: (plan: 'free' | 'premium') => Promise<void>;
@@ -103,9 +33,6 @@ interface AuthState {
 
 const resetUserScopedData = () => {
   useContactStore.getState().reset();
-  useCheckInStore.getState().reset();
-  useLiveTrackingStore.getState().reset();
-  useIncidentStore.getState().clearIncidents();
 };
 
 const convertApiUserToUser = (apiUser: LoginResponse['user']): User => {
@@ -125,6 +52,7 @@ const convertApiUserToUser = (apiUser: LoginResponse['user']): User => {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
+  isLoading: true, // Start with loading true to prevent showing login screen before auth is checked
   login: async (email: string, password: string) => {
     try {
       const response = await apiService.login(email, password);
@@ -147,8 +75,10 @@ export const useAuthStore = create<AuthState>((set) => ({
           phone: response.user.phone || user.phone,
           plan: response.user.is_premium ? 'premium' : 'free',
         };
-        set({user: updatedUser, isAuthenticated: true});
-        await AsyncStorage.setItem('authState', JSON.stringify({user: updatedUser}));
+        set({user: updatedUser, isAuthenticated: true, isLoading: false});
+        const storage = await getStorage();
+        await storage.setItem('authState', JSON.stringify({user: updatedUser}));
+        console.log('Auth state saved after login');
       } else {
         throw new Error('Invalid response from server');
       }
@@ -181,7 +111,9 @@ export const useAuthStore = create<AuthState>((set) => ({
           await apiService.setTokens(response.data.access, response.data.refresh);
         }
         
-        await AsyncStorage.setItem('authState', JSON.stringify({user}));
+        const storage = await getStorage();
+        await storage.setItem('authState', JSON.stringify({user}));
+        console.log('Auth state saved after register');
       } else {
         throw new Error('Invalid response from server');
       }
@@ -199,100 +131,138 @@ export const useAuthStore = create<AuthState>((set) => ({
       phone: '+1234567890',
       plan,
     };
-    set({user: testUser, isAuthenticated: true});
-    await AsyncStorage.setItem('authState', JSON.stringify({user: testUser}));
+    set({user: testUser, isAuthenticated: true, isLoading: false});
+    const storage = await getStorage();
+    await storage.setItem('authState', JSON.stringify({user: testUser}));
+    console.log('Auth state saved after test login');
   },
   setPlan: async (plan: 'free' | 'premium') => {
     const currentUser = useAuthStore.getState().user;
     if (currentUser) {
       const updatedUser = {...currentUser, plan};
       set({user: updatedUser});
-      await AsyncStorage.setItem('authState', JSON.stringify({user: updatedUser}));
+      const storage = await getStorage();
+      await storage.setItem('authState', JSON.stringify({user: updatedUser}));
     }
   },
   logout: async () => {
     resetUserScopedData();
     await apiService.clearTokens();
-    set({user: null, isAuthenticated: false});
-    await AsyncStorage.removeItem('authState');
+    set({user: null, isAuthenticated: false, isLoading: false});
+    const storage = await getStorage();
+    await storage.removeItem('authState');
+    console.log('Auth state cleared after logout');
   },
   load: async () => {
     try {
-      // Load tokens first
+      console.log('=== Loading auth state ===');
+      set({isLoading: true}); // Set loading to true at start
+      
+      // Ensure AsyncStorage is ready
+      const storage = await getStorage();
+      
+      // Load tokens first - this must complete before checking auth state
       await apiService.loadTokens();
       
+      // Check for tokens first - if tokens exist, we should be authenticated
+      const accessToken = await storage.getItem('access_token');
+      const refreshToken = await storage.getItem('refresh_token');
+      
+      console.log('Tokens check - access_token exists:', !!accessToken, 'refresh_token exists:', !!refreshToken);
+      
       // Load user state from AsyncStorage
-      const authStateJson = await AsyncStorage.getItem('authState');
-      if (authStateJson) {
-        const authState = JSON.parse(authStateJson);
-        if (authState.user) {
-          // Restore user state immediately for faster UI
-          set({user: authState.user, isAuthenticated: true});
-          
-          // Verify tokens are still valid by trying to get profile (in background)
+      const authStateJson = await storage.getItem('authState');
+      
+      console.log('Loading auth state, has stored state:', !!authStateJson);
+      
+      // If we have tokens, try to restore user
+      if (accessToken && refreshToken) {
+        // If we have authState, use it immediately for faster UI
+        if (authStateJson) {
           try {
-            const profileResponse = await apiService.getProfile();
-            // Profile response can be direct data or wrapped in data property
-            const profileData = profileResponse.data || profileResponse;
-            if (profileData && (profileData.id || profileData.email)) {
-              // Tokens are valid, update user with latest profile data
-              const updatedUser = {
-                ...authState.user,
-                name: profileData.name || authState.user.name,
-                phone: profileData.phone || authState.user.phone,
-                plan: profileData.is_premium || profileData.plantype === 'premium' ? 'premium' : 'free',
-              };
-              set({user: updatedUser, isAuthenticated: true});
-              await AsyncStorage.setItem('authState', JSON.stringify({user: updatedUser}));
-            } else {
-              // Profile response invalid, but keep user logged in if tokens exist
-              console.warn('Profile response format unexpected, keeping cached user');
+            const authState = JSON.parse(authStateJson);
+            if (authState.user) {
+              console.log('Found stored user:', authState.user.email);
+              // Restore user state immediately for faster UI
+              set({user: authState.user, isAuthenticated: true, isLoading: false});
+              
+              // Verify tokens are still valid by trying to get profile (in background)
+              try {
+                const profileResponse = await apiService.getProfile();
+                const profileData = profileResponse.data || profileResponse;
+                if (profileData && (profileData.id || profileData.email)) {
+                  // Tokens are valid, update user with latest profile data
+                  const updatedUser = {
+                    ...authState.user,
+                    name: profileData.name || profileData.first_name || authState.user.name,
+                    phone: profileData.phone || authState.user.phone,
+                    plan: profileData.is_premium || profileData.plantype === 'premium' ? 'premium' : 'free',
+                  };
+                  set({user: updatedUser, isAuthenticated: true, isLoading: false});
+                  await storage.setItem('authState', JSON.stringify({user: updatedUser}));
+                  console.log('Auth state verified and updated');
+                } else {
+                  console.warn('Profile response format unexpected, keeping cached user');
+                }
+              } catch (error: any) {
+                // If profile fetch fails, check if it's a 401 (unauthorized)
+                if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+                  // Tokens expired, clear auth state
+                  console.warn('Tokens expired, clearing auth state');
+                  await apiService.clearTokens();
+                  await storage.removeItem('authState');
+                  set({user: null, isAuthenticated: false, isLoading: false});
+                } else {
+                  // Network error or other issue, keep user logged in with cached data
+                  console.warn('Failed to verify tokens, keeping cached user:', error?.message);
+                  // Keep the user logged in with cached data - don't change isLoading here
+                }
+              }
+              return; // Exit early if we restored from authState
             }
-          } catch (error: any) {
-            // If profile fetch fails, check if it's a 401 (unauthorized)
-            if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-              // Tokens expired, clear auth state
-              console.warn('Tokens expired, clearing auth state');
-              await apiService.clearTokens();
-              await AsyncStorage.removeItem('authState');
-              set({user: null, isAuthenticated: false});
-            } else {
-              // Network error or other issue, keep user logged in with cached data
-              console.warn('Failed to verify tokens, keeping cached user:', error?.message);
-            }
-          }
-        } else {
-          // No user in stored state, check if we have tokens
-          const hasTokens = await AsyncStorage.getItem('access_token');
-          if (!hasTokens) {
-            set({user: null, isAuthenticated: false});
+          } catch (parseError) {
+            console.error('Error parsing auth state:', parseError);
+            // If parsing fails, try to restore from tokens
           }
         }
-      } else {
-        // No stored auth state, check if we have tokens (might be from previous session)
-        const hasTokens = await AsyncStorage.getItem('access_token');
-        if (hasTokens) {
-          // Try to get profile with existing tokens
-          try {
-            const profileResponse = await apiService.getProfile();
-            const profileData = profileResponse.data || profileResponse;
-            if (profileData && (profileData.id || profileData.email)) {
-              const user = convertApiUserToUser(profileData);
-              set({user, isAuthenticated: true});
-              await AsyncStorage.setItem('authState', JSON.stringify({user}));
-            }
-          } catch (error) {
-            // Tokens invalid, clear them
-            await apiService.clearTokens();
-            set({user: null, isAuthenticated: false});
+        
+        // No valid authState, but we have tokens - try to restore from API
+        console.log('Found tokens but no valid authState, attempting to restore user from API');
+        try {
+          const profileResponse = await apiService.getProfile();
+          const profileData = profileResponse.data || profileResponse;
+          if (profileData && (profileData.id || profileData.email)) {
+            const user = convertApiUserToUser(profileData);
+            set({user, isAuthenticated: true, isLoading: false});
+            await storage.setItem('authState', JSON.stringify({user}));
+            console.log('User restored from tokens via API');
+            return;
           }
-        } else {
-          set({user: null, isAuthenticated: false});
+        } catch (error: any) {
+          // If profile fetch fails, check if it's a 401 (unauthorized)
+          if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
+            // Tokens expired, clear auth state
+            console.warn('Tokens expired, clearing auth state');
+            await apiService.clearTokens();
+            await storage.removeItem('authState');
+            set({user: null, isAuthenticated: false, isLoading: false});
+            return;
+          } else {
+            // Network error - keep tokens but show as not authenticated
+            console.warn('Failed to verify tokens (network error):', error?.message);
+            set({user: null, isAuthenticated: false, isLoading: false});
+            return;
+          }
         }
       }
+      
+      // No tokens found - user is not authenticated
+      console.log('No tokens found, user not authenticated');
+      await storage.removeItem('authState'); // Clear any stale authState
+      set({user: null, isAuthenticated: false, isLoading: false});
     } catch (error) {
-      console.warn('Failed to load auth state:', error);
-      set({user: null, isAuthenticated: false});
+      console.error('Failed to load auth state:', error);
+      set({user: null, isAuthenticated: false, isLoading: false});
     }
   },
   refreshProfile: async () => {
@@ -309,7 +279,8 @@ export const useAuthStore = create<AuthState>((set) => ({
             plan: profileData.is_premium || profileData.plantype === 'premium' ? 'premium' : 'free',
           };
           set({user: updatedUser});
-          await AsyncStorage.setItem('authState', JSON.stringify({user: updatedUser}));
+          const storage = await getStorage();
+        await storage.setItem('authState', JSON.stringify({user: updatedUser}));
         }
       }
     } catch (error) {

@@ -1,16 +1,54 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useState, useEffect} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, RefreshControl, Switch, StyleSheet} from 'react-native';
-import {mockGeofences} from '../../services/mockData';
 import {useSubscription} from '../../lib/hooks/useSubscription';
+import {useAuthStore} from '../../stores/authStore';
+import {apiService} from '../../services/apiService';
 
 const GeofenceAreaScreen = () => {
   const {isPremium, requirePremium} = useSubscription();
+  const user = useAuthStore((state) => state.user);
   const [refreshing, setRefreshing] = useState(false);
-  const [geofences, setGeofences] = useState(mockGeofences);
+  const [geofences, setGeofences] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load geofences from API
+  useEffect(() => {
+    if (user?.id && isPremium) {
+      loadGeofences();
+    }
+  }, [user, isPremium]);
+
+  const loadGeofences = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoading(true);
+      const data = await apiService.getGeofences(parseInt(user.id));
+      // Transform API response to geofences format
+      const transformedGeofences = Array.isArray(data) 
+        ? data.map((geo: any) => ({
+            id: geo.id?.toString() || geo.name,
+            name: geo.name,
+            radius: geo.radius_meters || geo.radius,
+            center: geo.center_location ? {
+              lat: geo.center_location.latitude || geo.center_location.lat,
+              lng: geo.center_location.longitude || geo.center_location.lng,
+            } : {lat: 0, lng: 0},
+            isActive: geo.is_active !== false,
+          }))
+        : [];
+      setGeofences(transformedGeofences);
+    } catch (error) {
+      console.error('Failed to load geofences:', error);
+      setGeofences([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise<void>((resolve) => setTimeout(() => resolve(), 1000));
+    await loadGeofences();
     setRefreshing(false);
   };
 

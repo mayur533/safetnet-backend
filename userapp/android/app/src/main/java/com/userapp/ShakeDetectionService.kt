@@ -207,7 +207,7 @@ class ShakeDetectionService : Service(), SensorEventListener {
     }
     
     private fun handleShakeDetected() {
-        // Vibrate
+        // Vibrate on 3rd shake (before sending notification)
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -230,10 +230,36 @@ class ShakeDetectionService : Service(), SensorEventListener {
         
         // Send SOS notification (works even when app is closed)
         sendSOSNotification()
+        
+        // Also send event to JavaScript to trigger SOS dispatch
+        try {
+            val reactContext = applicationContext as? com.facebook.react.bridge.ReactApplicationContext
+            reactContext?.let {
+                val eventEmitter = it.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                eventEmitter.emit("ShakeDetected", null)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
     
     private fun sendSOSNotification() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        // Create a separate channel for SOS notifications with high importance
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val sosChannel = NotificationChannel(
+                "sos_channel",
+                "SOS Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Emergency SOS alerts"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 200, 500)
+                enableLights(true)
+            }
+            notificationManager.createNotificationChannel(sosChannel)
+        }
         
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -243,14 +269,18 @@ class ShakeDetectionService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) "sos_channel" else CHANNEL_ID
+        
+        val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("SOS Sent Successfully")
-            .setContentText("Your emergency alert has been sent. Our officials will be there shortly.")
+            .setContentText("Your emergency alert has been sent. Our officials will be there shortly. Help will arrive soon.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))
+            .setVibrate(longArrayOf(0, 500, 200, 500))
+            .setLights(0xFF0000, 1000, 1000)
             .build()
         
         notificationManager.notify(2, notification)

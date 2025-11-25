@@ -1,9 +1,11 @@
 import {create} from 'zustand';
+import {apiService} from '../services/apiService';
+import {useAuthStore} from './authStore';
 
 export type ContactType = 'Family' | 'Emergency' | 'Friend';
 
 export interface EmergencyContact {
-  id: string;
+  id: number | string;
   name: string;
   phone: string;
   email?: string;
@@ -12,13 +14,13 @@ export interface EmergencyContact {
 }
 
 interface ContactStoreState {
-  contacts: EmergencyContact[];
+  contacts: any[];
   primaryContactId?: string;
   initialized: boolean;
-  load: () => Promise<void>;
-  addContact: (contact: Omit<EmergencyContact, 'id'>) => Promise<EmergencyContact>;
-  updateContact: (contact: EmergencyContact) => Promise<void>;
-  removeContact: (id: string) => Promise<void>;
+  loadContacts: () => Promise<void>;
+  addContact: (contact: any) => Promise<void>;
+  updateContact: (id: number, contact: any) => Promise<void>;
+  deleteContact: (id: number) => Promise<void>;
   setPrimaryContact: (id: string) => Promise<void>;
   reset: () => void;
 }
@@ -27,36 +29,42 @@ export const useContactStore = create<ContactStoreState>((set, get) => ({
   contacts: [],
   primaryContactId: undefined,
   initialized: false,
-  load: async () => {
-    if (get().initialized) {
+  loadContacts: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user?.id) {
+      set({contacts: [], initialized: true});
       return;
     }
-    set({contacts: [], primaryContactId: undefined, initialized: true});
+    try {
+      const response = await apiService.getFamilyContacts(user.id);
+      const contacts = Array.isArray(response) ? response : (response.contacts || []);
+      set({contacts, initialized: true});
+    } catch (error) {
+      console.error('Error loading contacts:', error);
+      set({contacts: [], initialized: true});
+    }
   },
-  addContact: async (contact) => {
-    const newContact: EmergencyContact = {
-      id: Date.now().toString(),
-      ...contact,
-    };
-    const updated = [newContact, ...get().contacts];
-    const primaryContactId = get().primaryContactId ?? newContact.id;
-    set({contacts: updated, primaryContactId});
-    return newContact;
+  addContact: async (contact: any) => {
+    const currentContacts = get().contacts;
+    set({contacts: [...currentContacts, contact]});
   },
-  updateContact: async (contact) => {
-    const updated = get().contacts.map((item) => (item.id === contact.id ? contact : item));
+  updateContact: async (id: number, contact: any) => {
+    const currentContacts = get().contacts;
+    const updated = currentContacts.map((c: any) => 
+      (c.id === id ? {...c, ...contact} : c)
+    );
     set({contacts: updated});
   },
-  removeContact: async (id) => {
-    const filtered = get().contacts.filter((item) => item.id !== id);
+  deleteContact: async (id: number) => {
+    const filtered = get().contacts.filter((c: any) => c.id !== id);
     let primaryContactId = get().primaryContactId;
-    if (primaryContactId === id) {
-      primaryContactId = filtered[0]?.id;
+    if (primaryContactId === id.toString()) {
+      primaryContactId = filtered[0]?.id?.toString();
     }
     set({contacts: filtered, primaryContactId});
   },
-  setPrimaryContact: async (id) => {
-    const exists = get().contacts.some((contact) => contact.id === id);
+  setPrimaryContact: async (id: string) => {
+    const exists = get().contacts.some((contact: any) => contact.id?.toString() === id);
     if (!exists) {
       return;
     }
@@ -66,5 +74,3 @@ export const useContactStore = create<ContactStoreState>((set, get) => ({
     set({contacts: [], primaryContactId: undefined, initialized: false});
   },
 }));
-// (file rewritten below)
-

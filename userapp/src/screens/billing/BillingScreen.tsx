@@ -154,14 +154,8 @@ const BillingScreen = () => {
           {[
             {feature: 'SOS Alerts', free: '✓', premium: '✓'},
             {feature: 'Emergency Contacts', free: '3', premium: 'Unlimited'},
-            {feature: 'Live Location Sharing', free: '15 min', premium: 'Unlimited'},
-            {feature: '24×7 Response Center', free: '✗', premium: '✓'},
             {feature: 'Route Guard & Alerts', free: '✗', premium: '✓'},
-            {feature: 'Trusted Check-ins', free: '✗', premium: '✓'},
-            {feature: 'Panic Mode Automation', free: '✗', premium: '✓'},
-            {feature: 'Auto-record Evidence', free: '✗', premium: '✓'},
             {feature: 'Community Alerts', free: 'Basic', premium: 'Premium'},
-            {feature: 'Incident History', free: '30 days', premium: 'Unlimited'},
             {feature: 'Geo-fencing Alerts', free: '✗', premium: '✓'},
           ].map((row, index) => (
             <View key={index} style={styles.comparisonRow}>

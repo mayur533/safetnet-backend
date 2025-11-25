@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {getAsyncStorage} from '../utils/asyncStorageInit';
 import {Alert} from 'react-native';
 import {create} from 'zustand';
 import {sendSmsDirect} from '../services/smsService';
@@ -25,7 +25,8 @@ const STORAGE_KEY = '@offline-sos-queue';
 
 const persistQueue = async (queue: PendingSosMessage[]) => {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    const storage = await getAsyncStorage();
+    await storage.setItem(STORAGE_KEY, JSON.stringify(queue));
   } catch (error) {
     console.warn('Failed to persist SOS queue', error);
   }
@@ -39,7 +40,8 @@ export const useOfflineSosStore = create<OfflineSosState>((set, get) => ({
       return;
     }
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const storage = await getAsyncStorage();
+      const raw = await storage.getItem(STORAGE_KEY);
       if (!raw) {
         set({loaded: true, pending: []});
         return;
@@ -80,7 +82,8 @@ export const useOfflineSosStore = create<OfflineSosState>((set, get) => ({
   clear: async () => {
     set({pending: []});
     try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      const storage = await getAsyncStorage();
+      await storage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.warn('Failed to clear SOS queue', error);
     }

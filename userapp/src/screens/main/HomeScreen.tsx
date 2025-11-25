@@ -8,25 +8,20 @@ import {
   Dimensions,
   Platform,
   Animated,
-  PanResponder,
   Vibration,
   Modal,
   Linking,
   TextInput,
-  Alert,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
 import {useSettingsStore} from '../../stores/settingsStore';
+import {useContactStore} from '../../stores/contactStore';
 import {useSubscription} from '../../lib/hooks/useSubscription';
 import {CustomVibration} from '../../modules/VibrationModule';
 import {shakeDetectionService} from '../../services/shakeDetectionService';
-
-const COMMUNITY_CONTACTS = [
-  {id: 'watch', label: 'Neighborhood Watch', phone: '+18005550140'},
-  {id: 'residents', label: 'Apartment Residents', phone: '+18005550141'},
-  {id: 'verified', label: 'Verified Responders', phone: '+18005550142'},
-];
+import {dispatchSOSAlert} from '../../services/sosDispatcher';
+import {ThemedAlert} from '../../components/common/ThemedAlert';
 
 const COMMUNITY_MESSAGES = [
   'Suspicious activity near my location.',
@@ -81,7 +76,7 @@ const categoryCards = [
     phone: '+18005550999',
     smsBody: 'Alerting the community—please check in.',
     type: 'community' as const,
-    contacts: COMMUNITY_CONTACTS,
+          contacts: [], // Will be loaded from API
     quickMessages: COMMUNITY_MESSAGES,
     isPremium: false, // Free users get 500m radius
   },
@@ -132,10 +127,6 @@ const HomeScreen = ({navigation}: any) => {
   const softSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F3F4F6';
   const inputSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F9FAFB';
   const placeholderColor = isDarkMode ? 'rgba(255, 255, 255, 0.4)' : '#9CA3AF';
-  const sliderTrackColor = isDarkMode ? 'rgba(255, 255, 255, 0.15)' : '#E5E7EB';
-  const sliderBorderColor = isDarkMode ? 'rgba(255, 255, 255, 0.2)' : '#D1D5DB';
-  const sliderThumbColor = '#EF4444';
-  
   // Helper function to add alpha to colors
   const withAlpha = (color: string, alpha: number): string => {
     if (color.startsWith('#')) {
@@ -156,10 +147,23 @@ const HomeScreen = ({navigation}: any) => {
   const [isSendingAlert, setIsSendingAlert] = useState(false);
   const [isButtonPressed, setIsButtonPressed] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [alertState, setAlertState] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type?: 'error' | 'success' | 'info' | 'warning';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
   const [actionCard, setActionCard] = useState<CategoryCard | null>(null);
   const [customFamilyMessage, setCustomFamilyMessage] = useState('');
-  const [selectedCommunityContact, setSelectedCommunityContact] = useState(COMMUNITY_CONTACTS[0]);
+  const [selectedCommunityContact, setSelectedCommunityContact] = useState<any>(null);
+  const [communityContacts, setCommunityContacts] = useState<any[]>([]);
   const [selectedQuickMessage, setSelectedQuickMessage] = useState(COMMUNITY_MESSAGES[0]);
   const [customCommunityMessage, setCustomCommunityMessage] = useState(COMMUNITY_MESSAGES[0]);
 
@@ -180,10 +184,6 @@ const HomeScreen = ({navigation}: any) => {
   const alertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hapticIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownAnim = useRef(new Animated.Value(1)).current;
-  const sliderAnim = useRef(new Animated.Value(0)).current;
-  const sliderPosition = useRef(0);
-  const sliderThumbSize = 64;
-  const sliderStartX = useRef(0);
 
   // Permissions are now handled automatically by the system on app start
 
@@ -211,41 +211,28 @@ const HomeScreen = ({navigation}: any) => {
     }
     
     setIsButtonPressed(true);
-    // Haptic feedback on initial press - short pulse that stops
-    triggerVibration(200);
-    
-    // Start 3 second timer to trigger alert sequence with haptic feedback each second
-    // Vibrate at 1 second, 2 seconds, 3 seconds (each is a discrete pulse that stops)
-    let secondsElapsed = 0;
-    hapticIntervalRef.current = setInterval(() => {
-      secondsElapsed++;
-      // Vibrate at each second during the 3-second hold (1s, 2s, 3s)
-      // Each vibration is a short pulse (200ms) that stops before the next one
-      triggerVibration(200);
-    }, 1000);
-    
-    countdownTimerRef.current = setTimeout(() => {
-      // Clear haptic interval before countdown starts
-      if (hapticIntervalRef.current) {
-        clearInterval(hapticIntervalRef.current);
-        hapticIntervalRef.current = null;
-      }
-      setIsButtonPressed(false); // Reset button pressed state
+    // Start countdown immediately when button is pressed
       startAlertSequence();
-    }, 3000);
   };
 
   const handleSOSPressOut = () => {
-    // Cancel the 3 second hold timer if user releases early
-    if (countdownTimerRef.current) {
-      clearTimeout(countdownTimerRef.current);
-      countdownTimerRef.current = null;
+    // Cancel countdown if user releases button before countdown completes
+    if (isSendingAlert && countdown !== null && countdown > 0) {
+      // Cancel the alert sequence
+      if (alertTimerRef.current) {
+        clearInterval(alertTimerRef.current);
+        alertTimerRef.current = null;
     }
+      resetState();
+      return;
+    }
+    
     // Clear haptic interval
     if (hapticIntervalRef.current) {
       clearInterval(hapticIntervalRef.current);
       hapticIntervalRef.current = null;
     }
+    
     // Only cancel if not already in alert sequence
     if (!isSendingAlert) {
       setIsButtonPressed(false);
@@ -262,7 +249,9 @@ const HomeScreen = ({navigation}: any) => {
     
     setIsSendingAlert(true);
     setCountdown(3);
-    // NO vibration when countdown starts
+    
+    // Haptic feedback on initial press
+    triggerVibration(200);
     
     // Start alert sending countdown (3 to 1, then 0 triggers send)
     alertTimerRef.current = setInterval(() => {
@@ -271,7 +260,8 @@ const HomeScreen = ({navigation}: any) => {
           return 3;
         }
         
-        // NO haptic feedback on countdown number change
+        // Haptic feedback on countdown number change
+        triggerVibration(200);
         
         // Animate countdown
         Animated.sequence([
@@ -293,7 +283,7 @@ const HomeScreen = ({navigation}: any) => {
             clearInterval(alertTimerRef.current);
             alertTimerRef.current = null;
           }
-          // Send alert after showing "01" briefly
+          // Send alert after showing "1" briefly
           setTimeout(() => {
             sendAlert();
           }, 500);
@@ -305,22 +295,55 @@ const HomeScreen = ({navigation}: any) => {
     }, 1000);
   };
 
-  const sendAlert = (fromShake: boolean = false) => {
+  const sendAlert = async (fromShake: boolean = false) => {
     if (!isAuthenticated) {
       return;
     }
 
-    // If called from shake detection, skip UI updates and just send
-    // Vibration is already handled in shakeDetectionService when 3 shakes are detected
+    // If called from shake detection, send alert directly without UI countdown
+    // Vibration and notification are already handled in shakeDetectionService
     if (fromShake) {
-      // Send alert directly without UI countdown or vibration
-      // Vibration already happened when 3 shakes were detected
-      // Notification is already shown by shakeDetectionService
+      try {
+        const sosMessage = useSettingsStore.getState().sosMessageTemplate || 'Emergency SOS alert! Please help immediately.';
+        await dispatchSOSAlert(sosMessage);
+        console.log('SOS alert sent from shake detection');
+        // Notification and vibration already handled by shakeDetectionService
+      } catch (error) {
+        console.error('Error dispatching SOS alert from shake:', error);
+        setAlertState({
+          visible: true,
+          title: 'Error',
+          message: 'Failed to send SOS alert. Please try again.',
+          type: 'error',
+        });
+      }
       return;
     }
 
-    // Normal UI flow
+    // Normal UI flow - dispatch SOS alert
+    try {
+      const sosMessage = useSettingsStore.getState().sosMessageTemplate || 'Emergency SOS alert! Please help immediately.';
+      await dispatchSOSAlert(sosMessage);
+      
+      // Check if family contacts exist to show appropriate message
+      const {contacts} = useContactStore.getState();
+      const hasFamilyContacts = contacts.length > 0;
+      
+      // Show success screen after alert is sent
     setShowSuccess(true);
+      setIsSendingAlert(false);
+      setShowSuccessScreen(true);
+    } catch (error) {
+      console.error('Error dispatching SOS alert:', error);
+      setAlertState({
+        visible: true,
+        title: 'Error',
+        message: 'Failed to send SOS alert. Please try again.',
+        type: 'error',
+      });
+      resetState();
+      return;
+    }
     // Haptic feedback when alert is sent - use pattern for success
     try {
       // On Android: odd indices = vibration duration, even indices = separation time
@@ -331,10 +354,6 @@ const HomeScreen = ({navigation}: any) => {
       // Fallback to simple vibration
       CustomVibration.vibrate(1000);
     }
-    // Reset after 3 seconds
-    setTimeout(() => {
-      resetState();
-    }, 3000);
   };
 
   const resetState = () => {
@@ -345,81 +364,15 @@ const HomeScreen = ({navigation}: any) => {
     setIsButtonPressed(false);
     setIsSendingAlert(false);
     setShowSuccess(false);
+    setShowSuccessScreen(false);
     setCountdown(null);
-    sliderPosition.current = 0;
-    sliderAnim.setValue(0);
     countdownAnim.setValue(1);
   };
 
-  // Pan responder for cancel slider - use useMemo to recreate when state changes
-  const panResponder = React.useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => isSendingAlert && !showSuccess,
-        onMoveShouldSetPanResponder: () => isSendingAlert && !showSuccess,
-        onPanResponderGrant: (evt) => {
-          sliderStartX.current = sliderPosition.current;
-          // Vibration when clicking/touching the slider - short pulse
-          triggerVibration(200);
-        },
-        onPanResponderMove: (evt, gestureState) => {
-          const sliderWidth = width * 0.75;
-          const newValue = Math.max(0, Math.min(sliderStartX.current + gestureState.dx, sliderWidth - sliderThumbSize - 6));
-          const previousValue = sliderPosition.current;
-          sliderPosition.current = newValue;
-          sliderAnim.setValue(newValue);
-          
-          // Haptic feedback when slider touches the right side
-          if (newValue >= sliderWidth - sliderThumbSize - 15 && previousValue < sliderWidth - sliderThumbSize - 15) {
-            // First time reaching the end - vibrate here (short pulse)
-            triggerVibration(200);
-            cancelAlert();
-          }
-        },
-        onPanResponderRelease: (evt, gestureState) => {
-          // Clear vibration interval on release
-          if (hapticIntervalRef.current) {
-            clearInterval(hapticIntervalRef.current);
-            hapticIntervalRef.current = null;
-          }
-          const sliderWidth = width * 0.75;
-          if (sliderPosition.current < sliderWidth - sliderThumbSize - 15) {
-            // Return to start if not fully slid
-            sliderPosition.current = 0;
-            sliderStartX.current = 0;
-            Animated.spring(sliderAnim, {
-              toValue: 0,
-              useNativeDriver: false,
-              tension: 50,
-              friction: 7,
-            }).start();
-          }
-        },
-      }),
-    [isSendingAlert, showSuccess]
-  );
-
-  // Recreate pan responder when isSendingAlert changes
-  useEffect(() => {
-    if (isSendingAlert) {
-      // Reset slider position when alert starts
-      sliderPosition.current = 0;
-      sliderStartX.current = 0;
-      sliderAnim.setValue(0);
-    }
-  }, [isSendingAlert]);
-
-  const cancelAlert = () => {
-    if (alertTimerRef.current) {
-      clearInterval(alertTimerRef.current);
-      alertTimerRef.current = null;
-    }
-    if (countdownTimerRef.current) {
-      clearTimeout(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
+  const handleBackFromSuccess = () => {
     resetState();
   };
+
 
   // Load settings on mount
   useEffect(() => {
@@ -483,14 +436,12 @@ const HomeScreen = ({navigation}: any) => {
 
     // Check if premium feature and user is not premium
     if (card.isPremium && !isPremium) {
-      Alert.alert(
-        'Premium Feature',
-        'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {text: 'Upgrade', onPress: () => navigation.navigate('Billing' as never)}
-        ]
-      );
+      setAlertState({
+        visible: true,
+        title: 'Premium Feature',
+        message: 'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
+        type: 'info',
+      });
       return;
     }
 
@@ -498,7 +449,9 @@ const HomeScreen = ({navigation}: any) => {
 
     if (card.type === 'community') {
       const initialMessage = card.quickMessages?.[0] || '';
+      if (card.contacts && card.contacts.length > 0) {
       setSelectedCommunityContact(card.contacts[0]);
+      }
       setSelectedQuickMessage(initialMessage);
       setCustomCommunityMessage(initialMessage);
     } else if (card.type === 'sms') {
@@ -525,7 +478,12 @@ const HomeScreen = ({navigation}: any) => {
       await Linking.openURL(`tel:${phone}`);
     } catch (error) {
       console.warn('Failed to initiate call:', error);
-      Alert.alert('Call Failed', 'Unable to place the call. Please try again from your dialer.');
+      setAlertState({
+        visible: true,
+        title: 'Call Failed',
+        message: 'Unable to place the call. Please try again from your dialer.',
+        type: 'error',
+      });
     } finally {
       closeActionModal();
     }
@@ -541,7 +499,16 @@ const HomeScreen = ({navigation}: any) => {
 
   const handleSendCommunityMessage = () => {
     const message = customCommunityMessage.trim() || selectedQuickMessage;
+    if (selectedCommunityContact && selectedCommunityContact.phone) {
     handleSendSMS(selectedCommunityContact.phone, message);
+    } else {
+      setAlertState({
+        visible: true,
+        title: 'No Contact Selected',
+        message: 'Please select a community contact first.',
+        type: 'error',
+      });
+    }
   };
 
   const renderActionContent = () => {
@@ -637,8 +604,9 @@ const HomeScreen = ({navigation}: any) => {
           </View>
           <Text style={[styles.actionDescription, {color: mutedTextColor}]}>Choose a circle to alert.</Text>
           <View style={styles.chipRow}>
-            {actionCard.contacts.map((contact) => {
-              const isActive = contact.id === selectedCommunityContact.id;
+            {actionCard.contacts && actionCard.contacts.length > 0 ? (
+              actionCard.contacts.map((contact) => {
+                const isActive = selectedCommunityContact && contact.id === selectedCommunityContact.id;
               return (
                 <TouchableOpacity
                   key={contact.id}
@@ -664,7 +632,12 @@ const HomeScreen = ({navigation}: any) => {
                   </Text>
                 </TouchableOpacity>
               );
-            })}
+              })
+            ) : (
+              <Text style={[styles.emptyContactsText, {color: mutedTextColor}]}>
+                No community contacts available
+              </Text>
+            )}
           </View>
           <Text style={[styles.actionDescription, {marginTop: 12, color: mutedTextColor}]}>Quick messages</Text>
           <View style={styles.chipRow}>
@@ -760,75 +733,106 @@ const HomeScreen = ({navigation}: any) => {
                 transform: [{scale: isSendingAlert && countdown !== null ? countdownAnim : 1}],
               },
             ]}>
-            {showSuccess ? '✓' : isSendingAlert && countdown !== null && countdown > 0 ? (countdown < 10 ? `0${countdown}` : String(countdown)) : 'SOS'}
+            SOS
           </Animated.Text>
         </TouchableOpacity>
 
         {/* Fixed position text container below button */}
         <View style={styles.messageContainer}>
-          {!isSendingAlert && !showSuccess && (
-            <Text style={[styles.instructionText, {color: colors.text}]}>Press and hold for 3 seconds to send an alert.</Text>
+          {!isSendingAlert && !showSuccess && !isButtonPressed && (
+            <Text style={[styles.instructionText, {color: colors.text}]}>Press and hold to send an alert.</Text>
           )}
 
           {isSendingAlert && !showSuccess && countdown !== null && countdown > 0 && (
-            <Text style={styles.alertMessageText}>
-              Alert will be sent to officials in {countdown} second{countdown !== 1 ? 's' : ''}
+            <>
+              <Text style={[styles.countdownLabel, {color: colors.text}]}>
+                SOS will be sent in
             </Text>
+              <Animated.Text 
+                style={[
+                  styles.countdownNumber, 
+                  {color: '#B91C1C'},
+                  {
+                    transform: [{scale: countdownAnim}],
+                  }
+                ]}>
+                {countdown}
+              </Animated.Text>
+            </>
           )}
           
           {isSendingAlert && !showSuccess && countdown === 0 && (
-            <Text style={styles.alertMessageText}>Sending alert...</Text>
-          )}
-
-          {showSuccess && (
-            <View style={styles.successContainer}>
-              <Text style={styles.successMessageText}>
-                Successfully sent and action will be taken
-              </Text>
-              <Text style={[styles.quoteText, {color: subtleTextColor}]}>
-                Your safety is our priority
-              </Text>
-            </View>
+            <Text style={[styles.alertMessageText, {color: '#B91C1C'}]}>Sending alert...</Text>
           )}
         </View>
       </View>
 
-      {/* Cancel Slider - Only show when alert is being sent */}
-      {isSendingAlert && !showSuccess && (
-        <View style={styles.sliderContainer}>
-          <Text style={[styles.sliderText, {color: colors.notification}]}>Slide to cancel alert</Text>
-          <View
-            style={[
-              styles.sliderTrack,
-              {
-                backgroundColor: sliderTrackColor,
-                borderColor: sliderBorderColor,
-                shadowColor: cardShadowColor,
-              },
-            ]}
-            {...panResponder.panHandlers}
-            collapsable={false}>
-            <View style={styles.sliderCancelTextContainer}>
-              <Text style={[styles.sliderCancelText, {color: colors.notification}]}>Cancel</Text>
+
+      {/* Success Screen Modal */}
+      {showSuccessScreen && (
+        <Modal
+          visible={showSuccessScreen}
+          transparent={false}
+          animationType="fade"
+          onRequestClose={handleBackFromSuccess}>
+          <View style={[styles.successScreenContainer, {backgroundColor: colors.background}]}>
+            <View style={styles.successScreenContent}>
+              <View style={[styles.successIconContainer, {backgroundColor: '#ECFDF5'}]}>
+                <MaterialIcons name="check-circle" size={80} color="#10B981" />
+              </View>
+              <Text style={[styles.successScreenTitle, {color: colors.text}]}>
+                SOS Alert Sent
+              </Text>
+              <Text style={[styles.successScreenMessage, {color: colors.text}]}>
+                Your SOS alert has been sent successfully.
+              </Text>
+              {(() => {
+                const {contacts} = useContactStore.getState();
+                const hasFamilyContacts = contacts.length > 0;
+                
+                if (!hasFamilyContacts) {
+                  return (
+                    <>
+                      <Text style={[styles.successScreenSubMessage, {color: mutedTextColor}]}>
+                        Since you don't have family contacts added, your SOS has been sent to:
+                      </Text>
+                      <View style={styles.recipientList}>
+                        <View style={styles.recipientItem}>
+                          <MaterialIcons name="local-police" size={20} color={colors.primary} />
+                          <Text style={[styles.recipientText, {color: colors.text}]}>Police</Text>
             </View>
-            <Animated.View
-              style={[
-                styles.sliderThumb,
-                {
-                  backgroundColor: sliderThumbColor,
-                  shadowColor: cardShadowColor,
-                  transform: [
-                    {
-                      translateX: sliderAnim,
-                    },
-                  ],
-                },
-              ]}
-              collapsable={false}>
-              <MaterialIcons name="close" size={28} color="#FFFFFF" />
-            </Animated.View>
-          </View>
+                        <View style={styles.recipientItem}>
+                          <MaterialIcons name="security" size={20} color={colors.primary} />
+                          <Text style={[styles.recipientText, {color: colors.text}]}>Security Officer</Text>
         </View>
+      </View>
+                      <Text style={[styles.successScreenHelpText, {color: mutedTextColor}]}>
+                        Help is on the way. Stay calm and wait for assistance.
+                      </Text>
+                    </>
+                  );
+                } else {
+                  return (
+                    <>
+                      <Text style={[styles.successScreenSubMessage, {color: mutedTextColor}]}>
+                        Help is on the way. Your family contacts and emergency services have been notified.
+                      </Text>
+                      <Text style={[styles.successScreenHelpText, {color: mutedTextColor}]}>
+                        Stay calm and wait for assistance. Your location has been shared with responders.
+                      </Text>
+                    </>
+                  );
+                }
+              })()}
+              <TouchableOpacity
+                style={[styles.backButton, {backgroundColor: colors.primary}]}
+                onPress={handleBackFromSuccess}
+                activeOpacity={0.8}>
+                <Text style={styles.backButtonText}>Back to Home</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* Bottom Categories Section - Hide when countdown or alert is active */}
@@ -890,8 +894,8 @@ const HomeScreen = ({navigation}: any) => {
         transparent
         animationType="fade"
         onRequestClose={closeActionModal}>
-        <View style={styles.actionOverlay}>
-          <View style={styles.actionContainer}>{renderActionContent()}</View>
+        <View style={[styles.actionOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)'}]}>
+          <View style={[styles.actionContainer, {backgroundColor: colors.card, borderColor: colors.border}]}>{renderActionContent()}</View>
         </View>
       </Modal>
 
@@ -901,8 +905,8 @@ const HomeScreen = ({navigation}: any) => {
         transparent
         animationType="fade"
         onRequestClose={() => setShowLoginModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, {backgroundColor: colors.card}]}>
+        <View style={[styles.modalOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)'}]}>
+          <View style={[styles.modalContent, {backgroundColor: colors.card, borderColor: colors.border}]}>
             <View
               style={[
                 styles.modalIconContainer,
@@ -929,7 +933,9 @@ const HomeScreen = ({navigation}: any) => {
                 style={[styles.modalLoginButton, {backgroundColor: colors.primary}]}
                 onPress={() => {
                   setShowLoginModal(false);
-                  navigation.navigate('Login');
+                  // Logout user to show AuthNavigator with Login screen
+                  const {logout} = useAuthStore.getState();
+                  logout();
                 }}
                 activeOpacity={0.7}>
                 <Text style={styles.modalLoginText}>Login</Text>
@@ -938,6 +944,21 @@ const HomeScreen = ({navigation}: any) => {
           </View>
         </View>
       </Modal>
+
+      {/* Themed Alert Modal */}
+      <ThemedAlert
+        visible={alertState.visible}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        buttons={[
+          {
+            text: 'OK',
+            onPress: () => setAlertState({...alertState, visible: false}),
+          },
+        ]}
+        onDismiss={() => setAlertState({...alertState, visible: false})}
+      />
     </View>
   );
 };
@@ -1002,6 +1023,32 @@ const styles = StyleSheet.create({
     color: '#B91C1C',
     textAlign: 'center',
   },
+  countdownLabel: {
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  countdownNumber: {
+    fontSize: 72,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 2,
+  },
+  countdownLabel: {
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  countdownNumber: {
+    fontSize: 72,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 2,
+  },
   successContainer: {
     alignItems: 'center',
   },
@@ -1012,57 +1059,79 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
-  sliderContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
+  successScreenContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 24,
   },
-  sliderText: {
-    fontSize: 14,
-    color: '#6B7280',
+  successScreenContent: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+  },
+  successIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  successScreenTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
     marginBottom: 16,
-    fontWeight: '500',
   },
-  sliderTrack: {
-    width: width * 0.75,
-    height: 70,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 35,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 3,
-    borderColor: '#D1D5DB',
-    position: 'relative',
+  successScreenMessage: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  sliderCancelTextContainer: {
-    position: 'absolute',
-    right: 20,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  sliderCancelText: {
-    color: '#6B7280',
+  successScreenSubMessage: {
     fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 24,
+  },
+  successScreenHelpText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 48,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  backButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 48,
+    borderRadius: 12,
+    minWidth: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '600',
   },
-  sliderThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
+  recipientList: {
+    marginVertical: 16,
+    gap: 12,
+  },
+  recipientItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    position: 'absolute',
-    left: 3,
-    zIndex: 2,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
+    gap: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 10,
+  },
+  recipientText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   categoriesSection: {
     paddingHorizontal: CARD_HORIZONTAL_PADDING,
@@ -1127,7 +1196,6 @@ const styles = StyleSheet.create({
   },
   actionOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -1135,9 +1203,9 @@ const styles = StyleSheet.create({
   actionContainer: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 8},
     shadowOpacity: 0.2,
@@ -1244,17 +1312,16 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 24,
     width: '85%',
     maxWidth: 400,
     alignItems: 'center',
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.3,

@@ -20,10 +20,8 @@ import ChatScreen from '../screens/chat/ChatScreen';
 import CommunityScreen from '../screens/community/CommunityScreen';
 import CreateGroupScreen from '../screens/community/CreateGroupScreen';
 import GroupDetailsScreen from '../screens/community/GroupDetailsScreen';
-import LiveLocationShareScreen from '../screens/location/LiveLocationShareScreen';
+import AddMemberScreen from '../screens/community/AddMemberScreen';
 import BillingScreen from '../screens/billing/BillingScreen';
-import TrustedCheckInScreen from '../screens/checkins/TrustedCheckInScreen';
-import ResponseCenterScreen from '../screens/response/ResponseCenterScreen';
 
 const Stack = createStackNavigator();
 
@@ -48,7 +46,6 @@ const AppNavigator = () => {
       'HowItWorks': {icon: 'help-outline', title: 'HOW IT WORKS', subtitle: 'Learn about the app features'},
       'Profile': {icon: 'account-circle', title: 'PROFILE', subtitle: 'Manage your account information'},
       'Settings': {icon: 'settings', title: 'SETTINGS', subtitle: 'Configure app preferences'},
-      'LiveLocationShare': {icon: 'my-location', title: 'LIVE LOCATION', subtitle: 'Share your real-time location'},
       'GeofenceArea': {icon: 'fence', title: 'GEOFENCING', subtitle: 'Set up safe zones (Premium)'},
       'Billing': {icon: 'payment', title: 'BILLING', subtitle: 'Manage subscription and billing'},
     };
@@ -105,6 +102,11 @@ const AppNavigator = () => {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name="AddMember"
+          component={AddMemberScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name="Family"
           component={EmergencyContactScreen}
           options={{headerTitle: 'FAMILY'}}
@@ -128,11 +130,6 @@ const AppNavigator = () => {
           name="Settings"
           component={SettingsScreen}
           options={{headerTitle: 'SETTINGS'}}
-        />
-        <Stack.Screen
-          name="LiveLocationShare"
-          component={LiveLocationShareScreen}
-          options={{headerTitle: 'LIVE LOCATION'}}
         />
         <Stack.Screen
           name="Billing"
@@ -164,16 +161,6 @@ const AppNavigator = () => {
           name="SupportContact"
           component={SupportContactScreen}
           options={{headerTitle: 'SUPPORT CONTACTS'}}
-        />
-        <Stack.Screen
-          name="TrustedCheckIn"
-          component={TrustedCheckInScreen}
-          options={{headerTitle: 'TRUSTED CIRCLE'}}
-        />
-        <Stack.Screen
-          name="ResponseCenter"
-          component={ResponseCenterScreen}
-          options={{headerTitle: 'RESPONSE CENTER'}}
         />
       </Stack.Navigator>
       <CustomDrawer 

@@ -1,22 +1,21 @@
 /**
  * API Service for User App
- * Handles all API calls to the backend
+ * Handles all API calls to the backend with smart caching
  */
 
-// Import AsyncStorage with error handling
-let AsyncStorage: any;
-try {
-  AsyncStorage = require('@react-native-async-storage/async-storage').default;
-} catch (e) {
-  console.error('Failed to import AsyncStorage in apiService:', e);
-  // Create a mock AsyncStorage that won't crash
-  AsyncStorage = {
-    getItem: async () => null,
-    setItem: async () => {},
-    removeItem: async () => {},
-    clear: async () => {},
-  };
-}
+// Import AsyncStorage using the initialization utility
+import { getAsyncStorage, getAsyncStorageSync } from '../utils/asyncStorageInit';
+import { cacheService } from './cacheService';
+
+// Get AsyncStorage synchronously (will be initialized on first async call)
+let AsyncStorage: any = getAsyncStorageSync();
+
+// Initialize AsyncStorage asynchronously
+getAsyncStorage().then((storage) => {
+  AsyncStorage = storage;
+}).catch((error) => {
+  console.error('Failed to initialize AsyncStorage in apiService:', error);
+});
 
 const API_BASE_URL = __DEV__
   ? 'http://192.168.0.125:8000/api/users' // Use device IP for physical device
@@ -76,8 +75,9 @@ class ApiService {
     this.refreshToken = refresh;
     // Store in AsyncStorage for persistence
     try {
-      await AsyncStorage.setItem('access_token', access);
-      await AsyncStorage.setItem('refresh_token', refresh);
+      const storage = await getAsyncStorage();
+      await storage.setItem('access_token', access);
+      await storage.setItem('refresh_token', refresh);
     } catch (error) {
       console.error('Error saving tokens:', error);
     }
@@ -88,8 +88,9 @@ class ApiService {
    */
   async loadTokens() {
     try {
-      const access = await AsyncStorage.getItem('access_token');
-      const refresh = await AsyncStorage.getItem('refresh_token');
+      const storage = await getAsyncStorage();
+      const access = await storage.getItem('access_token');
+      const refresh = await storage.getItem('refresh_token');
       if (access && refresh) {
         this.accessToken = access;
         this.refreshToken = refresh;
@@ -106,8 +107,9 @@ class ApiService {
     this.accessToken = null;
     this.refreshToken = null;
     try {
-      await AsyncStorage.removeItem('access_token');
-      await AsyncStorage.removeItem('refresh_token');
+      const storage = await getAsyncStorage();
+      await storage.removeItem('access_token');
+      await storage.removeItem('refresh_token');
     } catch (error) {
       console.error('Error clearing tokens:', error);
     }
@@ -197,8 +199,18 @@ class ApiService {
       }
 
       return text ? JSON.parse(text) : {};
-    } catch (error) {
+    } catch (error: any) {
       console.error('API request error:', error);
+      // Handle network errors specifically
+      if (error.message && error.message.includes('Network request failed')) {
+        throw new Error('Network request failed. Please check your internet connection and ensure the server is running.');
+      } else if (error.message && error.message.includes('Failed to fetch')) {
+        throw new Error('Failed to connect to server. Please check if the backend is running and the IP address is correct.');
+      } else if (error.message && error.message.includes('ECONNREFUSED')) {
+        throw new Error('Connection refused. Please ensure the backend server is running on port 8000.');
+      } else if (error.message && error.message.includes('timeout')) {
+        throw new Error('Request timeout. The server took too long to respond.');
+      }
       throw error;
     }
   }
@@ -223,7 +235,8 @@ class ApiService {
         if (data.access) {
           this.accessToken = data.access;
           try {
-            await AsyncStorage.setItem('access_token', data.access);
+            const storage = await getAsyncStorage();
+            await storage.setItem('access_token', data.access);
           } catch (error) {
             console.error('Error saving refreshed token:', error);
           }
@@ -256,6 +269,16 @@ class ApiService {
       return response;
     } catch (error: any) {
       console.error('Login error:', error.message || error);
+      // Provide more user-friendly error messages
+      if (error.message && error.message.includes('Network')) {
+        throw new Error('Network error: Unable to connect to server. Please check your internet connection and ensure the backend is running.');
+      } else if (error.message && error.message.includes('401') || error.message && error.message.includes('Unauthorized')) {
+        throw new Error('Invalid email or password. Please try again.');
+      } else if (error.message && error.message.includes('404')) {
+        throw new Error('Login endpoint not found. Please check the API configuration.');
+      } else if (error.message && error.message.includes('500')) {
+        throw new Error('Server error. Please try again later.');
+      }
       throw error;
     }
   }
@@ -290,54 +313,78 @@ class ApiService {
   }
 
   /**
-   * Get user profile
+   * Get user profile (with caching)
    */
   async getProfile(): Promise<any> {
-    return this.request('/profile/');
+    const cacheKey = 'user_profile';
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request('/profile/'),
+      { compareByHash: true }
+    );
   }
 
   /**
-   * Update user profile
+   * Update user profile (invalidates cache)
    */
   async updateProfile(data: any): Promise<any> {
-    return this.request('/profile/', {
+    const result = await this.request('/profile/', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+    // Invalidate profile cache after updating
+    await cacheService.invalidate('user_profile');
+    return result;
   }
 
   /**
-   * Get family contacts
+   * Get family contacts (with caching)
    */
   async getFamilyContacts(userId: number): Promise<any> {
-    return this.request(`/${userId}/family_contacts/`);
+    const cacheKey = `family_contacts_${userId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/family_contacts/`),
+      { compareByHash: true }
+    );
   }
 
   /**
-   * Add family contact
+   * Add family contact (invalidates cache)
    */
   async addFamilyContact(userId: number, contact: any): Promise<any> {
-    return this.request(`/${userId}/family_contacts/`, {
+    const result = await this.request(`/${userId}/family_contacts/`, {
       method: 'POST',
       body: JSON.stringify(contact),
     });
+    // Invalidate cache after adding
+    await cacheService.invalidate(`family_contacts_${userId}`);
+    return result;
   }
 
   /**
-   * Trigger SOS
+   * Trigger SOS (invalidates SOS events cache)
    */
   async triggerSOS(userId: number, data: { longitude?: number; latitude?: number; notes?: string }): Promise<any> {
-    return this.request(`/${userId}/sos/`, {
+    const result = await this.request(`/${userId}/sos/`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    // Invalidate SOS events cache after triggering
+    await cacheService.invalidate(`sos_events_${userId}`);
+    return result;
   }
 
   /**
-   * Get SOS events
+   * Get SOS events (with caching)
    */
   async getSOSEvents(userId: number): Promise<any> {
-    return this.request(`/${userId}/sos_events/`);
+    const cacheKey = `sos_events_${userId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/sos_events/`),
+      { compareByHash: true }
+    );
   }
 
   /**
@@ -362,35 +409,21 @@ class ApiService {
     });
   }
 
-  /**
-   * Start live location sharing
-   */
-  async startLiveLocationShare(userId: number, durationMinutes: number, sharedWithUserIds?: number[]): Promise<any> {
-    return this.request(`/${userId}/live_location/start/`, {
-      method: 'POST',
-      body: JSON.stringify({
-        duration_minutes: durationMinutes,
-        shared_with_user_ids: sharedWithUserIds || [],
-      }),
-    });
-  }
 
   /**
-   * Get active live location sessions
-   */
-  async getLiveLocationSessions(userId: number): Promise<any> {
-    return this.request(`/${userId}/live_location/`);
-  }
-
-  /**
-   * Get geofences (Premium only)
+   * Get geofences (Premium only) (with caching)
    */
   async getGeofences(userId: number): Promise<any> {
-    return this.request(`/${userId}/geofences/`);
+    const cacheKey = `geofences_${userId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/geofences/`),
+      { compareByHash: true }
+    );
   }
 
   /**
-   * Create geofence (Premium only)
+   * Create geofence (Premium only) (invalidates cache)
    */
   async createGeofence(userId: number, data: {
     name: string;
@@ -399,43 +432,301 @@ class ApiService {
     alert_on_entry?: boolean;
     alert_on_exit?: boolean;
   }): Promise<any> {
-    return this.request(`/${userId}/geofences/`, {
+    const result = await this.request(`/${userId}/geofences/`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    // Invalidate cache after creating
+    await cacheService.invalidate(`geofences_${userId}`);
+    return result;
   }
 
   /**
-   * Send community alert
+   * Send community alert (invalidates relevant caches)
    */
   async sendCommunityAlert(userId: number, data: {
     message: string;
     location: { longitude: number; latitude: number };
     radius_meters?: number;
   }): Promise<any> {
-    return this.request(`/${userId}/community_alert/`, {
+    const result = await this.request(`/${userId}/community_alert/`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    // Invalidate alerts/community cache if needed
+    return result;
   }
 
   /**
-   * Update family contact
+   * Update family contact (invalidates cache)
    */
   async updateFamilyContact(userId: number, contactId: number, contact: any): Promise<any> {
-    return this.request(`/${userId}/family_contacts/${contactId}/`, {
+    const result = await this.request(`/${userId}/family_contacts/${contactId}/`, {
       method: 'PATCH',
       body: JSON.stringify(contact),
     });
+    // Invalidate cache after updating
+    await cacheService.invalidate(`family_contacts_${userId}`);
+    return result;
   }
 
   /**
-   * Delete family contact
+   * Delete family contact (invalidates cache)
    */
   async deleteFamilyContact(userId: number, contactId: number): Promise<any> {
-    return this.request(`/${userId}/family_contacts/${contactId}/`, {
+    const result = await this.request(`/${userId}/family_contacts/${contactId}/`, {
       method: 'DELETE',
     });
+    // Invalidate cache after deleting
+    await cacheService.invalidate(`family_contacts_${userId}`);
+    return result;
+  }
+
+  /**
+   * Get nearby help locations (hospitals, police, fire, etc.)
+   */
+  async getNearbyHelp(latitude: number, longitude: number, radius: number = 5000): Promise<any> {
+    const cacheKey = `nearby_help_${latitude.toFixed(4)}_${longitude.toFixed(4)}_${radius}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/nearby_help/?latitude=${latitude}&longitude=${longitude}&radius=${radius}`),
+      { compareByHash: true, ttlMinutes: 30 } // Cache for 30 minutes as locations don't change frequently
+    );
+  }
+
+  /**
+   * Get safety tips
+   */
+  async getSafetyTips(): Promise<any> {
+    const cacheKey = 'safety_tips';
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request('/safety_tips/'),
+      { compareByHash: true, ttlMinutes: 60 } // Cache for 1 hour
+    );
+  }
+
+  /**
+   * Get available users for group creation
+   * @param geofenceOnly - Only show users from same geofences (default: true)
+   * @param includeOtherGeofences - Include users from other geofences (default: false)
+   * @param search - Search query to filter users by name or email
+   */
+  async getAvailableUsers(options?: {
+    geofenceOnly?: boolean;
+    includeOtherGeofences?: boolean;
+    search?: string;
+  }): Promise<any> {
+    const {geofenceOnly = true, includeOtherGeofences = false, search = ''} = options || {};
+    
+    // Build query string
+    const params = new URLSearchParams();
+    params.append('geofence_only', geofenceOnly.toString());
+    params.append('include_other_geofences', includeOtherGeofences.toString());
+    if (search.trim()) {
+      params.append('search', search.trim());
+    }
+    
+    const cacheKey = `available_users_${geofenceOnly}_${includeOtherGeofences}_${search}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/available_users/?${params.toString()}`),
+      { compareByHash: true, ttlMinutes: 2 } // Cache for 2 minutes (shorter due to search)
+    );
+  }
+
+  /**
+   * Get user's chat groups
+   */
+  async getChatGroups(userId: number): Promise<any> {
+    const cacheKey = `chat_groups_${userId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/chat_groups/`),
+      { compareByHash: true }
+    );
+  }
+
+  /**
+   * Create a chat group
+   */
+  async createChatGroup(userId: number, data: {
+    name: string;
+    description?: string;
+    member_ids: number[];
+  }): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    // Invalidate cache after creating
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    return result;
+  }
+
+  /**
+   * Get chat group details
+   */
+  async getChatGroupDetails(userId: number, groupId: number): Promise<any> {
+    const cacheKey = `chat_group_${groupId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/chat_groups/${groupId}/`),
+      { compareByHash: true }
+    );
+  }
+
+  /**
+   * Delete a chat group
+   */
+  async deleteChatGroup(userId: number, groupId: number): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/`, {
+      method: 'DELETE',
+    });
+    // Invalidate cache after deleting
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    return result;
+  }
+
+  /**
+   * Get messages for a chat group
+   */
+  async getChatMessages(userId: number, groupId: number): Promise<any> {
+    const cacheKey = `chat_messages_${groupId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/chat_groups/${groupId}/messages/`),
+      { compareByHash: true, ttlMinutes: 0 } // Don't cache messages for long
+    );
+  }
+
+  /**
+   * Send a message to a chat group
+   */
+  async sendChatMessage(userId: number, groupId: number, text: string): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/messages/`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    // Invalidate messages cache after sending
+    await cacheService.invalidate(`chat_messages_${groupId}`);
+    // Also invalidate group cache to update updated_at
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    return result;
+  }
+
+  /**
+   * Send a chat message with file or image attachment
+   */
+  async sendChatMessageWithFile(userId: number, groupId: number, formData: FormData): Promise<any> {
+    const url = `${API_BASE_URL}/${userId}/chat_groups/${groupId}/messages/`;
+    const headers: HeadersInit = {};
+
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+    // Don't set Content-Type for FormData - let the browser set it with boundary
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const text = await response.text();
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          if (text) {
+            const errorData = JSON.parse(text);
+            errorMessage = errorData.error || errorData.detail || errorData.message || errorMessage;
+          }
+        } catch {
+          // If parsing fails, use default error message
+        }
+        throw new Error(errorMessage);
+      }
+
+      const result = text ? JSON.parse(text) : {};
+      
+      // Invalidate messages cache after sending
+      await cacheService.invalidate(`chat_messages_${groupId}`);
+      await cacheService.invalidate(`chat_group_${groupId}`);
+      await cacheService.invalidate(`chat_groups_${userId}`);
+      
+      return result;
+    } catch (error: any) {
+      if (error.message && error.message.includes('Failed to fetch')) {
+        throw new Error('Network error. Please check your connection.');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Edit a chat message
+   */
+  async editChatMessage(userId: number, groupId: number, messageId: number, text: string): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/messages/${messageId}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ text }),
+    });
+    await cacheService.invalidate(`chat_messages_${groupId}`);
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    return result;
+  }
+
+  /**
+   * Delete a chat message
+   */
+  async deleteChatMessage(userId: number, groupId: number, messageId: number): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/messages/${messageId}/`, {
+      method: 'DELETE',
+    });
+    await cacheService.invalidate(`chat_messages_${groupId}`);
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    return result;
+  }
+
+  /**
+   * Add members to a chat group
+   */
+  async addGroupMembers(userId: number, groupId: number, memberIds: number[]): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/members/`, {
+      method: 'POST',
+      body: JSON.stringify({member_ids: memberIds}),
+    });
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    return result;
+  }
+
+  /**
+   * Remove a member from a chat group (admin only)
+   */
+  async removeGroupMember(userId: number, groupId: number, memberId: number): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/members/${memberId}/`, {
+      method: 'DELETE',
+    });
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    return result;
+  }
+
+  /**
+   * Leave a chat group
+   */
+  async leaveChatGroup(userId: number, groupId: number): Promise<any> {
+    const result = await this.request(`/${userId}/chat_groups/${groupId}/leave/`, {
+      method: 'DELETE',
+    });
+    await cacheService.invalidate(`chat_group_${groupId}`);
+    await cacheService.invalidate(`chat_groups_${userId}`);
+    return result;
   }
 }
 

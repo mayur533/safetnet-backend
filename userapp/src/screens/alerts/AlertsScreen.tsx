@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,10 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useTheme} from '@react-navigation/native';
 import type {Theme} from '@react-navigation/native';
-import {mockAlerts} from '../../services/mockData';
 import {format} from 'date-fns';
+import {useAuthStore} from '../../stores/authStore';
+import {apiService} from '../../services/apiService';
+import {sendAlertNotification} from '../../services/notificationService';
 
 interface Alert {
   id: string;
@@ -55,6 +57,7 @@ const AlertsScreen = () => {
   const theme = useTheme();
   const {colors} = theme;
   const isDarkMode = theme.dark;
+  const user = useAuthStore((state) => state.user);
 
   const themeTokens = useMemo<AlertThemeTokens>(() => ({
     borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1),
@@ -69,10 +72,60 @@ const AlertsScreen = () => {
   const {mutedTextColor, secondaryTextColor, iconMutedColor, emptyIconColor} = themeTokens;
 
   const [refreshing, setRefreshing] = useState(false);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [previousAlertsCount, setPreviousAlertsCount] = useState(0);
+
+  // Fetch alerts from API
+  useEffect(() => {
+    loadAlerts();
+  }, [user]);
+
+  // Check for new alerts and send notifications
+  useEffect(() => {
+    if (alerts.length > previousAlertsCount && previousAlertsCount > 0) {
+      // New alerts detected
+      const newAlerts = alerts.slice(0, alerts.length - previousAlertsCount);
+      newAlerts.forEach((alert) => {
+        if (!alert.read) {
+          sendAlertNotification(alert.title, alert.message, alert.id);
+        }
+      });
+    }
+    setPreviousAlertsCount(alerts.length);
+  }, [alerts, previousAlertsCount]);
+
+  const loadAlerts = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoading(true);
+      // Get SOS events as alerts (you can add a dedicated alerts endpoint later)
+      const sosEvents = await apiService.getSOSEvents(parseInt(user.id));
+      // Transform SOS events to alerts format
+      const transformedAlerts: Alert[] = Array.isArray(sosEvents) 
+        ? sosEvents.map((event: any, index: number) => ({
+            id: event.id?.toString() || `sos-${index}`,
+            type: 'emergency',
+            title: 'SOS Alert',
+            message: event.notes || 'Emergency SOS triggered',
+            timestamp: event.created_at ? new Date(event.created_at) : new Date(),
+            read: false,
+            location: event.location ? {lat: event.location.latitude, lng: event.location.longitude} : undefined,
+          }))
+        : [];
+      setAlerts(transformedAlerts);
+    } catch (error) {
+      console.error('Failed to load alerts:', error);
+      setAlerts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise<void>((resolve) => setTimeout(() => resolve(), 1000));
+    await loadAlerts();
     setRefreshing(false);
   };
 
@@ -166,7 +219,7 @@ const AlertsScreen = () => {
     <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
-      {mockAlerts.length === 0 ? (
+      {alerts.length === 0 && !loading ? (
         <View style={styles.emptyState}>
           <MaterialIcons name="notifications-none" size={64} color={emptyIconColor} />
           <Text style={styles.emptyStateText}>No alerts yet</Text>
@@ -184,7 +237,7 @@ const AlertsScreen = () => {
             />
           }
           showsVerticalScrollIndicator={true}>
-          {mockAlerts.map((alert) => renderAlert(alert))}
+          {alerts.map((alert) => renderAlert(alert))}
         </ScrollView>
       )}
     </View>
@@ -278,7 +331,5 @@ const createStyles = (colors: Theme['colors'], tokens: AlertThemeTokens, isDarkM
       textAlign: 'center',
     },
   });
-
-export default AlertsScreen;
 
 export default AlertsScreen;

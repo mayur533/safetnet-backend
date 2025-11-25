@@ -31,8 +31,9 @@ class MainActivity : ReactActivity() {
    * KeyEvent.KEYCODE_MENU (82) is the keycode for the menu button that opens dev menu
    */
   override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-    // If shake detection is active, prevent dev menu from opening
-    if (keyCode == KeyEvent.KEYCODE_MENU && DevMenuModule.isShakeDetectionActive()) {
+    // Always prevent dev menu from opening via shake (KEYCODE_MENU)
+    // This ensures our shake detection works without interference
+    if (keyCode == KeyEvent.KEYCODE_MENU) {
       return true // Consume the event, preventing dev menu from opening
     }
     return super.onKeyUp(keyCode, event)

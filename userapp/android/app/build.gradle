@@ -152,6 +152,12 @@ dependencies {
     implementation(project(':react-native-linear-gradient'))
     // Manually add AsyncStorage dependency
     implementation(project(':react-native-async-storage_async-storage'))
+    // Geolocation should be autolinked - removed manual dependency to avoid conflicts
+    // Manually add react-native-sensors dependency
+    implementation(project(':react-native-sensors'))
+    
+    // React Native Maps - use autolinking instead of manual linking for New Architecture compatibility
+    // implementation(project(':react-native-maps'))
     
     // Exclude old support library to avoid conflicts with AndroidX
     configurations.all {

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {getAsyncStorage} from '../utils/asyncStorageInit';
 import {create} from 'zustand';
 
 export interface CommunityAlertRecord {
@@ -22,7 +22,8 @@ const MAX_ALERTS = 20;
 
 const persistAlerts = async (alerts: CommunityAlertRecord[]) => {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(alerts));
+    const storage = await getAsyncStorage();
+    await storage.setItem(STORAGE_KEY, JSON.stringify(alerts));
   } catch (error) {
     console.warn('Failed to persist community alerts', error);
   }
@@ -36,7 +37,8 @@ export const useCommunityAlertStore = create<CommunityAlertState>((set, get) => 
       return;
     }
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      const storage = await getAsyncStorage();
+      const raw = await storage.getItem(STORAGE_KEY);
       if (!raw) {
         set({alerts: [], loaded: true});
         return;
@@ -63,7 +65,8 @@ export const useCommunityAlertStore = create<CommunityAlertState>((set, get) => 
   clear: async () => {
     set({alerts: []});
     try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      const storage = await getAsyncStorage();
+      await storage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.warn('Failed to clear community alerts', error);
     }

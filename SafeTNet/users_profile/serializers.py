@@ -5,7 +5,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import User, FamilyContact, CommunityMembership, SOSEvent, LiveLocationShare, Geofence, CommunityAlert
+from .models import User, FamilyContact, CommunityMembership, SOSEvent, LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -549,3 +549,132 @@ class CommunityAlertCreateSerializer(serializers.Serializer):
         default=500,
         help_text="Alert radius in meters (max 500 for free users)"
     )
+
+
+class ChatGroupSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat groups.
+    """
+    member_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    admin_id = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ChatGroup
+        fields = ('id', 'name', 'description', 'members', 'member_count', 'admin_id', 'created_by', 'created_by_name', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_by', 'created_at', 'updated_at')
+    
+    def get_member_count(self, obj):
+        return obj.members.count()
+    
+    def get_members(self, obj):
+        admin_id = obj.admin.id if obj.admin else obj.created_by.id
+        return [
+            {
+                'id': member.id,
+                'name': member.name if hasattr(member, 'name') else (member.first_name + ' ' + member.last_name).strip() or member.email,
+                'email': member.email,
+                'first_name': getattr(member, 'first_name', ''),
+                'last_name': getattr(member, 'last_name', ''),
+                'is_admin': (obj.admin and obj.admin.id == member.id) or (not obj.admin and obj.created_by.id == member.id),
+            }
+            for member in obj.members.all()
+        ]
+    
+    def get_admin_id(self, obj):
+        return obj.admin.id if obj.admin else obj.created_by.id
+    
+    def get_created_by_name(self, obj):
+        if hasattr(obj.created_by, 'name') and obj.created_by.name:
+            return obj.created_by.name
+        first_name = getattr(obj.created_by, 'first_name', '')
+        last_name = getattr(obj.created_by, 'last_name', '')
+        return (first_name + ' ' + last_name).strip() or obj.created_by.email
+
+
+class ChatGroupCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating chat groups.
+    """
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True)
+    member_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of user IDs to add as members"
+    )
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat messages.
+    """
+    sender_name = serializers.SerializerMethodField()
+    sender_first_name = serializers.SerializerMethodField()
+    sender_last_name = serializers.SerializerMethodField()
+    sender_id = serializers.IntegerField(source='sender.id', read_only=True)
+    image_url = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ChatMessage
+        fields = ('id', 'group', 'sender', 'sender_id', 'sender_name', 'sender_first_name', 'sender_last_name', 'text', 'image', 'image_url', 'file', 'file_url', 'file_name', 'file_size', 'created_at')
+        read_only_fields = ('id', 'sender', 'created_at', 'image_url', 'file_url')
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
+    def get_file_url(self, obj):
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+    
+    def get_sender_name(self, obj):
+        if hasattr(obj.sender, 'name') and obj.sender.name:
+            return obj.sender.name
+        first_name = getattr(obj.sender, 'first_name', '')
+        last_name = getattr(obj.sender, 'last_name', '')
+        return (first_name + ' ' + last_name).strip() or obj.sender.email
+    
+    def get_sender_first_name(self, obj):
+        return getattr(obj.sender, 'first_name', '')
+    
+    def get_sender_last_name(self, obj):
+        return getattr(obj.sender, 'last_name', '')
+
+
+class ChatMessageCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating and updating chat messages.
+    """
+    text = serializers.CharField(required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    file = serializers.FileField(required=False, allow_null=True)
+    file_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    file_size = serializers.IntegerField(required=False, allow_null=True)
+    
+    def validate(self, attrs):
+        """Validate that either text, image, or file is provided."""
+        if not attrs.get('text') and not attrs.get('image') and not attrs.get('file'):
+            raise serializers.ValidationError("Either text, image, or file must be provided.")
+        return attrs
+    
+    def update(self, instance, validated_data):
+        """Update the message."""
+        instance.text = validated_data.get('text', instance.text)
+        if 'image' in validated_data:
+            instance.image = validated_data['image']
+        if 'file' in validated_data:
+            instance.file = validated_data['file']
+            instance.file_name = validated_data.get('file_name', instance.file_name)
+            instance.file_size = validated_data.get('file_size', instance.file_size)
+        instance.save()
+        return instance

@@ -4,6 +4,7 @@ API views for User models.
 import logging
 from django.conf import settings
 from django.http import Http404
+from django.db import models
 # from django.contrib.gis.geos import Point  # Commented out to avoid GDAL dependency
 # from django.contrib.gis.measure import Distance  # Commented out to avoid GDAL dependency
 # from django.contrib.gis.db.models.functions import Distance as DistanceFunction  # Commented out to avoid GDAL dependency
@@ -17,7 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import (
     User, FamilyContact, CommunityMembership, SOSEvent,
-    LiveLocationShare, Geofence, CommunityAlert, FREE_TIER_LIMITS
+    LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
 )
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
@@ -26,7 +27,9 @@ from .serializers import (
     SOSEventSerializer, SOSTriggerSerializer, UserLocationUpdateSerializer,
     SubscriptionSerializer, LiveLocationShareSerializer, LiveLocationShareCreateSerializer,
     GeofenceSerializer, GeofenceCreateSerializer,
-    CommunityAlertSerializer, CommunityAlertCreateSerializer
+    CommunityAlertSerializer, CommunityAlertCreateSerializer,
+    ChatGroupSerializer, ChatGroupCreateSerializer,
+    ChatMessageSerializer, ChatMessageCreateSerializer
 )
 from .services import SMSService, GeofenceService
 
@@ -823,3 +826,476 @@ class CommunityAlertView(APIView):
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChatGroupListView(APIView):
+    """
+    List and create chat groups.
+    GET /users/<user_id>/chat_groups/ - List user's groups
+    POST /users/<user_id>/chat_groups/ - Create a new group
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id):
+        """Get all groups the user is a member of."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            groups = ChatGroup.objects.filter(members=user).distinct()
+            serializer = ChatGroupSerializer(groups, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def post(self, request, user_id):
+        """Create a new chat group."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = ChatGroupCreateSerializer(data=request.data)
+            if serializer.is_valid():
+                # Check for duplicate group name (case-insensitive)
+                group_name = serializer.validated_data['name'].strip()
+                existing_group = ChatGroup.objects.filter(
+                    name__iexact=group_name,
+                    created_by=user
+                ).first()
+                
+                if existing_group:
+                    return Response(
+                        {'error': 'A group with this name already exists. Please choose a different name.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                group = ChatGroup.objects.create(
+                    name=group_name,
+                    description=serializer.validated_data.get('description', ''),
+                    created_by=user,
+                    admin=user  # Creator is admin by default
+                )
+                # Add creator as member
+                group.members.add(user)
+                # Add other members
+                member_ids = serializer.validated_data.get('member_ids', [])
+                for member_id in member_ids:
+                    try:
+                        member = User.objects.get(id=member_id)
+                        group.members.add(member)
+                    except User.DoesNotExist:
+                        continue
+                
+                return Response(ChatGroupSerializer(group).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ChatGroupDetailView(APIView):
+    """
+    Get, update, or delete a chat group.
+    GET /users/<user_id>/chat_groups/<group_id>/ - Get group details
+    DELETE /users/<user_id>/chat_groups/<group_id>/ - Delete group
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id, group_id):
+        """Get group details."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            serializer = ChatGroupSerializer(group)
+            data = serializer.data
+            # Add admin info
+            data['admin_id'] = group.admin.id if group.admin else group.created_by.id
+            data['is_admin'] = (group.admin and group.admin.id == user.id) or (not group.admin and group.created_by.id == user.id)
+            return Response(data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def delete(self, request, user_id, group_id):
+        """Delete a group (only admin can delete)."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            
+            # Check if user is admin (or creator if admin is not set)
+            is_admin = (group.admin and group.admin.id == user.id) or (not group.admin and group.created_by.id == user.id)
+            
+            if not is_admin:
+                return Response({'error': 'Only the group admin can delete the group'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group.delete()
+            return Response({'message': 'Group deleted successfully'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ChatGroupMemberView(APIView):
+    """
+    Manage group members: add, remove, leave group.
+    POST /users/<user_id>/chat_groups/<group_id>/members/ - Add members
+    DELETE /users/<user_id>/chat_groups/<group_id>/members/<member_id>/ - Remove member
+    POST /users/<user_id>/chat_groups/<group_id>/leave/ - Leave group
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, user_id, group_id):
+        """Add members to a group."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            member_ids = request.data.get('member_ids', [])
+            
+            if not isinstance(member_ids, list):
+                return Response({'error': 'member_ids must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            added_members = []
+            for member_id in member_ids:
+                try:
+                    member = User.objects.get(id=member_id)
+                    if member not in group.members.all():
+                        group.members.add(member)
+                        added_members.append(member_id)
+                except User.DoesNotExist:
+                    continue
+            
+            group.save()  # Update updated_at
+            serializer = ChatGroupSerializer(group)
+            data = serializer.data
+            data['admin_id'] = group.admin.id if group.admin else group.created_by.id
+            data['is_admin'] = (group.admin and group.admin.id == user.id) or (not group.admin and group.created_by.id == user.id)
+            return Response(data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def delete(self, request, user_id, group_id, member_id=None):
+        """Remove a member from a group (admin only) or leave group."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            
+            # Check if user is admin (or creator if admin is not set)
+            is_admin = (group.admin and group.admin.id == user.id) or (not group.admin and group.created_by.id == user.id)
+            
+            if member_id:
+                # Remove another member (admin only)
+                if not is_admin:
+                    return Response({'error': 'Only the group admin can remove members'}, status=status.HTTP_403_FORBIDDEN)
+                
+                try:
+                    member_to_remove = User.objects.get(id=member_id)
+                    if member_to_remove not in group.members.all():
+                        return Response({'error': 'User is not a member of this group'}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    # Cannot remove admin
+                    if (group.admin and group.admin.id == member_to_remove.id) or (not group.admin and group.created_by.id == member_to_remove.id):
+                        return Response({'error': 'Cannot remove the group admin'}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                    group.members.remove(member_to_remove)
+                    group.save()
+                    
+                    serializer = ChatGroupSerializer(group)
+                    data = serializer.data
+                    data['admin_id'] = group.admin.id if group.admin else group.created_by.id
+                    data['is_admin'] = (group.admin and group.admin.id == user.id) or (not group.admin and group.created_by.id == user.id)
+                    return Response(data, status=status.HTTP_200_OK)
+                except User.DoesNotExist:
+                    return Response({'error': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                # Leave group
+                if is_admin:
+                    # If admin is leaving, transfer admin to another member or creator
+                    remaining_members = group.members.exclude(id=user.id)
+                    if remaining_members.exists():
+                        # Transfer admin to first remaining member
+                        new_admin = remaining_members.first()
+                        group.admin = new_admin
+                        group.save()
+                    # If no remaining members, admin can delete the group
+                    # For now, we'll just remove the admin and let them leave
+                    # The group will be orphaned but can be cleaned up later
+                
+                group.members.remove(user)
+                group.save()
+                
+                return Response({'message': 'Left group successfully'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ChatMessageListView(APIView):
+    """
+    List and create chat messages.
+    GET /users/<user_id>/chat_groups/<group_id>/messages/ - Get messages
+    POST /users/<user_id>/chat_groups/<group_id>/messages/ - Send a message
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, user_id, group_id):
+        """Get all messages in a group."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            messages = ChatMessage.objects.filter(group=group).order_by('created_at')
+            serializer = ChatMessageSerializer(messages, many=True, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def post(self, request, user_id, group_id):
+        """Send a message to a group."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            
+            # Check file size if file is provided
+            if 'file' in request.FILES:
+                file = request.FILES['file']
+                max_size = 2 * 1024 * 1024  # 2 MB
+                if file.size > max_size:
+                    return Response({'error': 'File size exceeds 2 MB limit'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if 'image' in request.FILES:
+                image = request.FILES['image']
+                max_size = 2 * 1024 * 1024  # 2 MB
+                if image.size > max_size:
+                    return Response({'error': 'Image size exceeds 2 MB limit'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            serializer = ChatMessageCreateSerializer(data=request.data)
+            if serializer.is_valid():
+                message_data = {
+                    'group': group,
+                    'sender': user,
+                    'text': serializer.validated_data.get('text', ''),
+                }
+                
+                if 'image' in request.FILES:
+                    message_data['image'] = request.FILES['image']
+                
+                if 'file' in request.FILES:
+                    file = request.FILES['file']
+                    message_data['file'] = file
+                    message_data['file_name'] = serializer.validated_data.get('file_name') or file.name
+                    message_data['file_size'] = serializer.validated_data.get('file_size') or file.size
+                
+                message = ChatMessage.objects.create(**message_data)
+                # Update group's updated_at timestamp
+                group.save()
+                return Response(ChatMessageSerializer(message, context={'request': request}).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class ChatMessageDetailView(APIView):
+    """
+    Update and delete chat messages.
+    PUT /users/<user_id>/chat_groups/<group_id>/messages/<message_id>/ - Edit a message
+    DELETE /users/<user_id>/chat_groups/<group_id>/messages/<message_id>/ - Delete a message
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def put(self, request, user_id, group_id, message_id):
+        """Edit a message (only sender can edit)."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            message = ChatMessage.objects.get(id=message_id, group=group)
+            
+            # Only the sender can edit their message
+            if message.sender.id != user.id:
+                return Response({'error': 'You can only edit your own messages'}, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = ChatMessageCreateSerializer(message, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                # Update group's updated_at timestamp
+                group.save()
+                return Response(ChatMessageSerializer(message).data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatMessage.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    def delete(self, request, user_id, group_id, message_id):
+        """Delete a message (only sender can delete)."""
+        try:
+            user = User.objects.get(id=user_id)
+            if request.user.id != user.id:
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+            group = ChatGroup.objects.get(id=group_id, members=user)
+            message = ChatMessage.objects.get(id=message_id, group=group)
+            
+            # Only the sender can delete their message
+            if message.sender.id != user.id:
+                return Response({'error': 'You can only delete your own messages'}, status=status.HTTP_403_FORBIDDEN)
+            
+            message.delete()
+            # Update group's updated_at timestamp
+            group.save()
+            return Response({'message': 'Message deleted successfully'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatGroup.DoesNotExist:
+            return Response({'error': 'Group not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ChatMessage.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AvailableUsersListView(APIView):
+    """
+    Get list of available users for group creation.
+    GET /users/available_users/?geofence_only=true&include_other_geofences=false&search=query
+    - geofence_only: if true, only show users within same geofences (default: true)
+    - include_other_geofences: if true, include users from other geofences (default: false)
+    - search: search query to filter users by name or email
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def _is_within_geofence(self, user_location, geofence_center, radius_meters):
+        """Check if user location is within a geofence using simple distance calculation."""
+        if not user_location or not geofence_center:
+            return False
+        
+        try:
+            import math
+            # Extract coordinates
+            if isinstance(user_location, dict):
+                lat1 = user_location.get('latitude') or user_location.get('lat', 0)
+                lng1 = user_location.get('longitude') or user_location.get('lng', 0)
+            else:
+                return False
+            
+            if isinstance(geofence_center, dict):
+                lat2 = geofence_center.get('latitude') or geofence_center.get('lat', 0)
+                lng2 = geofence_center.get('longitude') or geofence_center.get('lng', 0)
+            else:
+                return False
+            
+            # Haversine distance calculation (more accurate)
+            R = 6371000  # Earth radius in meters
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            delta_phi = math.radians(lat2 - lat1)
+            delta_lambda = math.radians(lng2 - lng1)
+            
+            a = math.sin(delta_phi / 2) ** 2 + \
+                math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            distance = R * c
+            
+            return distance <= radius_meters
+        except Exception:
+            return False
+    
+    def get(self, request):
+        """Get users filtered by geofence and search query."""
+        geofence_only = request.query_params.get('geofence_only', 'true').lower() == 'true'
+        include_other_geofences = request.query_params.get('include_other_geofences', 'false').lower() == 'true'
+        search_query = request.query_params.get('search', '').strip()
+        
+        # Get all active users except current user
+        users = User.objects.exclude(id=request.user.id).filter(is_active=True)
+        
+        # Apply search filter
+        if search_query:
+            from django.db.models import Q
+            query = Q(email__icontains=search_query) | Q(first_name__icontains=search_query) | Q(last_name__icontains=search_query)
+            if hasattr(User, 'name'):
+                query |= Q(name__icontains=search_query)
+            users = users.filter(query)
+        
+        user_list = []
+        current_user_geofences = []
+        
+        # Get current user's geofences if filtering by geofence
+        if geofence_only:
+            try:
+                from .models import Geofence
+                current_user_geofences = Geofence.objects.filter(
+                    user=request.user,
+                    is_active=True
+                ).values('center_location', 'radius_meters')
+            except Exception as e:
+                logger.error(f"Error fetching geofences: {e}")
+                current_user_geofences = []
+        
+        # Get current user's location
+        current_user_location = None
+        if hasattr(request.user, 'location') and request.user.location:
+            current_user_location = request.user.location
+        
+        for user in users:
+            # Get user's location
+            user_location = None
+            if hasattr(user, 'location') and user.location:
+                user_location = user.location
+            
+            # Filter by geofence if enabled
+            if geofence_only and current_user_geofences:
+                if not user_location:
+                    continue  # Skip users without location
+                
+                is_within_geofence = False
+                for geofence in current_user_geofences:
+                    center = geofence.get('center_location')
+                    radius = geofence.get('radius_meters', 100)
+                    if self._is_within_geofence(user_location, center, radius):
+                        is_within_geofence = True
+                        break
+                
+                if not is_within_geofence:
+                    # If include_other_geofences is true, still include them
+                    if not include_other_geofences:
+                        continue
+            
+            user_list.append({
+                'id': user.id,
+                'name': user.name if hasattr(user, 'name') and user.name else (user.first_name + ' ' + user.last_name).strip() or user.email,
+                'email': user.email,
+                'first_name': getattr(user, 'first_name', ''),
+                'last_name': getattr(user, 'last_name', ''),
+            })
+        
+        return Response(user_list, status=status.HTTP_200_OK)

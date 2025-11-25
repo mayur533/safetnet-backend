@@ -1,14 +1,66 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, RefreshControl} from 'react-native';
-import {mockReports} from '../../services/mockData';
 import {format} from 'date-fns';
+import {useAuthStore} from '../../stores/authStore';
+import {apiService} from '../../services/apiService';
+
+interface Report {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  status: string;
+  location: {address: string};
+  createdAt: Date;
+}
 
 const ReportsScreen = ({navigation}: any) => {
+  const user = useAuthStore((state) => state.user);
   const [refreshing, setRefreshing] = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load reports from API (using SOS events as reports)
+  useEffect(() => {
+    if (user?.id) {
+      loadReports();
+    }
+  }, [user]);
+
+  const loadReports = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setLoading(true);
+      const sosEvents = await apiService.getSOSEvents(parseInt(user.id));
+      // Transform SOS events to reports format
+      const transformedReports: Report[] = Array.isArray(sosEvents)
+        ? sosEvents.map((event: any, index: number) => ({
+            id: event.id?.toString() || `report-${index}`,
+            title: event.notes || 'SOS Event',
+            description: `Emergency SOS triggered${event.location ? ' with location data' : ''}`,
+            type: 'Emergency',
+            status: event.status || 'resolved',
+            location: {
+              address: event.location 
+                ? `${event.location.latitude.toFixed(4)}, ${event.location.longitude.toFixed(4)}`
+                : 'Location not available',
+            },
+            createdAt: event.created_at ? new Date(event.created_at) : new Date(),
+          }))
+        : [];
+      setReports(transformedReports);
+    } catch (error) {
+      console.error('Failed to load reports:', error);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise<void>((resolve) => setTimeout(() => resolve(), 1000));
+    await loadReports();
     setRefreshing(false);
   };
 
@@ -39,7 +91,12 @@ const ReportsScreen = ({navigation}: any) => {
           </TouchableOpacity>
         </View>
 
-        {mockReports.map((report) => {
+        {reports.length === 0 && !loading ? (
+          <View style={{padding: 32, alignItems: 'center'}}>
+            <Text style={{fontSize: 16, color: '#6B7280'}}>No reports available</Text>
+          </View>
+        ) : (
+          reports.map((report) => {
           const statusColors = getStatusColor(report.status);
           return (
             <TouchableOpacity
@@ -78,7 +135,8 @@ const ReportsScreen = ({navigation}: any) => {
               </View>
             </TouchableOpacity>
           );
-        })}
+          })
+        )}
       </View>
     </ScrollView>
   );

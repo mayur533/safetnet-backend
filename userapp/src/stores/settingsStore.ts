@@ -1,18 +1,5 @@
 import {create} from 'zustand';
-// Import AsyncStorage with error handling
-let AsyncStorage: any;
-try {
-  AsyncStorage = require('@react-native-async-storage/async-storage').default;
-} catch (e) {
-  console.error('Failed to import AsyncStorage in settingsStore:', e);
-  // Create a mock AsyncStorage that won't crash
-  AsyncStorage = {
-    getItem: async () => null,
-    setItem: async () => {},
-    removeItem: async () => {},
-    clear: async () => {},
-  };
-}
+import {getAsyncStorage} from '../utils/asyncStorageInit';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -34,7 +21,8 @@ const getDefaultSettings = () => ({
 
 const persistSettings = async (settings: {shakeToSendSOS: boolean; themeMode: ThemeMode}) => {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    const storage = await getAsyncStorage();
+    await storage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (error) {
     console.error('Error saving settings:', error);
   }
@@ -54,7 +42,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   loadSettings: async () => {
     try {
-      const value = await AsyncStorage.getItem(STORAGE_KEY);
+      const storage = await getAsyncStorage();
+      const value = await storage.getItem(STORAGE_KEY);
       if (value) {
         const parsed = JSON.parse(value);
         set({
@@ -65,7 +54,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
 
       // Legacy support for older shake-only storage
-      const legacyShakeValue = await AsyncStorage.getItem(LEGACY_SHAKE_KEY);
+      const legacyShakeValue = await storage.getItem(LEGACY_SHAKE_KEY);
       if (legacyShakeValue !== null) {
         const shakeEnabled = JSON.parse(legacyShakeValue);
         set({shakeToSendSOS: !!shakeEnabled});

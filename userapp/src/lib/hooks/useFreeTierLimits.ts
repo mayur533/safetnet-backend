@@ -2,14 +2,10 @@ import {useState, useEffect} from 'react';
 import {checkAllLimits, LimitCheckResult} from '../../services/freeTierService';
 import {useAuthStore} from '../../stores/authStore';
 import {useContactStore} from '../../stores/contactStore';
-import {useLiveShareStore} from '../../stores/liveShareStore';
-import {useIncidentStore} from '../../stores/incidentStore';
 
 export const useFreeTierLimits = () => {
   const user = useAuthStore((state) => state.user);
   const contacts = useContactStore((state) => state.contacts);
-  const liveShareSession = useLiveShareStore((state) => state.session);
-  const incidents = useIncidentStore((state) => state.incidents);
   const [activeLimits, setActiveLimits] = useState<LimitCheckResult[]>([]);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState('');
@@ -30,7 +26,7 @@ export const useFreeTierLimits = () => {
       setUpgradeMessage(primaryLimit.message);
       setShowUpgradePrompt(true);
     }
-  }, [user?.plan, contacts, liveShareSession, incidents]);
+  }, [user?.plan, contacts]);
 
   return {
     activeLimits,

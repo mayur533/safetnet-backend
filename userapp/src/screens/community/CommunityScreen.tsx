@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useEffect} from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useNavigation, useTheme} from '@react-navigation/native';
 import type {Theme} from '@react-navigation/native';
 import {useSubscription, FREE_TRUSTED_CIRCLE_LIMIT} from '../../lib/hooks/useSubscription';
+import {apiService} from '../../services/apiService';
+import {useAuthStore} from '../../stores/authStore';
 
 interface Group {
   id: string;
@@ -57,6 +59,7 @@ const CommunityScreen = () => {
   const theme = useTheme();
   const {colors} = theme;
   const isDarkMode = theme.dark;
+  const user = useAuthStore((state) => state.user);
   const styles = useMemo(() => createStyles(colors, isDarkMode), [colors, isDarkMode]);
   const mutedTextColor = isDarkMode ? 'rgba(226, 232, 240, 0.72)' : '#6B7280';
   const secondaryTextColor = isDarkMode ? 'rgba(148, 163, 184, 0.8)' : '#9CA3AF';
@@ -66,42 +69,59 @@ const CommunityScreen = () => {
   const noticeBorder = isDarkMode ? withAlpha(colors.primary, 0.35) : '#E0E7FF';
   const disabledButtonColor = isDarkMode ? withAlpha(colors.primary, 0.25) : '#9CA3AF';
   const highlightBackground = isDarkMode ? withAlpha(colors.primary, 0.22) : '#EFF6FF';
-  const [groups, setGroups] = useState<Group[]>([
-    {
-      id: '1',
-      name: 'Neighborhood Watch',
-      description: 'Local community safety group',
-      memberCount: 24,
-      lastMessage: 'Hey everyone, stay safe tonight!',
-      lastMessageTime: new Date(Date.now() - 1000 * 60 * 30),
-      isUnread: true,
-    },
-    {
-      id: '2',
-      name: 'Apartment Complex',
-      description: 'Building residents group',
-      memberCount: 156,
-      lastMessage: 'Security update shared',
-      lastMessageTime: new Date(Date.now() - 1000 * 60 * 120),
-      isUnread: false,
-    },
-    {
-      id: '3',
-      name: 'Family Group',
-      description: 'Family emergency contacts',
-      memberCount: 8,
-      lastMessage: 'Mom: Check in when you arrive',
-      lastMessageTime: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      isUnread: true,
-    },
-  ]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+
+  // Load groups from API
+  useEffect(() => {
+    loadGroups();
+  }, [user]);
+
+  // Refresh when screen is focused (e.g., after creating a group)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (user?.id) {
+        loadGroups();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, user?.id]);
+
+  const loadGroups = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const groupsData = await apiService.getChatGroups(parseInt(user.id.toString()));
+      const transformedGroups: Group[] = Array.isArray(groupsData) 
+        ? groupsData.map((group: any) => ({
+            id: group.id?.toString() || '',
+            name: group.name || '',
+            description: group.description,
+            memberCount: group.member_count || group.members?.length || 0,
+            lastMessage: undefined, // Will be populated when messages are loaded
+            lastMessageTime: group.updated_at ? new Date(group.updated_at) : undefined,
+            avatar: undefined,
+            isUnread: false,
+          }))
+        : [];
+      setGroups(transformedGroups);
+    } catch (error) {
+      console.error('Failed to load groups:', error);
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await loadGroups();
     setRefreshing(false);
   };
 
@@ -362,7 +382,5 @@ const createStyles = (colors: Theme['colors'], isDarkMode: boolean) => {
     },
   });
 };
-
-export default CommunityScreen;
 
 export default CommunityScreen;

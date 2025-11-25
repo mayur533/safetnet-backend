@@ -340,3 +340,106 @@ class CommunityAlert(models.Model):
     def __str__(self):
         user_email = self.user.email if hasattr(self.user, 'email') else 'User'
         return f"Community Alert - {user_email} at {self.sent_at}"
+
+
+class ChatGroup(models.Model):
+    """
+    Model for chat groups.
+    """
+    name = models.CharField(
+        max_length=200,
+        help_text="Name of the chat group"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description of the group"
+    )
+    members = models.ManyToManyField(
+        User,
+        related_name='chat_groups',
+        help_text="Members of the chat group"
+    )
+    admin = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name='admin_chat_groups',
+        null=True,
+        blank=True,
+        help_text="Admin of the group (can be different from creator)"
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='created_chat_groups',
+        help_text="User who created the group"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'users_chat_group'
+        verbose_name = 'Chat Group'
+        verbose_name_plural = 'Chat Groups'
+        ordering = ['-updated_at']
+        # Add unique constraint on name per creator (or globally if preferred)
+        # For now, we'll check uniqueness in the view
+    
+    def __str__(self):
+        return f"{self.name} ({self.members.count()} members)"
+
+
+class ChatMessage(models.Model):
+    """
+    Model for chat messages.
+    """
+    group = models.ForeignKey(
+        ChatGroup,
+        on_delete=models.CASCADE,
+        related_name='messages',
+        help_text="Chat group this message belongs to"
+    )
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='sent_messages',
+        help_text="User who sent the message"
+    )
+    text = models.TextField(
+        blank=True,
+        help_text="Message text content"
+    )
+    image = models.ImageField(
+        upload_to='chat_images/',
+        null=True,
+        blank=True,
+        help_text="Image attachment for the message"
+    )
+    file = models.FileField(
+        upload_to='chat_files/',
+        null=True,
+        blank=True,
+        help_text="File attachment for the message"
+    )
+    file_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Original file name"
+    )
+    file_size = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="File size in bytes"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'users_chat_message'
+        verbose_name = 'Chat Message'
+        verbose_name_plural = 'Chat Messages'
+        ordering = ['created_at']
+    
+    def __str__(self):
+        sender_name = self.sender.name if hasattr(self.sender, 'name') else 'User'
+        return f"{sender_name} in {self.group.name}: {self.text[:50]}"

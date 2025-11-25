@@ -140,6 +140,8 @@ class ShakeDetectionService {
   private pendingConfirmation: boolean = false; // Track if confirmation is pending
   private lastShakeTime: number = 0; // Track last shake time to prevent rapid triggers
   private minShakeInterval: number = 600; // Minimum 600ms between shake detections (very strict)
+  private nativeServiceActive: boolean = false; // Track if native service is running
+  private eventEmitter: any = null; // Event emitter for native service events
 
   private isConfigured: boolean = false;
 
@@ -153,11 +155,11 @@ class ShakeDetectionService {
       return;
     }
 
-    if (!PushNotification) {
-      console.warn('PushNotification is not available - notifications will be disabled');
-      this.isConfigured = true; // Mark as configured to avoid repeated checks
-      return;
-    }
+      if (!PushNotification || PushNotification === null) {
+        console.warn('PushNotification is not available - notifications will be disabled');
+        this.isConfigured = true; // Mark as configured to avoid repeated checks
+        return;
+      }
 
     try {
       // Configure push notifications only if available
@@ -197,10 +199,10 @@ class ShakeDetectionService {
         }
 
         PushNotification.configure(config);
-      }
-
-          // Create notification channel for Android
-          if (Platform.OS === 'android' && PushNotification && typeof PushNotification.createChannel === 'function') {
+        
+        // Create notification channel for Android (after configure)
+        if (Platform.OS === 'android' && PushNotification && PushNotification !== null) {
+          if (typeof PushNotification.createChannel === 'function') {
             try {
               PushNotification.createChannel(
                 {
@@ -213,16 +215,23 @@ class ShakeDetectionService {
                   vibrate: true,
                 },
                 (created: boolean) => {
-                  console.log('SOS notification channel created:', created);
-                  if (!created) {
-                    console.warn('SOS notification channel may already exist');
+                  if (created !== undefined) {
+                    console.log('SOS notification channel created:', created);
+                    if (!created) {
+                      console.log('SOS notification channel already exists');
+                    }
                   }
                 },
               );
             } catch (e) {
-              console.error('Could not create notification channel:', e);
+              console.warn('Could not create notification channel:', e);
+              // Continue without channel - notifications may still work
             }
+          } else {
+            console.warn('createChannel function not available on PushNotification module');
           }
+        }
+      }
 
       this.isConfigured = true;
     } catch (error) {
@@ -279,6 +288,24 @@ class ShakeDetectionService {
           }
         } catch (e) {
           console.warn('Could not start native shake detection service:', e);
+        }
+      }
+
+      // Listen for native service shake events
+      if (Platform.OS === 'android' && NativeModules && typeof NativeModules === 'object') {
+        try {
+          const {DeviceEventEmitter} = require('react-native');
+          if (DeviceEventEmitter && typeof DeviceEventEmitter.addListener === 'function') {
+            this.eventEmitter = DeviceEventEmitter;
+            this.eventEmitter.addListener('ShakeDetected', () => {
+              console.log('[NATIVE SERVICE] Shake detected event received from native service');
+              // Trigger SOS directly when native service detects shake
+              this.sendSOS();
+            });
+            console.log('Listening for native shake detection events');
+          }
+        } catch (e) {
+          console.warn('Could not set up native event listener:', e);
         }
       }
 
@@ -381,11 +408,32 @@ class ShakeDetectionService {
 
   isAccelerometerAvailable(): boolean {
     // Re-check availability in case module loaded later
-    const result = initializeAccelerometer();
-    if (result && result !== false && typeof result.subscribe === 'function') {
-      return true;
+    try {
+      const result = initializeAccelerometer();
+      if (result && result !== false && typeof result.subscribe === 'function') {
+        return true;
+      }
+      
+      // Also check if native service is available (Android)
+      if (Platform.OS === 'android') {
+        try {
+          if (NativeModules && typeof NativeModules === 'object') {
+            const {ShakeDetectionServiceModule} = NativeModules;
+            if (ShakeDetectionServiceModule && typeof ShakeDetectionServiceModule.startService === 'function') {
+              // Native service is available, so accelerometer should work
+              return true;
+            }
+          }
+        } catch (e) {
+          // Native module check failed
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn('Error checking accelerometer availability:', error);
+      return false;
     }
-    return false;
   }
 
   private handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -673,53 +721,93 @@ class ShakeDetectionService {
   showSOSNotification() {
     console.log('Showing SOS push notification');
     try {
-      if (!PushNotification) {
+      if (!PushNotification || PushNotification === null) {
         console.warn('PushNotification is not available - using Alert as fallback');
         // Fallback to Alert if notifications not available
         const {Alert} = require('react-native');
-        Alert.alert('SOS Sent Successfully', 'Your emergency alert has been sent. Our officials will be there shortly.');
+        Alert.alert('SOS Sent Successfully', 'Your emergency alert has been sent. Our officials will be there shortly. Help will arrive soon.');
         return;
       }
 
       // Ensure notifications are configured
       this.configureNotifications();
 
-      if (PushNotification && typeof PushNotification.localNotification === 'function') {
-        const notificationConfig: any = {
-          id: 'sos-' + Date.now(), // Unique ID for notification
-          title: 'SOS Sent Successfully',
-          message: 'Your emergency alert has been sent. Our officials will be there shortly.',
-          playSound: true,
-          soundName: 'default',
-          vibrate: false, // Don't vibrate in notification since we already vibrated on 3rd shake
-          vibration: 0,
-          tag: 'sos-alert',
-          userInfo: {
-            type: 'sos',
-            timestamp: Date.now(),
-          },
-        };
-
-        // Add Android-specific properties
-        if (Platform.OS === 'android') {
-          notificationConfig.channelId = 'sos-channel';
-          notificationConfig.importance = 'high';
-          notificationConfig.priority = 'high';
-          notificationConfig.autoCancel = false; // Don't auto-cancel important SOS notification
-          notificationConfig.ongoing = false;
-          // Remove icon configs that might cause issues
-          // notificationConfig.largeIcon = '';
-          // notificationConfig.smallIcon = 'ic_notification';
+      // Re-check PushNotification before using it
+      let currentPushNotification = PushNotification;
+      if (!currentPushNotification || currentPushNotification === false || currentPushNotification === null) {
+        // Try to reload it
+        try {
+          const pushNotifModule = require('react-native-push-notification');
+          currentPushNotification = pushNotifModule.default || pushNotifModule;
+          if (currentPushNotification && typeof currentPushNotification.configure === 'function') {
+            PushNotification = currentPushNotification;
+          } else {
+            currentPushNotification = null;
+          }
+        } catch (error) {
+          console.warn('Could not reload PushNotification:', error);
+          currentPushNotification = null;
         }
+      }
 
-        console.log('Sending notification with config:', JSON.stringify(notificationConfig, null, 2));
-        
-        PushNotification.localNotification(notificationConfig);
-        console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
+      if (currentPushNotification && currentPushNotification !== null && currentPushNotification !== false && typeof currentPushNotification.localNotification === 'function') {
+        try {
+          const notificationConfig: any = {
+            id: 'sos-' + Date.now(), // Unique ID for notification
+            title: 'SOS Sent Successfully',
+            message: 'Your emergency alert has been sent. Our officials will be there shortly. Help will arrive soon.',
+            playSound: true,
+            soundName: 'default',
+            vibrate: false, // Don't vibrate in notification since we already vibrated on 3rd shake
+            vibration: 0,
+            tag: 'sos-alert',
+            userInfo: {
+              type: 'sos',
+              timestamp: Date.now(),
+            },
+          };
+
+          // Add Android-specific properties
+          if (Platform.OS === 'android') {
+            notificationConfig.channelId = 'sos-channel';
+            notificationConfig.importance = 'high';
+            notificationConfig.priority = 'high';
+            notificationConfig.autoCancel = false; // Don't auto-cancel important SOS notification
+            notificationConfig.ongoing = false;
+          }
+
+          console.log('Sending notification with config:', JSON.stringify(notificationConfig, null, 2));
+          
+          // Final check before calling - verify native module exists
+          if (currentPushNotification && typeof currentPushNotification.localNotification === 'function') {
+            // Check if the native module exists before calling
+            try {
+              const RNPushNotification = NativeModules.RNPushNotification;
+              if (!RNPushNotification || RNPushNotification === null) {
+                console.warn('RNPushNotification native module is null - notification cannot be sent');
+                return;
+              }
+            } catch (nativeCheckError) {
+              console.warn('Could not verify native module:', nativeCheckError);
+              // Continue anyway - the try-catch below will handle it
+            }
+            
+            try {
+              currentPushNotification.localNotification(notificationConfig);
+              console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
+            } catch (notifError) {
+              // Silently handle the error - don't crash the app
+              console.warn('Could not send notification (non-critical):', notifError);
+            }
+          } else {
+            console.warn('PushNotification.localNotification became unavailable');
+          }
+        } catch (notifError) {
+          // Silently handle the error - don't crash the app
+          console.warn('Could not send notification (non-critical):', notifError);
+        }
       } else {
-        // Fallback to Alert
-        const {Alert} = require('react-native');
-        Alert.alert('SOS Sent Successfully', 'Your emergency alert has been sent. Our officials will be there shortly.');
+        console.warn('PushNotification not available, skipping notification');
       }
     } catch (error) {
       console.error('Error showing SOS push notification:', error);

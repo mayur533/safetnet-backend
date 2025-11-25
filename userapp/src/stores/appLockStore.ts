@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {getAsyncStorage} from '../utils/asyncStorageInit';
 import {create} from 'zustand';
 
 export type AppLockType = 'alphanumeric' | 'pin';
@@ -28,7 +28,8 @@ interface StoredAppLock {
 
 const readStoredSettings = async (): Promise<StoredAppLock | undefined> => {
   try {
-    const value = await AsyncStorage.getItem(STORAGE_KEY);
+    const storage = await getAsyncStorage();
+    const value = await storage.getItem(STORAGE_KEY);
     if (!value) {
       return undefined;
     }
@@ -50,7 +51,8 @@ const readStoredSettings = async (): Promise<StoredAppLock | undefined> => {
 
 const persistSettings = async (settings: StoredAppLock) => {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    const storage = await getAsyncStorage();
+    await storage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (error) {
     console.error('Failed to persist app lock settings:', error);
   }
