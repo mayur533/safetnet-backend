@@ -1,4 +1,5 @@
 import {Alert, Linking, Platform, PermissionsAndroid, NativeModules} from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
 import {useContactStore} from '../stores/contactStore';
 import {requestDirectCall} from './callService';
 import {checkNetworkStatus} from './networkService';
@@ -6,6 +7,7 @@ import {sendSmsDirect} from './smsService';
 import {useSettingsStore, DEFAULT_SOS_TEMPLATE} from '../stores/settingsStore';
 import {useOfflineSosStore} from '../stores/offlineSosStore';
 import {useAuthStore} from '../stores/authStore';
+import {apiService} from './apiService';
 
 // Import push notifications - use dynamic import to avoid bundling issues
 let PushNotification: any = null;
@@ -21,7 +23,7 @@ const loadPushNotification = (forceReload: boolean = false) => {
     // Only cache if it's a valid module
     if (loadedModule && typeof loadedModule.configure === 'function') {
       PushNotification = loadedModule;
-      return PushNotification;
+    return PushNotification;
     } else {
       PushNotification = false;
       return null;
@@ -77,23 +79,23 @@ export const configureNotifications = () => {
     if (Platform.OS === 'android' && notificationModule && notificationModule !== null && notificationModule !== false) {
       if (!channelCreated && typeof notificationModule.createChannel === 'function') {
         try {
-          notificationModule.createChannel(
-            {
-              channelId: 'sos-channel',
-              channelName: 'SOS Alerts',
-              channelDescription: 'Notifications for emergency SOS alerts',
-              playSound: true,
-              soundName: 'default',
-              importance: 4, // High importance
-              vibrate: true,
-            },
-            (created: boolean) => {
+        notificationModule.createChannel(
+          {
+            channelId: 'sos-channel',
+            channelName: 'SOS Alerts',
+            channelDescription: 'Notifications for emergency SOS alerts',
+            playSound: true,
+            soundName: 'default',
+            importance: 4, // High importance
+            vibrate: true,
+          },
+          (created: boolean) => {
               if (created !== undefined) {
-                console.log(`SOS notification channel ${created ? 'created' : 'already exists'}`);
+            console.log(`SOS notification channel ${created ? 'created' : 'already exists'}`);
               }
-              channelCreated = true;
-            },
-          );
+            channelCreated = true;
+          },
+        );
         } catch (error) {
           console.warn('Error creating notification channel:', error);
           // Mark as created to prevent retries
@@ -194,32 +196,32 @@ const sendSOSNotification = async () => {
     }
 
     // Prepare notification config
-    const notificationConfig: any = {
-      id: 'sos-' + Date.now(),
-      title: 'SOS Sent',
-      message: 'SOS is sent, we will reach you immediately as soon as possible',
-      playSound: true,
-      soundName: 'default',
-      vibrate: true,
-      vibration: 1000,
-      tag: 'sos-alert',
-      userInfo: {
-        type: 'sos',
-        timestamp: Date.now(),
-      },
-    };
+      const notificationConfig: any = {
+        id: 'sos-' + Date.now(),
+        title: 'SOS Sent',
+        message: 'SOS is sent, we will reach you immediately as soon as possible',
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 1000,
+        tag: 'sos-alert',
+        userInfo: {
+          type: 'sos',
+          timestamp: Date.now(),
+        },
+      };
 
-    // Add Android-specific properties
-    if (Platform.OS === 'android') {
-      notificationConfig.channelId = 'sos-channel';
-      notificationConfig.importance = 'high';
-      notificationConfig.priority = 'high';
-      notificationConfig.autoCancel = false;
-      notificationConfig.ongoing = false;
-    }
+      // Add Android-specific properties
+      if (Platform.OS === 'android') {
+        notificationConfig.channelId = 'sos-channel';
+        notificationConfig.importance = 'high';
+        notificationConfig.priority = 'high';
+        notificationConfig.autoCancel = false;
+        notificationConfig.ongoing = false;
+      }
 
-    console.log('Sending SOS notification with config:', JSON.stringify(notificationConfig, null, 2));
-    
+      console.log('Sending SOS notification with config:', JSON.stringify(notificationConfig, null, 2));
+      
     // Final validation before calling - check native module directly
     if (!notificationModule || 
         notificationModule === null || 
@@ -273,10 +275,35 @@ type DispatchResult = {
   callInitiated: boolean;
 };
 
+/**
+ * Get current user location
+ */
+const getCurrentLocation = (): Promise<{latitude: number; longitude: number} | null> => {
+  return new Promise((resolve) => {
+    Geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      (error) => {
+        console.warn('Error getting location for SOS:', error);
+        resolve(null);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+  });
+};
+
 export const dispatchSOSAlert = async (message: string): Promise<DispatchResult> => {
-  // TESTING MODE: Don't make actual API calls
-  console.log('=== SOS Alert Dispatch (Testing Mode) ===');
+  console.log('=== SOS Alert Dispatch ===');
   
+  const user = useAuthStore.getState().user;
   const {contacts, primaryContactId} = useContactStore.getState();
   const sanitizedContacts = contacts
     .filter(contact => contact.phone)
@@ -292,6 +319,44 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   let smsInitiated = false;
   let callInitiated = false;
 
+  // Get current location
+  let location = null;
+  try {
+    location = await getCurrentLocation();
+    if (location) {
+      console.log('Location obtained:', location);
+    } else {
+      console.warn('Could not get location for SOS');
+    }
+  } catch (error) {
+    console.error('Error getting location:', error);
+  }
+
+  // Send SOS to backend API
+  if (user?.id) {
+    try {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      const sosData: {longitude?: number; latitude?: number; notes?: string} = {};
+      
+      if (location) {
+        sosData.longitude = location.longitude;
+        sosData.latitude = location.latitude;
+      }
+      
+      const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
+      sosData.notes = message || template;
+      
+      console.log('Sending SOS to backend:', sosData);
+      await apiService.triggerSOS(userId, sosData);
+      console.log('✅ SOS sent to backend successfully');
+    } catch (error: any) {
+      console.error('Error sending SOS to backend:', error);
+      // Continue with SMS/call even if backend fails
+    }
+  } else {
+    console.warn('User not authenticated, skipping backend SOS');
+  }
+
   // If no family contacts, send to police and security officer
   if (!hasFamilyContacts) {
     console.log('No family contacts found. Sending SOS to Police and Security Officer.');
@@ -301,8 +366,8 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       {name: 'Security Officer', phone: '9561606067'},
     ];
     
-    const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-    const smsMessage = message || template;
+  const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
+  const smsMessage = message || template;
     const emergencyPhones = emergencyContacts.map(ec => ec.phone);
     const smsUrl = buildSmsUrl(emergencyPhones, smsMessage);
     
@@ -311,10 +376,10 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       console.log('Would send SMS to:', emergencyPhones);
       console.log('Message:', smsMessage);
       // await Linking.openURL(smsUrl);
-      smsInitiated = true;
-    } catch (error) {
+        smsInitiated = true;
+      } catch (error) {
       console.error('Error preparing emergency SMS:', error);
-    }
+      }
     
     // Try to call police (primary emergency contact)
     try {

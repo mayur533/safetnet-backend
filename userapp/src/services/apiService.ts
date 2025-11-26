@@ -18,8 +18,8 @@ getAsyncStorage().then((storage) => {
 });
 
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.0.125:8000/api/users' // Use device IP for physical device
-  : 'http://localhost:8000/api/users';
+  ? 'http://192.168.0.125:8000/api/user' // Use device IP for physical device
+  : 'http://localhost:8000/api/user';
 
 interface LoginResponse {
   message: string;
@@ -442,6 +442,24 @@ class ApiService {
   }
 
   /**
+   * Get community alerts for user based on geofence (with caching)
+   */
+  async getCommunityAlerts(userId: number): Promise<any> {
+    const cacheKey = `community_alerts_${userId}`;
+    try {
+      return await cacheService.getOrFetch(
+        cacheKey,
+        () => this.request(`/${userId}/community_alerts/`),
+        { compareByHash: true }
+      );
+    } catch (error: any) {
+      console.error('Error fetching community alerts:', error);
+      // Return empty array on error instead of throwing
+      return [];
+    }
+  }
+
+  /**
    * Send community alert (invalidates relevant caches)
    */
   async sendCommunityAlert(userId: number, data: {
@@ -453,7 +471,8 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    // Invalidate alerts/community cache if needed
+    // Invalidate alerts cache after sending
+    await cacheService.invalidate(`community_alerts_${userId}`);
     return result;
   }
 
@@ -527,12 +546,29 @@ class ApiService {
       params.append('search', search.trim());
     }
     
-    const cacheKey = `available_users_${geofenceOnly}_${includeOtherGeofences}_${search}`;
-    return cacheService.getOrFetch(
+    // Create cache key with sanitized search term
+    const searchTerm = (search || '').trim().toLowerCase().substring(0, 20); // Limit search term length
+    const cacheKey = `available_users_${geofenceOnly}_${includeOtherGeofences}_${searchTerm}`;
+    
+    try {
+      return await cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/available_users/?${params.toString()}`),
       { compareByHash: true, ttlMinutes: 2 } // Cache for 2 minutes (shorter due to search)
     );
+    } catch (error: any) {
+      console.error('Error fetching available users:', error);
+      // If it's a network error, return empty array instead of throwing
+      if (error?.message && (
+        error.message.includes('Network request failed') ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('ECONNREFUSED')
+      )) {
+        console.warn('Network error fetching available users, returning empty array');
+        return [];
+      }
+      throw error;
+    }
   }
 
   /**

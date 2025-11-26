@@ -417,14 +417,14 @@ class RecordingView(APIView):
         
         # Update SOS event with recording URL
         if sos_event_id:
+            # Note: Recording URLs are not stored in SOSEvent model
+            # In production, store these in a separate Recording model
             try:
                 from .models import SOSEvent
                 sos_event = SOSEvent.objects.get(id=sos_event_id, user=user)
-                if recording_type == 'audio':
-                    sos_event.audio_recording_url = recording_url
-                elif recording_type == 'video':
-                    sos_event.video_recording_url = recording_url
-                sos_event.save()
+                # Store recording URL in notes or separate table if needed
+                # For now, we just return the URL without storing it
+                pass
             except SOSEvent.DoesNotExist:
                 pass
         
@@ -452,31 +452,17 @@ class RecordingView(APIView):
             }, status=status.HTTP_403_FORBIDDEN)
         
         from .models import SOSEvent
-        # Get all SOS events for user, filter in Python to check for recordings
+        # Get all SOS events for user
         sos_events = SOSEvent.objects.filter(user=user)
         
+        # Note: Recording URLs are not stored in SOSEvent model
+        # Return empty list as recordings would be stored in a separate model
         recordings = []
-        for event in sos_events:
-            if event.audio_recording_url:
-                recordings.append({
-                    'id': event.id,
-                    'type': 'audio',
-                    'url': event.audio_recording_url,
-                    'sos_event_id': event.id,
-                    'created_at': event.triggered_at.isoformat()
-                })
-            if event.video_recording_url:
-                recordings.append({
-                    'id': event.id,
-                    'type': 'video',
-                    'url': event.video_recording_url,
-                    'sos_event_id': event.id,
-                    'created_at': event.triggered_at.isoformat()
-                })
         
         return Response({
             'recordings': recordings,
-            'total': len(recordings)
+            'total': len(recordings),
+            'message': 'Recording feature requires separate Recording model'
         })
 
 
@@ -514,8 +500,10 @@ class CloudBackupView(APIView):
             try:
                 from .models import SOSEvent
                 sos_event = SOSEvent.objects.get(id=sos_event_id, user=user)
-                sos_event.cloud_backup_url = backup_url
-                sos_event.save()
+                # Note: Cloud backup URL is not stored in SOSEvent model
+                # Store backup URL in notes or separate Backup model if needed
+                # For now, we just return the URL without storing it
+                pass
             except SOSEvent.DoesNotExist:
                 return Response(
                     {'error': 'SOS event not found'},
@@ -546,19 +534,9 @@ class CloudBackupView(APIView):
             }, status=status.HTTP_403_FORBIDDEN)
         
         from .models import SOSEvent
-        sos_events = SOSEvent.objects.filter(
-            user=user
-        ).exclude(cloud_backup_url__isnull=True).exclude(cloud_backup_url='')
-        
-        backups = [
-            {
-                'id': event.id,
-                'sos_event_id': event.id,
-                'url': event.cloud_backup_url,
-                'created_at': event.triggered_at.isoformat()
-            }
-            for event in sos_events
-        ]
+        # Note: Cloud backup URLs are not stored in SOSEvent model
+        # Return empty list as backups would be stored in a separate model
+        backups = []
         
         return Response({
             'backups': backups,

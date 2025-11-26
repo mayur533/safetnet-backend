@@ -36,9 +36,13 @@ urlpatterns = [
     
     # Community Alerts
     path('<int:user_id>/community_alert/', views.CommunityAlertView.as_view(), name='community-alert'),
+    path('<int:user_id>/community_alerts/', views.CommunityAlertListView.as_view(), name='community-alerts-list'),
     
     # Nearby Help (for map view)
     path('nearby_help/', views_new_apis.nearby_help_map, name='nearby-help'),
+    
+    # Safety Tips
+    path('safety_tips/', views_new_apis.safety_tips_feed, name='safety-tips'),
     
     # Chat Groups
     path('<int:user_id>/chat_groups/', views.ChatGroupListView.as_view(), name='chat-groups-list'),

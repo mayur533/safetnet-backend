@@ -424,8 +424,7 @@ class SOSTriggerView(APIView):
             sos_event = SOSEvent.objects.create(
                 user=user,
                 notes=notes,
-                location=location_data,
-                is_premium_event=is_premium
+                location=location_data
             )
             
             # Send SMS to family contacts (both free and premium)
@@ -447,15 +446,12 @@ class SOSTriggerView(APIView):
             except Exception as e:
                 logger.error(f"SMS service error: {str(e)}")
             
-            # Premium features
+            # Update status based on premium tier
             if is_premium:
                 # Notify 24x7 Emergency Response Center (if implemented)
                 sos_event.status = 'response_center_notified'
-                sos_event.is_premium_event = True
                 # Premium: Priority notification - Premium users get faster dispatch
                 logger.info(f"Premium SOS event - Priority dispatch - Response center notified: {user.email}")
-                # Premium: Audio/Video recording URLs would be set here if available
-                # Premium: Cloud backup URL would be set here if available
             else:
                 sos_event.status = 'sms_sent'
                 # Free users get standard priority
@@ -489,7 +485,11 @@ class SOSEventListView(generics.ListAPIView):
         user = self.request.user
         is_premium = _is_user_premium(user)
         
-        queryset = SOSEvent.objects.filter(user=user)
+        # Only select fields that exist in database to avoid errors
+        queryset = SOSEvent.objects.filter(user=user).only(
+            'id', 'user_id', 'location', 'status', 'triggered_at', 
+            'resolved_at', 'notes'
+        )
         
         # Free users see only last 5 events
         if not is_premium:
@@ -509,11 +509,34 @@ class SOSEventListView(generics.ListAPIView):
         user = request.user
         is_premium = _is_user_premium(user)
         
-        queryset = self.get_queryset()
-        serializer = self.get_serializer(queryset, many=True)
+        # Get queryset and convert to list to avoid lazy evaluation issues
+        queryset = list(self.get_queryset())
+        
+        # Manually serialize to avoid accessing non-existent fields
+        events_data = []
+        for event in queryset:
+            event_data = {
+                'id': event.id,
+                'status': event.status,
+                'triggered_at': event.triggered_at.isoformat() if event.triggered_at else None,
+                'created_at': event.triggered_at.isoformat() if event.triggered_at else None,
+                'resolved_at': event.resolved_at.isoformat() if event.resolved_at else None,
+                'notes': event.notes or '',
+                'location': None
+            }
+            # Handle location
+            if event.location:
+                if isinstance(event.location, dict):
+                    event_data['location'] = event.location
+                elif hasattr(event.location, 'x') and hasattr(event.location, 'y'):
+                    event_data['location'] = {
+                        'longitude': event.location.x,
+                        'latitude': event.location.y
+                    }
+            events_data.append(event_data)
         
         return Response({
-            'events': serializer.data,
+            'events': events_data,
             'is_premium': is_premium,
             'limit': None if is_premium else FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY'],
             'message': None if is_premium else f'Free plan shows last {FREE_TIER_LIMITS["MAX_INCIDENT_HISTORY"]} incidents. Upgrade to Premium for unlimited history.'
@@ -542,7 +565,9 @@ def user_stats(request, user_id):
         'active_community_memberships': CommunityMembership.objects.filter(
             user=user, is_active=True
         ).count(),
-        'total_sos_events': SOSEvent.objects.filter(user=user).count(),
+        'total_sos_events': SOSEvent.objects.filter(user=user).only(
+            'id'
+        ).count(),
         'is_premium': is_premium,
         'plan_type': getattr(user, 'plantype', 'free'),
         'plan_expiry': getattr(user, 'planexpiry', None),
@@ -781,8 +806,9 @@ class GeofenceListView(APIView):
 # Community Alert endpoints
 class CommunityAlertView(APIView):
     """
-    Send community alert.
-    POST /users/<user_id>/community_alert/
+    Send and get community alerts.
+    POST /users/<user_id>/community_alert/ - Send a community alert
+    GET /users/<user_id>/community_alerts/ - Get alerts for user based on geofence
     """
     permission_classes = [permissions.IsAuthenticated]
     
@@ -826,6 +852,148 @@ class CommunityAlertView(APIView):
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CommunityAlertListView(APIView):
+    """
+    Get community alerts for user based on their geofence location.
+    GET /users/<user_id>/community_alerts/
+    Returns alerts that:
+    1. Are within the user's geofence
+    2. Are created for all geofences (radius covers user's location)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def _haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Calculate distance between two points in meters using Haversine formula."""
+        import math
+        R = 6371000  # Earth radius in meters
+        
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        
+        a = math.sin(delta_phi / 2) ** 2 + \
+            math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        return R * c
+    
+    def get(self, request, user_id):
+        """Get community alerts for the user based on geofence."""
+        try:
+            user = request.user
+            if user.id != int(user_id):
+                return Response(
+                    {'error': 'You can only view alerts for your own account.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get user's current location
+            user_location = None
+            try:
+                if hasattr(user, 'location') and user.location:
+                    user_location = user.location
+            except Exception as e:
+                logger.warning(f"Could not get user location: {e}")
+            
+            # Get user's geofences
+            user_geofences = []
+            try:
+                user_geofences = Geofence.objects.filter(user=user, is_active=True).only('center_location', 'radius_meters')
+            except Exception as e:
+                logger.warning(f"Could not fetch user geofences: {e}")
+                user_geofences = []
+            
+            # Get all community alerts
+            try:
+                all_alerts = CommunityAlert.objects.select_related('user').all().order_by('-sent_at')
+            except Exception as e:
+                logger.error(f"Error fetching community alerts: {e}")
+                return Response([], status=status.HTTP_200_OK)
+            
+            # Filter alerts based on geofence
+            relevant_alerts = []
+            
+            # Check if user has location or geofences
+            has_location_or_geofence = False
+            if user_location:
+                has_location_or_geofence = True
+            elif len(user_geofences) > 0:
+                has_location_or_geofence = True
+            
+            # If user has no location and no geofences, show ALL alerts
+            # (Without location data, we can't filter properly, so show everything)
+            if not has_location_or_geofence:
+                logger.info(f"User {user.id} has no location or geofences, returning all {all_alerts.count()} alerts")
+                serializer = CommunityAlertSerializer(all_alerts, many=True)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            
+            for alert in all_alerts:
+                try:
+                    alert_location = alert.location
+                    if not alert_location:
+                        continue
+                    
+                    # Extract coordinates from alert location
+                    alert_lon = alert_location.get('longitude') or alert_location.get('lng') or (alert_location[0] if isinstance(alert_location, (list, tuple)) else None)
+                    alert_lat = alert_location.get('latitude') or alert_location.get('lat') or (alert_location[1] if isinstance(alert_location, (list, tuple)) else None)
+                    
+                    if alert_lat is None or alert_lon is None:
+                        continue
+                    
+                    # Check if alert is within user's geofences
+                    is_within_geofence = False
+                    
+                    # Check against user's geofences
+                    for geofence in user_geofences:
+                        try:
+                            center = geofence.center_location
+                            if center:
+                                center_lat = center.get('latitude') or center.get('lat') or (center[1] if isinstance(center, (list, tuple)) else None)
+                                center_lon = center.get('longitude') or center.get('lng') or (center[0] if isinstance(center, (list, tuple)) else None)
+                                radius = geofence.radius_meters or 500
+                                
+                                if center_lat and center_lon:
+                                    distance = self._haversine_distance(center_lat, center_lon, alert_lat, alert_lon)
+                                    if distance <= radius:
+                                        is_within_geofence = True
+                                        break
+                        except Exception as e:
+                            logger.warning(f"Error processing geofence: {e}")
+                            continue
+                    
+                    # Also check if user's location is within alert's radius
+                    if user_location and not is_within_geofence:
+                        try:
+                            user_lat = user_location.get('latitude') or user_location.get('lat') or (user_location[1] if isinstance(user_location, (list, tuple)) else None)
+                            user_lon = user_location.get('longitude') or user_location.get('lng') or (user_location[0] if isinstance(user_location, (list, tuple)) else None)
+                            
+                            if user_lat and user_lon:
+                                distance = self._haversine_distance(user_lat, user_lon, alert_lat, alert_lon)
+                                alert_radius = alert.radius_meters or 500
+                                
+                                # If alert has very large radius (>10000m), consider it for all geofences
+                                if alert_radius > 10000 or distance <= alert_radius:
+                                    is_within_geofence = True
+                        except Exception as e:
+                            logger.warning(f"Error checking user location against alert: {e}")
+                            continue
+                    
+                    if is_within_geofence:
+                        relevant_alerts.append(alert)
+                except Exception as e:
+                    logger.warning(f"Error processing alert {alert.id}: {e}")
+                    continue
+            
+            # Serialize alerts
+            serializer = CommunityAlertSerializer(relevant_alerts, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error in CommunityAlertListView.get: {e}", exc_info=True)
+            # Return empty list on error instead of crashing
+            return Response([], status=status.HTTP_200_OK)
 
 
 class ChatGroupListView(APIView):
@@ -1102,13 +1270,58 @@ class ChatMessageListView(APIView):
                 }
                 
                 if 'image' in request.FILES:
-                    message_data['image'] = request.FILES['image']
+                    image = request.FILES['image']
+                    message_data['image'] = image
+                    # For images, save the original file name
+                    # Priority: request.data (FormData) > file object name > default
+                    image_name = None
+                    if 'file_name' in request.data:
+                        image_name = request.data.get('file_name')
+                    elif hasattr(image, 'name') and image.name:
+                        image_name = image.name
+                    
+                    if image_name:
+                        message_data['file_name'] = image_name
                 
                 if 'file' in request.FILES:
                     file = request.FILES['file']
                     message_data['file'] = file
-                    message_data['file_name'] = serializer.validated_data.get('file_name') or file.name
-                    message_data['file_size'] = serializer.validated_data.get('file_size') or file.size
+                    
+                    # Extract file name from FormData (priority: request.data > file.name > serializer)
+                    # request.data is used for FormData fields
+                    file_name = None
+                    if 'file_name' in request.data:
+                        file_name = str(request.data.get('file_name')).strip()
+                    elif hasattr(file, 'name') and file.name:
+                        file_name = file.name
+                    elif serializer.validated_data.get('file_name'):
+                        file_name = serializer.validated_data.get('file_name')
+                    
+                    # Ensure we have a file name (extract from file object if needed)
+                    if not file_name and hasattr(file, 'name'):
+                        file_name = file.name
+                    if not file_name:
+                        file_name = 'file'  # Default fallback
+                    
+                    message_data['file_name'] = file_name
+                    
+                    # Extract file size
+                    file_size = None
+                    if 'file_size' in request.data:
+                        try:
+                            file_size = int(request.data.get('file_size'))
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Fallback to file size from uploaded file object
+                    if not file_size:
+                        if hasattr(file, 'size') and file.size:
+                            file_size = file.size
+                        elif serializer.validated_data.get('file_size'):
+                            file_size = serializer.validated_data.get('file_size')
+                    
+                    if file_size:
+                        message_data['file_size'] = file_size
                 
                 message = ChatMessage.objects.create(**message_data)
                 # Update group's updated_at timestamp
@@ -1253,13 +1466,15 @@ class AvailableUsersListView(APIView):
         if geofence_only:
             try:
                 from .models import Geofence
-                current_user_geofences = Geofence.objects.filter(
+                current_user_geofences = list(Geofence.objects.filter(
                     user=request.user,
                     is_active=True
-                ).values('center_location', 'radius_meters')
+                ).values('center_location', 'radius_meters'))
             except Exception as e:
-                logger.error(f"Error fetching geofences: {e}")
+                logger.warning(f"Geofence table not available or error fetching geofences: {e}")
+                # If geofence filtering is requested but table doesn't exist, return all users
                 current_user_geofences = []
+                geofence_only = False  # Disable geofence filtering
         
         # Get current user's location
         current_user_location = None
@@ -1290,12 +1505,24 @@ class AvailableUsersListView(APIView):
                     if not include_other_geofences:
                         continue
             
+            # Safely get user name
+            user_name = user.email  # Default to email
+            try:
+                if hasattr(user, 'first_name') and hasattr(user, 'last_name'):
+                    full_name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
+                    if full_name:
+                        user_name = full_name
+                elif hasattr(user, 'name') and getattr(user, 'name', None):
+                    user_name = getattr(user, 'name')
+            except Exception:
+                pass  # Use email as fallback
+            
             user_list.append({
                 'id': user.id,
-                'name': user.name if hasattr(user, 'name') and user.name else (user.first_name + ' ' + user.last_name).strip() or user.email,
+                'name': user_name,
                 'email': user.email,
-                'first_name': getattr(user, 'first_name', ''),
-                'last_name': getattr(user, 'last_name', ''),
+                'first_name': getattr(user, 'first_name', '') or '',
+                'last_name': getattr(user, 'last_name', '') or '',
             })
         
         return Response(user_list, status=status.HTTP_200_OK)

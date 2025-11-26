@@ -139,6 +139,11 @@ const ChatScreen = () => {
   // Track failed image loads
   const [failedImages, setFailedImages] = useState<Set<string | number>>(new Set());
   
+  // Track loading states for images and videos
+  const [loadingImages, setLoadingImages] = useState<Set<string | number>>(new Set());
+  const [loadingVideos, setLoadingVideos] = useState<Set<string | number>>(new Set());
+  const [loadingFiles, setLoadingFiles] = useState<Set<string | number>>(new Set());
+  
   // Track image dimensions for adaptive sizing
   const [imageDimensions, setImageDimensions] = useState<{[key: string]: {width: number; height: number}}>({});
   
@@ -259,7 +264,20 @@ const ChatScreen = () => {
     try {
       const groupIdNum = parseInt(groupId, 10);
       const userIdNum = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
-      const messagesData = await apiService.getChatMessages(userIdNum, groupIdNum);
+      let messagesData;
+      try {
+        messagesData = await apiService.getChatMessages(userIdNum, groupIdNum);
+      } catch (error: any) {
+        // If group not found, navigate back
+        if (error?.message?.includes('Group not found') || 
+            error?.message?.includes('group not found') ||
+            error?.message?.includes('404')) {
+          showToast('Group not found. It may have been deleted.', ToastAndroid.LONG);
+          navigation.goBack();
+          return;
+        }
+        throw error;
+      }
       
       // Load base64 images from storage
       let base64Map: {[key: string]: string} = {};
@@ -550,6 +568,7 @@ const ChatScreen = () => {
     const messageId = message.id;
     
     setDownloadingFiles((prev) => new Set(prev).add(messageId));
+    setLoadingFiles((prev) => new Set(prev).add(messageId));
     
     try {
       const fileName = message.file_name || message.image_url?.split('/').pop() || 'file';
@@ -576,6 +595,11 @@ const ChatScreen = () => {
         newSet.delete(messageId);
         return newSet;
       });
+      setLoadingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
     }
   };
 
@@ -584,30 +608,58 @@ const ChatScreen = () => {
     let mimeType: string | null = null;
     
     if (message.isOwn) {
-      // For sender, use original URI (from where it was sent)
-      fileUri = message.file_url || message.image_url || null;
-      // If it's a local file path (file://), use it directly
-      if (fileUri && fileUri.startsWith('file://')) {
-        fileUri = fileUri;
-      } else if (fileUri && !fileUri.startsWith('http')) {
-        // Local path without file:// prefix
-        fileUri = `file://${fileUri}`;
+      // For sender, check if we have the original local file path stored
+      // First check AsyncStorage for the original file path
+      try {
+        const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
+        if (stored?.localPath) {
+          // Check if the original file still exists
+          const exists = await RNFS.exists(stored.localPath);
+          if (exists) {
+            fileUri = stored.localPath.startsWith('file://') 
+              ? stored.localPath 
+              : `file://${stored.localPath}`;
+          } else {
+            // Original file not found, use server URL
+            fileUri = message.file_url || message.image_url || null;
+          }
+        } else {
+          // No stored path, try to use server URL or check if it's a local path
+          fileUri = message.file_url || message.image_url || null;
+          if (fileUri && !fileUri.startsWith('http') && !fileUri.startsWith('file://')) {
+            // Might be a local path, check if it exists
+            const exists = await RNFS.exists(fileUri);
+            if (exists) {
+              fileUri = `file://${fileUri}`;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error getting stored file for sender:', error);
+        fileUri = message.file_url || message.image_url || null;
       }
     } else {
       // For receiver, check if downloaded
       if (message.localFilePath) {
-        fileUri = message.localFilePath.startsWith('file://') 
-          ? message.localFilePath 
-          : `file://${message.localFilePath}`;
-      } else if (message.file_url || message.image_url) {
-        // Need to download first
-        await handleDownloadFile(message);
-        const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
-        if (stored?.localPath) {
-          fileUri = stored.localPath.startsWith('file://')
-            ? stored.localPath
-            : `file://${stored.localPath}`;
+        const exists = await RNFS.exists(message.localFilePath);
+        if (exists) {
+          fileUri = message.localFilePath.startsWith('file://') 
+            ? message.localFilePath 
+            : `file://${message.localFilePath}`;
+        } else {
+          // File was deleted, need to re-download
+          await handleDownloadFile(message);
+          const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
+          if (stored?.localPath) {
+            fileUri = stored.localPath.startsWith('file://')
+              ? stored.localPath
+              : `file://${stored.localPath}`;
+          }
         }
+      } else if (message.file_url || message.image_url) {
+        // Not downloaded yet - show download option (don't auto-download on open)
+        showToast('Please download the file first', ToastAndroid.SHORT);
+        return;
       }
     }
     
@@ -767,17 +819,58 @@ const ChatScreen = () => {
             // Will be stored after message is created
           }
         } else {
+          // Ensure we have a valid file name
+          const fileName = file.fileName || file.name || 'file';
           formData.append('file', {
             uri: file.uri,
             type: file.mimeType || 'application/octet-stream',
-            name: file.fileName || 'file',
+            name: fileName,  // Use the same file name for the file field
           } as any);
-          formData.append('file_name', file.fileName || 'file');
-          formData.append('file_size', file.fileSize.toString());
-          formData.append('text', previewComment.trim());
+          // Explicitly send file_name separately in FormData
+          formData.append('file_name', fileName);
+          if (file.fileSize) {
+            formData.append('file_size', file.fileSize.toString());
+          }
+          if (previewComment.trim()) {
+            formData.append('text', previewComment.trim());
+          }
         }
         
         const newMessage = await apiService.sendChatMessageWithFile(userIdNum, groupIdNum, formData);
+        
+        // Store original file path for sender (so they can open from local storage)
+        if (newMessage.id && file.uri) {
+          try {
+            const fileUrl = newMessage.image_url || newMessage.file_url || '';
+            if (fileUrl) {
+              // Store the original local file path
+              const storedFile = {
+                messageId: newMessage.id.toString(),
+                fileUrl: fileUrl,
+                localPath: file.uri.startsWith('file://') ? file.uri : `file://${file.uri}`,
+                fileName: file.fileName || 'file',
+                fileSize: file.fileSize,
+                downloadedAt: new Date().toISOString(),
+              };
+              
+              const stored = await AsyncStorage.getItem('chat_file_storage');
+              const files = stored ? JSON.parse(stored) : [];
+              const existingIndex = files.findIndex(
+                (f: any) => f.messageId === newMessage.id.toString() && f.fileUrl === fileUrl
+              );
+              
+              if (existingIndex >= 0) {
+                files[existingIndex] = storedFile;
+              } else {
+                files.push(storedFile);
+              }
+              
+              await AsyncStorage.setItem('chat_file_storage', JSON.stringify(files));
+            }
+          } catch (error) {
+            console.error('Error storing sender file path:', error);
+          }
+        }
         
         // Store base64 image if available
         if (file.type === 'image' && file.base64 && newMessage.id) {
@@ -1120,33 +1213,99 @@ const ChatScreen = () => {
                     </Text>
                   </View>
                 ) : (
-                  <Image
-                    source={{uri: fileUri || item.base64_image || item.image_url || item.file_url || ''}}
-                    style={[
-                      styles.messageImagePreview,
-                      imageDimensions[item.id.toString()] && {
-                        width: Math.min(300, Math.max(150, Math.min(imageDimensions[item.id.toString()].width, imageDimensions[item.id.toString()].height))) || 200,
-                        aspectRatio: 1, // Keep square aspect ratio
-                      },
-                    ]}
-                    resizeMode="cover"
-                    onLoad={(e) => {
-                      // Store actual image dimensions for adaptive sizing
-                      const {width, height} = e.nativeEvent.source;
-                      if (width && height) {
-                        setImageDimensions((prev) => ({
-                          ...prev,
-                          [item.id.toString()]: {width, height},
-                        }));
-                      }
-                    }}
-                    onError={() => {
-                      // Only track as failed if base64 is not available
-                      if (!item.base64_image) {
-                        setFailedImages((prev) => new Set(prev).add(item.id));
-                      }
-                    }}
-                  />
+                  <View style={styles.imageWrapper}>
+                    {loadingImages.has(item.id) && (
+                      <View style={[styles.imageLoadingOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.3)'}]}>
+                        <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                        <Text style={[styles.imageLoadingText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.text}]}>
+                          Loading...
+                        </Text>
+                      </View>
+                    )}
+                    <Image
+                      source={{uri: fileUri || item.base64_image || item.image_url || item.file_url || ''}}
+                      style={[
+                        styles.messageImagePreview,
+                        imageDimensions[item.id.toString()] && (() => {
+                          const dims = imageDimensions[item.id.toString()];
+                          const maxSize = 250; // Max width/height
+                          const minSize = 180; // Min size (slightly bigger than square)
+                          const baseScale = 0.5; // Scale factor to reduce size
+                          
+                          // Calculate aspect ratio
+                          const aspectRatio = dims.width / dims.height;
+                          
+                          let width, height;
+                          
+                          if (aspectRatio > 1) {
+                            // Landscape: width is larger
+                            width = Math.min(maxSize, Math.max(minSize, dims.width * baseScale));
+                            height = width / aspectRatio;
+                            // Ensure height doesn't exceed max
+                            if (height > maxSize) {
+                              height = maxSize;
+                              width = height * aspectRatio;
+                            }
+                          } else {
+                            // Portrait or square: height is larger or equal
+                            height = Math.min(maxSize, Math.max(minSize, dims.height * baseScale));
+                            width = height * aspectRatio;
+                            // Ensure width doesn't exceed max
+                            if (width > maxSize) {
+                              width = maxSize;
+                              height = width / aspectRatio;
+                            }
+                          }
+                          
+                          return {
+                            width: Math.round(width),
+                            height: Math.round(height),
+                          };
+                        })(),
+                        loadingImages.has(item.id) && styles.imageLoading,
+                      ]}
+                      resizeMode="contain"
+                      onLoadStart={() => {
+                        setLoadingImages((prev) => new Set(prev).add(item.id));
+                        // Set timeout to show loading indicator if image takes too long
+                        setTimeout(() => {
+                          setLoadingImages((prev) => {
+                            const newSet = new Set(prev);
+                            if (newSet.has(item.id)) {
+                              // Still loading after 1 second, keep showing loader
+                            }
+                            return newSet;
+                          });
+                        }, 1000);
+                      }}
+                      onLoad={(e) => {
+                        setLoadingImages((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(item.id);
+                          return newSet;
+                        });
+                        // Store actual image dimensions for adaptive sizing
+                        const {width, height} = e.nativeEvent.source;
+                        if (width && height) {
+                          setImageDimensions((prev) => ({
+                            ...prev,
+                            [item.id.toString()]: {width, height},
+                          }));
+                        }
+                      }}
+                      onError={() => {
+                        setLoadingImages((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(item.id);
+                          return newSet;
+                        });
+                        // Only track as failed if base64 is not available
+                        if (!item.base64_image) {
+                          setFailedImages((prev) => new Set(prev).add(item.id));
+                        }
+                      }}
+                    />
+                  </View>
                 )}
                 {isVideo && !failedImages.has(item.id) && (
                   <View style={styles.videoPlayOverlay}>
@@ -1176,10 +1335,35 @@ const ChatScreen = () => {
                 }}
                 activeOpacity={0.9}
                 style={styles.videoPreviewContainer}>
+                {loadingVideos.has(item.id) && (
+                  <View style={[styles.videoLoadingOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.3)'}]}>
+                    <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                    <Text style={[styles.videoLoadingText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.text}]}>
+                      Loading...
+                    </Text>
+                  </View>
+                )}
                 <Image
                   source={{uri: fileUri}}
-                  style={styles.messageImage}
+                  style={[styles.messageImage, loadingVideos.has(item.id) && styles.videoLoading]}
                   resizeMode="cover"
+                  onLoadStart={() => {
+                    setLoadingVideos((prev) => new Set(prev).add(item.id));
+                  }}
+                  onLoad={() => {
+                    setLoadingVideos((prev) => {
+                      const newSet = new Set(prev);
+                      newSet.delete(item.id);
+                      return newSet;
+                    });
+                  }}
+                  onError={() => {
+                    setLoadingVideos((prev) => {
+                      const newSet = new Set(prev);
+                      newSet.delete(item.id);
+                      return newSet;
+                    });
+                  }}
                 />
                 <View style={styles.videoPlayOverlay}>
                   <MaterialIcons name="play-circle-filled" size={48} color="#FFFFFF" />
@@ -1189,7 +1373,7 @@ const ChatScreen = () => {
             
             {/* File Attachment */}
             {item.file_url && !isImage && !isVideo && (
-              <View style={{position: 'relative'}}>
+              <View style={styles.fileAttachmentContainer}>
                 <TouchableOpacity
                   style={[
                     styles.messageFile,
@@ -1211,15 +1395,64 @@ const ChatScreen = () => {
                   activeOpacity={0.7}>
                   <MaterialIcons name="insert-drive-file" size={24} color={isOwn ? '#FFFFFF' : colors.primary} />
                   <View style={styles.messageFileInfo}>
-                    <Text
-                      style={[
-                        styles.messageFileName,
-                        {color: isOwn ? '#FFFFFF' : colors.text},
-                      ]}
-                      numberOfLines={2}
-                      ellipsizeMode="tail">
-                      {item.file_name || 'File'}
-                    </Text>
+                    <View style={styles.messageFileRow}>
+                      <Text
+                        style={[
+                          styles.messageFileName,
+                          {color: isOwn ? '#FFFFFF' : colors.text},
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail">
+                        {(() => {
+                          // Try multiple sources for file name
+                          let fileName = item.file_name;
+                          
+                          // If no file_name, try to extract from URL
+                          if (!fileName && item.file_url) {
+                            const urlParts = item.file_url.split('/');
+                            fileName = urlParts[urlParts.length - 1];
+                            // Remove query params if any
+                            if (fileName) {
+                              fileName = fileName.split('?')[0];
+                            }
+                          }
+                          
+                          // If still no name, use default
+                          if (!fileName || fileName === '') {
+                            fileName = 'Document';
+                          }
+                          
+                          // Truncate to 10 chars
+                          if (fileName && fileName.length > 10) {
+                            const nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
+                            const ext = fileName.substring(fileName.lastIndexOf('.'));
+                            if (nameWithoutExt.length > 7 && ext) {
+                              return nameWithoutExt.substring(0, 7) + '...' + ext;
+                            }
+                            return fileName.substring(0, 10) + '...';
+                          }
+                          return fileName;
+                        })()}
+                      </Text>
+                      {(() => {
+                        // Get file extension from multiple sources
+                        let fileName = item.file_name || '';
+                        if (!fileName && item.file_url) {
+                          const urlParts = item.file_url.split('/');
+                          fileName = urlParts[urlParts.length - 1].split('?')[0];
+                        }
+                        const fileExtension = fileName ? fileName.split('.').pop()?.toUpperCase() : '';
+                        return fileExtension && fileExtension.length > 0 && fileExtension.length < 6 ? (
+                          <Text
+                            style={[
+                              styles.messageFileType,
+                              {color: isOwn ? 'rgba(255, 255, 255, 0.8)' : colors.text, opacity: 0.8},
+                            ]}>
+                            {fileExtension}
+                          </Text>
+                        ) : null;
+                      })()}
+                    </View>
                     {item.file_size && (
                       <Text
                         style={[
@@ -1230,7 +1463,9 @@ const ChatScreen = () => {
                       </Text>
                     )}
                   </View>
-                  {needsDownload ? (
+                  {loadingFiles.has(item.id) ? (
+                    <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                  ) : needsDownload ? (
                     <TouchableOpacity
                       onPress={(e) => {
                         e.stopPropagation();
@@ -1248,14 +1483,6 @@ const ChatScreen = () => {
                     <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
                   )}
                 </TouchableOpacity>
-                {/* File name and type at bottom right */}
-                {item.file_name && (
-                  <View style={styles.fileTypeBadge}>
-                    <Text style={styles.fileTypeText}>
-                      {item.file_name.split('.').pop()?.toUpperCase() || 'FILE'}
-                    </Text>
-                  </View>
-                )}
               </View>
             )}
             
@@ -1270,8 +1497,10 @@ const ChatScreen = () => {
                       ? {color: isDarkMode ? '#FCA5A5' : '#991B1B'}
                       : styles.ownMessageText
                     : {color: colors.text},
-                ]}>
-                {item.text}
+                ]}
+                numberOfLines={undefined}
+                ellipsizeMode="tail">
+                {item.text.length > 10 && !item.text.includes(' ') ? item.text.substring(0, 10) + '...' : item.text}
               </Text>
             )}
           </View>
@@ -1444,6 +1673,14 @@ const ChatScreen = () => {
             </View>
             <MaterialIcons name="chevron-right" size={24} color={colors.text} style={{opacity: 0.5}} />
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Loading Overlay */}
+      {loading && messages.length === 0 && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, {color: colors.text}]}>Loading messages...</Text>
         </View>
       )}
 
@@ -1848,9 +2085,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   messageBubble: {
-    maxWidth: '75%',
+    maxWidth: '85%',
     padding: 12,
     borderRadius: 16,
+    minWidth: 0, // Allow shrinking
   },
   messageSender: {
     fontSize: 12,
@@ -1876,18 +2114,22 @@ const styles = StyleSheet.create({
   },
   messageImagePreview: {
     width: 200,
-    aspectRatio: 1,
+    height: 200,
     borderRadius: 8,
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     backgroundColor: 'transparent',
+    maxWidth: 250,
+    maxHeight: 250,
   },
   imageErrorContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     width: 200,
-    aspectRatio: 1,
+    height: 200,
+    maxWidth: 250,
+    maxHeight: 250,
   },
   imageErrorText: {
     marginTop: 8,
@@ -1922,24 +2164,46 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
+  fileAttachmentContainer: {
+    width: '100%',
+    maxWidth: '100%',
+    marginBottom: 8,
+  },
   messageFile: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 8,
     gap: 12,
     maxWidth: '100%',
+    flexShrink: 1,
   },
   messageFileInfo: {
     flex: 1,
     minWidth: 0, // Allow flex to shrink below content size
+    maxWidth: '75%', // Prevent overflow
+  },
+  messageFileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'nowrap',
+    width: '100%',
   },
   messageFileName: {
     fontSize: 14,
     fontWeight: '500',
-    marginBottom: 4,
     flexShrink: 1,
+    flex: 1,
+    minWidth: 0,
+    marginRight: 4,
+  },
+  messageFileType: {
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 0,
+    marginLeft: 2,
   },
   messageFileSize: {
     fontSize: 12,
@@ -1962,6 +2226,53 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 8,
     backgroundColor: 'transparent',
+    alignSelf: 'flex-start',
+    maxWidth: 250,
+    maxHeight: 250,
+    overflow: 'hidden',
+  },
+  imageWrapper: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    borderRadius: 8,
+  },
+  imageLoadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  imageLoading: {
+    opacity: 0.5,
+  },
+  videoLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+    borderRadius: 8,
+  },
+  videoLoadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  videoLoading: {
+    opacity: 0.5,
   },
   videoPreviewContainer: {
     position: 'relative',
@@ -2028,6 +2339,22 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '500',
   },
   inputContainer: {
     borderTopWidth: 1,

@@ -109,6 +109,13 @@ const EmergencyContactScreen = () => {
     relationship: '',
     type: 'Family' as 'Family' | 'Emergency' | 'Friend',
   });
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: '',
+    message: '',
+    type: 'info' as 'error' | 'success' | 'info' | 'warning',
+    buttons: [] as Array<{text: string; style?: 'default' | 'cancel' | 'destructive'; onPress: () => void}>,
+  });
 
   // Load contacts from API on mount
   useEffect(() => {
@@ -227,7 +234,7 @@ const EmergencyContactScreen = () => {
     }
 
     try {
-      if (editingContact) {
+    if (editingContact) {
         // Update existing contact
         const contactId = parseInt(editingContact.id);
         if (!isNaN(contactId)) {
@@ -241,24 +248,24 @@ const EmergencyContactScreen = () => {
           await apiService.updateFamilyContact(user.id, contactId, contactData);
           await updateContact(contactId, contactData);
         }
-      } else {
+    } else {
         // Add new contact
-        if (contacts.length >= maxContacts) {
-          requirePremium('You have reached the contact limit. Upgrade to add more.');
-          return;
-        }
+      if (contacts.length >= maxContacts) {
+        requirePremium('You have reached the contact limit. Upgrade to add more.');
+        return;
+      }
         const contactData = {
           name: formData.name,
           phone: formData.phone,
           email: formData.email || null,
           relationship: formData.relationship || null,
           type: formData.type.toLowerCase(),
-        };
+      };
         const result = await apiService.addFamilyContact(user.id, contactData);
         await addContact(result);
-      }
-      setShowAddModal(false);
-      setEditingContact(null);
+    }
+    setShowAddModal(false);
+    setEditingContact(null);
     } catch (error) {
       console.error('Error saving contact:', error);
       setAlertConfig({
@@ -278,9 +285,9 @@ const EmergencyContactScreen = () => {
       type: 'info',
       buttons: [
         {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
-        {text: 'Call', onPress: () => {
+      {text: 'Call', onPress: () => {
           setAlertVisible(false);
-          // In a real app, you would use Linking.openURL(`tel:${phone}`)
+        // In a real app, you would use Linking.openURL(`tel:${phone}`)
           setAlertConfig({
             title: 'Call',
             message: `Calling ${phone}...`,
@@ -288,7 +295,7 @@ const EmergencyContactScreen = () => {
             buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
           });
           setAlertVisible(true);
-        }},
+      }},
       ],
     });
     setAlertVisible(true);
@@ -340,8 +347,8 @@ const EmergencyContactScreen = () => {
         buttons={alertConfig.buttons}
         onDismiss={() => setAlertVisible(false)}
       />
-      <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
-        <ScrollView
+    <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}
         refreshControl={(

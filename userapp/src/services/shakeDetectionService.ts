@@ -156,10 +156,10 @@ class ShakeDetectionService {
     }
 
       if (!PushNotification || PushNotification === null) {
-        console.warn('PushNotification is not available - notifications will be disabled');
-        this.isConfigured = true; // Mark as configured to avoid repeated checks
-        return;
-      }
+      console.warn('PushNotification is not available - notifications will be disabled');
+      this.isConfigured = true; // Mark as configured to avoid repeated checks
+      return;
+    }
 
     try {
       // Configure push notifications only if available
@@ -199,7 +199,7 @@ class ShakeDetectionService {
         }
 
         PushNotification.configure(config);
-        
+
         // Create notification channel for Android (after configure)
         if (Platform.OS === 'android' && PushNotification && PushNotification !== null) {
           if (typeof PushNotification.createChannel === 'function') {
@@ -216,8 +216,8 @@ class ShakeDetectionService {
                 },
                 (created: boolean) => {
                   if (created !== undefined) {
-                    console.log('SOS notification channel created:', created);
-                    if (!created) {
+                  console.log('SOS notification channel created:', created);
+                  if (!created) {
                       console.log('SOS notification channel already exists');
                     }
                   }
@@ -230,8 +230,8 @@ class ShakeDetectionService {
           } else {
             console.warn('createChannel function not available on PushNotification module');
           }
-        }
-      }
+            }
+          }
 
       this.isConfigured = true;
     } catch (error) {
@@ -409,10 +409,10 @@ class ShakeDetectionService {
   isAccelerometerAvailable(): boolean {
     // Re-check availability in case module loaded later
     try {
-      const result = initializeAccelerometer();
-      if (result && result !== false && typeof result.subscribe === 'function') {
-        return true;
-      }
+    const result = initializeAccelerometer();
+    if (result && result !== false && typeof result.subscribe === 'function') {
+      return true;
+    }
       
       // Also check if native service is available (Android)
       if (Platform.OS === 'android') {
@@ -432,7 +432,7 @@ class ShakeDetectionService {
       return false;
     } catch (error) {
       console.warn('Error checking accelerometer availability:', error);
-      return false;
+    return false;
     }
   }
 
@@ -752,32 +752,32 @@ class ShakeDetectionService {
 
       if (currentPushNotification && currentPushNotification !== null && currentPushNotification !== false && typeof currentPushNotification.localNotification === 'function') {
         try {
-          const notificationConfig: any = {
-            id: 'sos-' + Date.now(), // Unique ID for notification
-            title: 'SOS Sent Successfully',
+        const notificationConfig: any = {
+          id: 'sos-' + Date.now(), // Unique ID for notification
+          title: 'SOS Sent Successfully',
             message: 'Your emergency alert has been sent. Our officials will be there shortly. Help will arrive soon.',
-            playSound: true,
-            soundName: 'default',
-            vibrate: false, // Don't vibrate in notification since we already vibrated on 3rd shake
-            vibration: 0,
-            tag: 'sos-alert',
-            userInfo: {
-              type: 'sos',
-              timestamp: Date.now(),
-            },
-          };
+          playSound: true,
+          soundName: 'default',
+          vibrate: false, // Don't vibrate in notification since we already vibrated on 3rd shake
+          vibration: 0,
+          tag: 'sos-alert',
+          userInfo: {
+            type: 'sos',
+            timestamp: Date.now(),
+          },
+        };
 
-          // Add Android-specific properties
-          if (Platform.OS === 'android') {
-            notificationConfig.channelId = 'sos-channel';
-            notificationConfig.importance = 'high';
-            notificationConfig.priority = 'high';
-            notificationConfig.autoCancel = false; // Don't auto-cancel important SOS notification
-            notificationConfig.ongoing = false;
-          }
+        // Add Android-specific properties
+        if (Platform.OS === 'android') {
+          notificationConfig.channelId = 'sos-channel';
+          notificationConfig.importance = 'high';
+          notificationConfig.priority = 'high';
+          notificationConfig.autoCancel = false; // Don't auto-cancel important SOS notification
+          notificationConfig.ongoing = false;
+        }
 
-          console.log('Sending notification with config:', JSON.stringify(notificationConfig, null, 2));
-          
+        console.log('Sending notification with config:', JSON.stringify(notificationConfig, null, 2));
+        
           // Final check before calling - verify native module exists
           if (currentPushNotification && typeof currentPushNotification.localNotification === 'function') {
             // Check if the native module exists before calling
@@ -794,7 +794,7 @@ class ShakeDetectionService {
             
             try {
               currentPushNotification.localNotification(notificationConfig);
-              console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
+        console.log('SOS push notification sent successfully with ID:', notificationConfig.id);
             } catch (notifError) {
               // Silently handle the error - don't crash the app
               console.warn('Could not send notification (non-critical):', notifError);

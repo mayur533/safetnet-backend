@@ -8,6 +8,7 @@ import {
   FlatList,
   RefreshControl,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -189,60 +190,66 @@ const CommunityScreen = () => {
   return (
     <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}>
-        <TouchableOpacity
-          style={[
-            styles.createButton,
-            {backgroundColor: colors.primary},
-            !isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT && {backgroundColor: disabledButtonColor},
-          ]}
-          onPress={() => {
-            if (!isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT) {
-              requirePremium('Free members can create up to 2 trusted circles. Upgrade for unlimited circles and premium community support.');
-              return;
-            }
-            navigation.navigate('CreateGroup', {onGroupCreated: handleCreateGroup});
-          }}
-          activeOpacity={0.7}>
-          <MaterialIcons name="add" size={24} color="#FFFFFF" />
-          <Text style={styles.createButtonText}>Create Group</Text>
-        </TouchableOpacity>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, {color: mutedTextColor}]}>Loading groups...</Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={[styles.scrollContent, {paddingBottom: 24 + insets.bottom}]}>
+          <TouchableOpacity
+            style={[
+              styles.createButton,
+              {backgroundColor: colors.primary},
+              !isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT && {backgroundColor: disabledButtonColor},
+            ]}
+            onPress={() => {
+              if (!isPremium && groups.length >= FREE_TRUSTED_CIRCLE_LIMIT) {
+                requirePremium('Free members can create up to 2 trusted circles. Upgrade for unlimited circles and premium community support.');
+                return;
+              }
+              navigation.navigate('CreateGroup', {onGroupCreated: handleCreateGroup});
+            }}
+            activeOpacity={0.7}>
+            <MaterialIcons name="add" size={24} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Create Group</Text>
+          </TouchableOpacity>
 
-        {!isPremium && (
-          <View style={[styles.noticeCard, {backgroundColor: noticeBackground, borderColor: noticeBorder}]}>
-            <MaterialIcons name="workspace-premium" size={20} color={noticeIconColor} />
-            <Text style={[styles.noticeText, {color: noticeTextColor}]}>
-              Premium Community Support unlocks unlimited trusted circles and access to our verified responder network.
-            </Text>
-          </View>
-        )}
+          {!isPremium && (
+            <View style={[styles.noticeCard, {backgroundColor: noticeBackground, borderColor: noticeBorder}]}>
+              <MaterialIcons name="workspace-premium" size={20} color={noticeIconColor} />
+              <Text style={[styles.noticeText, {color: noticeTextColor}]}>
+                Premium Community Support unlocks unlimited trusted circles and access to our verified responder network.
+              </Text>
+            </View>
+          )}
 
-        {!isPremium && (
-          <View style={styles.limitRow}>
-            <Text style={[styles.limitLabel, {color: colors.text}]}>Trusted Circles</Text>
-            <Text style={[styles.limitValue, {color: colors.primary}]}>{Math.min(groups.length, FREE_TRUSTED_CIRCLE_LIMIT)} / {FREE_TRUSTED_CIRCLE_LIMIT}</Text>
-          </View>
-        )}
+          {!isPremium && (
+            <View style={styles.limitRow}>
+              <Text style={[styles.limitLabel, {color: colors.text}]}>Trusted Circles</Text>
+              <Text style={[styles.limitValue, {color: colors.primary}]}>{Math.min(groups.length, FREE_TRUSTED_CIRCLE_LIMIT)} / {FREE_TRUSTED_CIRCLE_LIMIT}</Text>
+            </View>
+          )}
 
-        {groups.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="groups" size={64} color={secondaryTextColor} />
-            <Text style={[styles.emptyStateText, {color: colors.text}]}>No groups yet</Text>
-            <Text style={[styles.emptyStateSubtext, {color: mutedTextColor}]}>Create your first group to get started</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={groups}
-            renderItem={renderGroupItem}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-          />
-        )}
-      </ScrollView>
-
+          {groups.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="groups" size={64} color={secondaryTextColor} />
+              <Text style={[styles.emptyStateText, {color: colors.text}]}>No groups yet</Text>
+              <Text style={[styles.emptyStateSubtext, {color: mutedTextColor}]}>Create your first group to get started</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={groups}
+              renderItem={renderGroupItem}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+            />
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -321,6 +328,16 @@ const createStyles = (colors: Theme['colors'], isDarkMode: boolean) => {
       fontSize: 14,
       marginTop: 8,
       textAlign: 'center',
+    },
+    loadingContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+    },
+    loadingText: {
+      fontSize: 16,
+      marginTop: 16,
     },
     groupItem: {
       flexDirection: 'row',

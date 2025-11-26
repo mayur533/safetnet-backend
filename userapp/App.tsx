@@ -110,7 +110,11 @@ function App(): React.JSX.Element {
       <SafeAreaProvider>
         <NavigationContainer theme={navigationTheme}>
           <StatusBar barStyle={statusBarStyle} backgroundColor={navigationTheme.colors.background} />
-          {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}
+          {isAuthenticated ? (
+            <AppNavigator key="app-navigator" />
+          ) : (
+            <AuthNavigator key="auth-navigator" />
+          )}
         </NavigationContainer>
       </SafeAreaProvider>
     </SafeGestureHandlerRootView>

@@ -6,6 +6,7 @@ import {
   RefreshControl,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -96,27 +97,65 @@ const AlertsScreen = () => {
   }, [alerts, previousAlertsCount]);
 
   const loadAlerts = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
-      // Get SOS events as alerts (you can add a dedicated alerts endpoint later)
-      const sosEvents = await apiService.getSOSEvents(parseInt(user.id));
+      const userId = parseInt(user.id);
+      
+      // Get both SOS events and community alerts
+      const [sosEventsData, communityAlertsData] = await Promise.allSettled([
+        apiService.getSOSEvents(userId).catch(() => []),
+        apiService.getCommunityAlerts(userId).catch(() => []),
+      ]);
+      
+      const sosEvents = sosEventsData.status === 'fulfilled' ? sosEventsData.value : [];
+      const communityAlerts = communityAlertsData.status === 'fulfilled' ? communityAlertsData.value : [];
+      
       // Transform SOS events to alerts format
-      const transformedAlerts: Alert[] = Array.isArray(sosEvents) 
+      const sosAlerts: Alert[] = Array.isArray(sosEvents) 
         ? sosEvents.map((event: any, index: number) => ({
-            id: event.id?.toString() || `sos-${index}`,
+            id: `sos-${event.id?.toString() || index}`,
             type: 'emergency',
             title: 'SOS Alert',
             message: event.notes || 'Emergency SOS triggered',
-            timestamp: event.created_at ? new Date(event.created_at) : new Date(),
+            timestamp: event.triggered_at ? new Date(event.triggered_at) : (event.created_at ? new Date(event.created_at) : new Date()),
             read: false,
-            location: event.location ? {lat: event.location.latitude, lng: event.location.longitude} : undefined,
+            location: event.location ? {
+              lat: typeof event.location === 'object' ? (event.location.latitude || event.location.lat || event.location[1]) : undefined,
+              lng: typeof event.location === 'object' ? (event.location.longitude || event.location.lng || event.location[0]) : undefined
+            } : undefined,
           }))
         : [];
-      setAlerts(transformedAlerts);
-    } catch (error) {
+      
+      // Transform community alerts to alerts format
+      const communityAlertsFormatted: Alert[] = Array.isArray(communityAlerts)
+        ? communityAlerts.map((alert: any, index: number) => ({
+            id: `community-${alert.id?.toString() || index}`,
+            type: 'geofence',
+            title: 'Community Alert',
+            message: alert.message || 'Community alert',
+            timestamp: alert.sent_at ? new Date(alert.sent_at) : new Date(),
+            read: false,
+            location: alert.location ? {
+              lat: typeof alert.location === 'object' ? (alert.location.latitude || alert.location.lat || alert.location[1]) : undefined,
+              lng: typeof alert.location === 'object' ? (alert.location.longitude || alert.location.lng || alert.location[0]) : undefined
+            } : undefined,
+          }))
+        : [];
+      
+      // Combine and sort by timestamp (newest first)
+      const allAlerts = [...sosAlerts, ...communityAlertsFormatted].sort((a, b) => 
+        b.timestamp.getTime() - a.timestamp.getTime()
+      );
+      
+      setAlerts(allAlerts);
+    } catch (error: any) {
       console.error('Failed to load alerts:', error);
+      // Show empty state on error
       setAlerts([]);
     } finally {
       setLoading(false);
@@ -219,7 +258,12 @@ const AlertsScreen = () => {
     <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
-      {alerts.length === 0 && !loading ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, {color: mutedTextColor}]}>Loading alerts...</Text>
+        </View>
+      ) : alerts.length === 0 ? (
         <View style={styles.emptyState}>
           <MaterialIcons name="notifications-none" size={64} color={emptyIconColor} />
           <Text style={styles.emptyStateText}>No alerts yet</Text>
@@ -329,6 +373,16 @@ const createStyles = (colors: Theme['colors'], tokens: AlertThemeTokens, isDarkM
       color: tokens.mutedTextColor,
       marginTop: 8,
       textAlign: 'center',
+    },
+    loadingContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+    },
+    loadingText: {
+      fontSize: 16,
+      marginTop: 16,
     },
   });
 

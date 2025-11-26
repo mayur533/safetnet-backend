@@ -69,12 +69,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
         
         // Update user with plan info from response
-        const updatedUser = {
-          ...user,
+            const updatedUser = {
+              ...user,
           name: response.user.name || user.name,
           phone: response.user.phone || user.phone,
           plan: response.user.is_premium ? 'premium' : 'free',
-        };
+            };
         set({user: updatedUser, isAuthenticated: true, isLoading: false});
         const storage = await getStorage();
         await storage.setItem('authState', JSON.stringify({user: updatedUser}));
@@ -178,42 +178,58 @@ export const useAuthStore = create<AuthState>((set) => ({
       // If we have tokens, try to restore user
       if (accessToken && refreshToken) {
         // If we have authState, use it immediately for faster UI
-        if (authStateJson) {
+      if (authStateJson) {
           try {
-            const authState = JSON.parse(authStateJson);
-            if (authState.user) {
+        const authState = JSON.parse(authStateJson);
+        if (authState.user) {
               console.log('Found stored user:', authState.user.email);
               // Restore user state immediately for faster UI
               set({user: authState.user, isAuthenticated: true, isLoading: false});
               
               // Verify tokens are still valid by trying to get profile (in background)
-              try {
-                const profileResponse = await apiService.getProfile();
+          try {
+            const profileResponse = await apiService.getProfile();
                 const profileData = profileResponse.data || profileResponse;
                 if (profileData && (profileData.id || profileData.email)) {
                   // Tokens are valid, update user with latest profile data
-                  const updatedUser = {
-                    ...authState.user,
+              const updatedUser = {
+                ...authState.user,
                     name: profileData.name || profileData.first_name || authState.user.name,
                     phone: profileData.phone || authState.user.phone,
                     plan: profileData.is_premium || profileData.plantype === 'premium' ? 'premium' : 'free',
-                  };
+              };
                   set({user: updatedUser, isAuthenticated: true, isLoading: false});
                   await storage.setItem('authState', JSON.stringify({user: updatedUser}));
                   console.log('Auth state verified and updated');
-                } else {
+            } else {
                   console.warn('Profile response format unexpected, keeping cached user');
                 }
               } catch (error: any) {
-                // If profile fetch fails, check if it's a 401 (unauthorized)
-                if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-                  // Tokens expired, clear auth state
-                  console.warn('Tokens expired, clearing auth state');
-                  await apiService.clearTokens();
+                // Check if it's a network error
+                const isNetworkError = error?.message && (
+                  error.message.includes('Network request failed') ||
+                  error.message.includes('Failed to fetch') ||
+                  error.message.includes('ECONNREFUSED') ||
+                  error.message.includes('network') ||
+                  error.message.includes('connection')
+                );
+                
+                // If profile fetch fails, check if it's a 401 (unauthorized) or token validation error
+                if (error?.message?.includes('401') || 
+                    error?.message?.includes('Unauthorized') ||
+                    error?.message?.includes('token not valid') ||
+                    error?.message?.includes('Session expired')) {
+                  // Tokens expired or invalid, clear auth state
+                  console.warn('Tokens expired or invalid, clearing auth state');
+              await apiService.clearTokens();
                   await storage.removeItem('authState');
                   set({user: null, isAuthenticated: false, isLoading: false});
+                } else if (isNetworkError) {
+                  // Network error - keep user logged in with cached data
+                  console.warn('Network error while verifying tokens, keeping cached user:', error?.message);
+                  // Keep the user logged in with cached data - don't change isLoading here
                 } else {
-                  // Network error or other issue, keep user logged in with cached data
+                  // Other error, keep user logged in with cached data
                   console.warn('Failed to verify tokens, keeping cached user:', error?.message);
                   // Keep the user logged in with cached data - don't change isLoading here
                 }
@@ -239,17 +255,34 @@ export const useAuthStore = create<AuthState>((set) => ({
             return;
           }
         } catch (error: any) {
-          // If profile fetch fails, check if it's a 401 (unauthorized)
-          if (error?.message?.includes('401') || error?.message?.includes('Unauthorized')) {
-            // Tokens expired, clear auth state
-            console.warn('Tokens expired, clearing auth state');
+          // Check if it's a network error
+          const isNetworkError = error?.message && (
+            error.message.includes('Network request failed') ||
+            error.message.includes('Failed to fetch') ||
+            error.message.includes('ECONNREFUSED') ||
+            error.message.includes('network') ||
+            error.message.includes('connection')
+          );
+          
+          // If profile fetch fails, check if it's a 401 (unauthorized) or token validation error
+          if (error?.message?.includes('401') || 
+              error?.message?.includes('Unauthorized') ||
+              error?.message?.includes('token not valid') ||
+              error?.message?.includes('Session expired')) {
+            // Tokens expired or invalid, clear auth state
+            console.warn('Tokens expired or invalid, clearing auth state');
             await apiService.clearTokens();
             await storage.removeItem('authState');
             set({user: null, isAuthenticated: false, isLoading: false});
             return;
+          } else if (isNetworkError) {
+            // Network error - keep tokens but show as not authenticated (can't verify)
+            console.warn('Network error while verifying tokens:', error?.message);
+            set({user: null, isAuthenticated: false, isLoading: false});
+            return;
           } else {
-            // Network error - keep tokens but show as not authenticated
-            console.warn('Failed to verify tokens (network error):', error?.message);
+            // Other error - keep tokens but show as not authenticated
+            console.warn('Failed to verify tokens:', error?.message);
             set({user: null, isAuthenticated: false, isLoading: false});
             return;
           }
@@ -274,7 +307,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         if (currentUser) {
           const updatedUser = {
             ...currentUser,
-            name: profileData.name || currentUser.name,
+            name: profileData.name || profileData.first_name || currentUser.name,
             phone: profileData.phone || currentUser.phone,
             plan: profileData.is_premium || profileData.plantype === 'premium' ? 'premium' : 'free',
           };
@@ -283,8 +316,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         await storage.setItem('authState', JSON.stringify({user: updatedUser}));
         }
       }
-    } catch (error) {
-      console.warn('Failed to refresh profile:', error);
+    } catch (error: any) {
+      // Don't log network errors as warnings - they're expected if backend is down
+      const isNetworkError = error?.message && (
+        error.message.includes('Network request failed') ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('network')
+      );
+      if (!isNetworkError) {
+        console.warn('Failed to refresh profile:', error);
+      }
     }
   },
 }));

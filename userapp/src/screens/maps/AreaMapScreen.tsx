@@ -454,14 +454,14 @@ const AreaMapScreen = () => {
   }
 
   if (!locationPermissionGranted || !userLocation) {
-    return (
+  return (
       <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
         <View style={styles.errorContainer}>
           <MaterialIcons name="location-off" size={64} color={colors.notification} />
           <Text style={[styles.errorText, {color: colors.text}]}>Location Permission Required</Text>
           <Text style={[styles.errorSubtext, {color: colors.text}]}>
             Please enable location permission to see nearby help.
-          </Text>
+        </Text>
           <TouchableOpacity
             style={[styles.retryButton, {backgroundColor: colors.primary}]}
             onPress={requestLocationPermission}>
@@ -484,8 +484,8 @@ const AreaMapScreen = () => {
             <Text style={[styles.errorText, {color: colors.text}]}>Map View Unavailable</Text>
             <Text style={[styles.errorSubtext, {color: colors.text}]}>
               Nearby help locations are listed below. Tap to call or get directions.
-            </Text>
-          </View>
+          </Text>
+        </View>
           
           {nearbyHelp.length > 0 ? (
             <View style={styles.helpListContainer}>
@@ -632,8 +632,8 @@ const AreaMapScreen = () => {
             <Text style={[styles.legendText, {color: colors.text}]}>Pharmacy</Text>
           </View>
         </View>
+        </View>
       </View>
-    </View>
     </>
   );
 };

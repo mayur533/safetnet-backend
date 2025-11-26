@@ -38,11 +38,11 @@ export const checkNetworkStatus = async (): Promise<NetworkStatus> => {
         isInternetReachable: true,
       };
     }
-    const state = await NetInfo.fetch();
-    return {
-      isConnected: state.isConnected ?? true,
-      isInternetReachable: state.isInternetReachable ?? true,
-    };
+  const state = await NetInfo.fetch();
+  return {
+    isConnected: state.isConnected ?? true,
+    isInternetReachable: state.isInternetReachable ?? true,
+  };
   } catch (error) {
     console.warn('Error checking network status:', error);
     // Return default values if NetInfo fails

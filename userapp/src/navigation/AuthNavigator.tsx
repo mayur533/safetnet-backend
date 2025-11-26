@@ -18,6 +18,7 @@ const AuthNavigator = () => {
   return (
     <>
       <Stack.Navigator
+        initialRouteName="Login"
         screenOptions={{
           headerShown: true,
           header: ({route}) => {

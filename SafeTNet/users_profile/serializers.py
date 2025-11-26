@@ -378,17 +378,18 @@ class CommunityMembershipCreateSerializer(serializers.Serializer):
 class SOSEventSerializer(serializers.ModelSerializer):
     """
     Serializer for SOS events.
+    Only includes fields that exist in the database.
     """
     location = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(source='triggered_at', read_only=True)
     
     class Meta:
         model = SOSEvent
         fields = (
-            'id', 'location', 'status', 'triggered_at', 
-            'resolved_at', 'notes', 'audio_recording_url',
-            'video_recording_url', 'cloud_backup_url', 'is_premium_event'
+            'id', 'location', 'status', 'triggered_at', 'created_at',
+            'resolved_at', 'notes'
         )
-        read_only_fields = ('id', 'triggered_at', 'resolved_at', 'is_premium_event')
+        read_only_fields = ('id', 'triggered_at', 'created_at', 'resolved_at')
     
     def get_location(self, obj):
         """Get location as a dictionary."""

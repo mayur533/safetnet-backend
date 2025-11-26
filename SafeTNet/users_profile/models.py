@@ -183,29 +183,9 @@ class SOSEvent(models.Model):
         blank=True,
         help_text="Additional notes about the SOS event"
     )
-    # Premium features
-    audio_recording_url = models.URLField(
-        null=True,
-        blank=True,
-        help_text="URL to audio recording (Premium feature)"
-    )
-    video_recording_url = models.URLField(
-        null=True,
-        blank=True,
-        help_text="URL to video recording (Premium feature)"
-    )
-    cloud_backup_url = models.URLField(
-        null=True,
-        blank=True,
-        help_text="URL to cloud backup of SOS evidence (Premium feature)"
-    )
-    is_premium_event = models.BooleanField(
-        default=False,
-        help_text="Whether this SOS event used premium features"
-    )
-    
+
     class Meta:
-        db_table = 'users_sos_event'
+        db_table = 'users_profile_sosevent'
         verbose_name = 'SOS Event'
         verbose_name_plural = 'SOS Events'
         ordering = ['-triggered_at']

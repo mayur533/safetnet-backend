@@ -234,13 +234,43 @@ class CacheService {
       // Data is new or changed, update cache
       await this.set(key, freshData, config);
       return freshData;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to get or fetch for key ${key}:`, error);
-      // If fetch fails, try to return stale cache
+      
+      // Check if it's a network error
+      const isNetworkError = error?.message && (
+        error.message.includes('Network request failed') ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('timeout') ||
+        error.message.toLowerCase().includes('network') ||
+        error.message.includes('connection')
+      );
+      
+      // If it's a 404 (not found) error, clear the cache for that key
+      if (error?.message?.includes('404') || 
+          error?.message?.includes('not found') ||
+          error?.message?.includes('Group not found') ||
+          error?.message?.includes('group not found')) {
+        console.warn(`Resource not found for key ${key}, clearing cache`);
+        await this.invalidate(key);
+        throw error; // Re-throw to let the caller handle it
+      }
+      
+      // If fetch fails due to network error, try to return stale cache
       const cached = await this.get<T>(key);
       if (cached) {
+        console.warn(`Returning stale cache for key ${key} due to ${isNetworkError ? 'network' : ''} error:`, error.message);
         return cached;
       }
+      
+      // If it's a network error and no cache, throw a more helpful error
+      if (isNetworkError) {
+        const networkError = new Error('Network request failed. Please check your internet connection and ensure the backend server is running.');
+        (networkError as any).isNetworkError = true;
+        throw networkError;
+      }
+      
       throw error;
     }
   }

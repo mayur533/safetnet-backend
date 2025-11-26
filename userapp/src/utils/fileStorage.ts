@@ -3,6 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Platform} from 'react-native';
 
 const CHAT_FILES_DIR = `${RNFS.DocumentDirectoryPath}/chat_files`;
+const CHAT_IMAGES_DIR = `${CHAT_FILES_DIR}/images`;
+const CHAT_VIDEOS_DIR = `${CHAT_FILES_DIR}/videos`;
+const CHAT_DOCUMENTS_DIR = `${CHAT_FILES_DIR}/documents`;
 const STORAGE_KEY = 'chat_file_storage';
 
 export interface StoredFile {
@@ -15,13 +18,27 @@ export interface StoredFile {
 }
 
 /**
- * Initialize the chat files directory
+ * Initialize the chat files directory structure
  */
 export const initChatFilesDir = async () => {
   try {
+    // Create main directory
     const dirExists = await RNFS.exists(CHAT_FILES_DIR);
     if (!dirExists) {
       await RNFS.mkdir(CHAT_FILES_DIR);
+    }
+    // Create subdirectories
+    const imagesExists = await RNFS.exists(CHAT_IMAGES_DIR);
+    if (!imagesExists) {
+      await RNFS.mkdir(CHAT_IMAGES_DIR);
+    }
+    const videosExists = await RNFS.exists(CHAT_VIDEOS_DIR);
+    if (!videosExists) {
+      await RNFS.mkdir(CHAT_VIDEOS_DIR);
+    }
+    const documentsExists = await RNFS.exists(CHAT_DOCUMENTS_DIR);
+    if (!documentsExists) {
+      await RNFS.mkdir(CHAT_DOCUMENTS_DIR);
     }
   } catch (error) {
     console.error('Error initializing chat files directory:', error);
@@ -48,7 +65,16 @@ export const getStoredFile = async (messageId: string | number, fileUrl: string)
 };
 
 /**
- * Download and store a file
+ * Get the appropriate directory based on file type
+ */
+const getFileDirectory = (fileName: string, isImage: boolean, isVideo: boolean): string => {
+  if (isImage) return CHAT_IMAGES_DIR;
+  if (isVideo) return CHAT_VIDEOS_DIR;
+  return CHAT_DOCUMENTS_DIR;
+};
+
+/**
+ * Download and store a file in the appropriate directory
  */
 export const downloadAndStoreFile = async (
   messageId: string | number,
@@ -68,10 +94,15 @@ export const downloadAndStoreFile = async (
       }
     }
     
-    // Generate local file path
+    // Determine file type and directory
+    const isImg = isImageFile(fileName);
+    const isVid = isVideoFile(fileName);
+    const targetDir = getFileDirectory(fileName, isImg, isVid);
+    
+    // Generate local file path in appropriate directory
     const fileExtension = fileName.split('.').pop() || '';
     const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const localPath = `${CHAT_FILES_DIR}/${messageId}_${Date.now()}.${fileExtension}`;
+    const localPath = `${targetDir}/${messageId}_${Date.now()}.${fileExtension}`;
     
     // Download file
     const downloadResult = await RNFS.downloadFile({

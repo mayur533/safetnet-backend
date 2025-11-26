@@ -931,11 +931,12 @@ const HomeScreen = ({navigation}: any) => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalLoginButton, {backgroundColor: colors.primary}]}
-                onPress={() => {
+                onPress={async () => {
                   setShowLoginModal(false);
-                  // Logout user to show AuthNavigator with Login screen
+                  // Navigate to Login screen by clearing auth state
+                  // This will switch to AuthNavigator which starts at Login screen
                   const {logout} = useAuthStore.getState();
-                  logout();
+                  await logout();
                 }}
                 activeOpacity={0.7}>
                 <Text style={styles.modalLoginText}>Login</Text>
