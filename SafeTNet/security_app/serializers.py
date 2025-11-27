@@ -92,8 +92,26 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OfficerProfile
-        fields = ('officer', 'officer_name', 'officer_phone', 'officer_geofence', 'on_duty', 'updated_at')
-        read_only_fields = ('officer', 'officer_name', 'officer_phone', 'officer_geofence', 'updated_at')
+        fields = (
+            'officer',
+            'officer_name',
+            'officer_phone',
+            'officer_geofence',
+            'on_duty',
+            'last_latitude',
+            'last_longitude',
+            'last_seen_at',
+            'battery_level',
+            'updated_at',
+        )
+        read_only_fields = (
+            'officer',
+            'officer_name',
+            'officer_phone',
+            'officer_geofence',
+            'last_seen_at',
+            'updated_at',
+        )
 
 
 class NotificationSerializer(serializers.ModelSerializer):

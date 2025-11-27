@@ -4,6 +4,7 @@ Use this file if you're having trouble with GDAL installation.
 """
 import logging
 from django.conf import settings
+from django.db.models import Q
 import requests
 import json
 
@@ -214,15 +215,132 @@ class EmergencyService:
             except Exception as e:
                 logger.error(f"Error accessing family contacts: {str(e)}")
             
-            # In a real implementation, you would also:
-            # 1. Call emergency services API
-            # 2. Send alerts to nearby community members
-            # 3. Notify security officers
-            # 4. Log the emergency event
+            security_payload = self._notify_security_officers(user, sos_event)
             
-            logger.info(f"Emergency response triggered for user: {getattr(user, 'email', 'unknown')}")
-            return True
+            logger.info(
+                "Emergency response triggered for user %s (security payload: %s)",
+                getattr(user, 'email', 'unknown'),
+                security_payload or 'no security officers available'
+            )
+            return security_payload or True
             
         except Exception as e:
             logger.error(f"Emergency response failed for user {getattr(user, 'email', 'unknown') if user else 'None'}: {str(e)}")
             return False
+
+    def _notify_security_officers(self, user, sos_event):
+        """
+        Create SOS alerts for security officers and push in-app notifications.
+        """
+        try:
+            from security_app.models import SOSAlert as SecuritySOSAlert, Notification as OfficerNotification
+            from users.models import SecurityOfficer
+        except Exception as import_error:
+            logger.warning("Security app dependencies missing: %s", import_error)
+            return None
+
+        location = getattr(sos_event, 'location', None)
+        latitude, longitude = self._extract_coordinates(location)
+        primary_geofence = self._get_primary_geofence(user)
+
+        if (latitude is None or longitude is None) and primary_geofence:
+            center_point = primary_geofence.get_center_point()
+            if center_point and len(center_point) == 2:
+                latitude = latitude if latitude is not None else center_point[0]
+                longitude = longitude if longitude is not None else center_point[1]
+
+        latitude = latitude if latitude is not None else 0.0
+        longitude = longitude if longitude is not None else 0.0
+
+        try:
+            security_alert = SecuritySOSAlert.objects.create(
+                user=user,
+                geofence=primary_geofence,
+                location_lat=latitude,
+                location_long=longitude,
+                priority='high' if self._is_premium_user(user) else 'medium'
+            )
+        except Exception as create_error:
+            logger.error("Failed to create security SOS alert: %s", create_error)
+            return None
+
+        officers_qs = SecurityOfficer.objects.filter(is_active=True)
+        if user.organization:
+            officers_qs = officers_qs.filter(organization=user.organization)
+        if primary_geofence:
+            officers_qs = officers_qs.filter(Q(assigned_geofence=primary_geofence) | Q(assigned_geofence__isnull=True))
+
+        notified = 0
+        message = self._build_officer_message(user, latitude, longitude, primary_geofence)
+        for officer in officers_qs:
+            try:
+                OfficerNotification.objects.create(
+                    officer=officer,
+                    title="Emergency SOS alert",
+                    message=message,
+                    notification_type='sos_alert',
+                    sos_alert=security_alert,
+                )
+                notified += 1
+            except Exception as notification_error:
+                logger.error("Failed to notify officer %s: %s", officer.id, notification_error)
+
+        logger.info(
+            "Security SOS alert #%s created for %s (officers notified: %s)",
+            security_alert.id,
+            getattr(user, 'email', 'unknown'),
+            notified
+        )
+
+        return {
+            'security_alert_id': security_alert.id,
+            'officers_notified': notified,
+            'geofence_id': primary_geofence.id if primary_geofence else None,
+        }
+
+    @staticmethod
+    def _extract_coordinates(location):
+        if not location:
+            return None, None
+        latitude = None
+        longitude = None
+
+        try:
+            if isinstance(location, dict):
+                latitude = location.get('latitude') or location.get('lat')
+                longitude = location.get('longitude') or location.get('lng')
+            else:
+                longitude = getattr(location, 'x', None)
+                latitude = getattr(location, 'y', None)
+        except Exception as coord_error:
+            logger.warning("Could not extract coordinates from %s: %s", location, coord_error)
+
+        return latitude, longitude
+
+    @staticmethod
+    def _get_primary_geofence(user):
+        try:
+            if hasattr(user, 'geofences'):
+                return user.geofences.first()
+        except Exception as geo_error:
+            logger.warning("Failed to fetch primary geofence for %s: %s", getattr(user, 'email', 'unknown'), geo_error)
+        return None
+
+    @staticmethod
+    def _is_premium_user(user):
+        if hasattr(user, 'is_paid_user') and user.is_paid_user:
+            return True
+        if hasattr(user, 'is_premium') and user.is_premium:
+            return True
+        plan = getattr(user, 'plantype', '') or ''
+        return plan.lower() == 'premium'
+
+    @staticmethod
+    def _build_officer_message(user, latitude, longitude, geofence):
+        parts = [
+            f"{getattr(user, 'name', user.username)} triggered an SOS.",
+            f"Coords: {latitude:.5f}, {longitude:.5f}",
+        ]
+        if geofence:
+            parts.append(f"Geofence: {geofence.name}")
+        return " ".join(parts)

@@ -7,6 +7,7 @@
 
 import React, {useEffect, useMemo} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
+import {createStackNavigator} from '@react-navigation/stack';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {StatusBar, StyleSheet, useColorScheme, Platform, PermissionsAndroid, View, ActivityIndicator, Text} from 'react-native';
 import {SafeGestureHandlerRootView} from './src/utils/gestureHandlerFallback';
@@ -16,6 +17,11 @@ import AuthNavigator from './src/navigation/AuthNavigator';
 import AppNavigator from './src/navigation/AppNavigator';
 import {LightAppTheme, DarkAppTheme} from './src/theme/navigationThemes';
 import {getAsyncStorage} from './src/utils/asyncStorageInit';
+import {UpgradeModal} from './src/components/common/UpgradeModal';
+import {NetworkErrorToast} from './src/components/common/NetworkErrorToast';
+import {navigationRef} from './src/navigation/navigationRef';
+
+const RootStack = createStackNavigator();
 
 function App(): React.JSX.Element {
   // Always call hooks in the same order (before any conditional logic)
@@ -108,13 +114,17 @@ function App(): React.JSX.Element {
   return (
     <SafeGestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <NavigationContainer theme={navigationTheme}>
+        <NavigationContainer theme={navigationTheme} ref={navigationRef}>
           <StatusBar barStyle={statusBarStyle} backgroundColor={navigationTheme.colors.background} />
-          {isAuthenticated ? (
-            <AppNavigator key="app-navigator" />
-          ) : (
-            <AuthNavigator key="auth-navigator" />
-          )}
+          <RootStack.Navigator screenOptions={{headerShown: false}}>
+            {isAuthenticated ? (
+              <RootStack.Screen name="AppStack" component={AppNavigator} />
+            ) : (
+              <RootStack.Screen name="AuthStack" component={AuthNavigator} />
+            )}
+          </RootStack.Navigator>
+          <UpgradeModal />
+          <NetworkErrorToast />
         </NavigationContainer>
       </SafeAreaProvider>
     </SafeGestureHandlerRootView>

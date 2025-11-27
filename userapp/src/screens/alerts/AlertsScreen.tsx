@@ -106,14 +106,80 @@ const AlertsScreen = () => {
       setLoading(true);
       const userId = parseInt(user.id);
       
-      // Get both SOS events and community alerts
-      const [sosEventsData, communityAlertsData] = await Promise.allSettled([
-        apiService.getSOSEvents(userId).catch(() => []),
-        apiService.getCommunityAlerts(userId).catch(() => []),
+      console.log('[AlertsScreen] Loading alerts for user:', user.id);
+      
+      // Get alerts from backend (geofence-based alerts)
+      // Also get SOS events and community alerts for backward compatibility
+      const [backendAlertsData, sosEventsData, communityAlertsData] = await Promise.allSettled([
+        apiService.getAlerts().catch((err) => {
+          console.error('[AlertsScreen] Error fetching backend alerts:', err);
+          return [];
+        }),
+        apiService.getSOSEvents(userId).catch((err) => {
+          console.error('[AlertsScreen] Error fetching SOS events:', err);
+          return [];
+        }),
+        apiService.getCommunityAlerts(userId).catch((err) => {
+          console.error('[AlertsScreen] Error fetching community alerts:', err);
+          return [];
+        }),
       ]);
       
+      const backendAlerts = backendAlertsData.status === 'fulfilled' ? backendAlertsData.value : [];
       const sosEvents = sosEventsData.status === 'fulfilled' ? sosEventsData.value : [];
       const communityAlerts = communityAlertsData.status === 'fulfilled' ? communityAlertsData.value : [];
+      
+      console.log('[AlertsScreen] Backend alerts received:', backendAlerts.length);
+      console.log('[AlertsScreen] SOS events received:', sosEvents.length);
+      console.log('[AlertsScreen] Community alerts received:', communityAlerts.length);
+      
+      // Transform backend alerts to alerts format
+      const backendAlertsFormatted: Alert[] = Array.isArray(backendAlerts)
+        ? backendAlerts.map((alert: any, index: number) => {
+            // Determine alert type based on alert_type
+            let alertType = 'report';
+            if (alert.alert_type) {
+              const alertTypeLower = alert.alert_type.toLowerCase();
+              if (alertTypeLower.includes('geofence')) {
+                alertType = 'geofence';
+              } else if (alertTypeLower.includes('security') || alertTypeLower.includes('breach') || alertTypeLower.includes('emergency')) {
+                alertType = 'emergency';
+              }
+            }
+            
+            // Get location from geofences array (new structure) or legacy geofence_details
+            let location: {lat?: number; lng?: number} | undefined = undefined;
+            if (alert.geofences && Array.isArray(alert.geofences) && alert.geofences.length > 0) {
+              // Use first geofence's center_point
+              const firstGeofence = alert.geofences[0];
+              if (firstGeofence?.center_point && Array.isArray(firstGeofence.center_point)) {
+                location = {
+                  lat: firstGeofence.center_point[0], // latitude is first in array
+                  lng: firstGeofence.center_point[1]  // longitude is second in array
+                };
+              }
+            } else if (alert.geofence_details?.center_point) {
+              // Fallback to legacy geofence_details
+              const centerPoint = alert.geofence_details.center_point;
+              if (Array.isArray(centerPoint)) {
+                location = {
+                  lat: centerPoint[0],
+                  lng: centerPoint[1]
+                };
+              }
+            }
+            
+            return {
+              id: `alert-${alert.id?.toString() || index}`,
+              type: alertType,
+              title: alert.title || 'Alert',
+              message: alert.description || alert.title || 'No description',
+              timestamp: alert.created_at ? new Date(alert.created_at) : new Date(),
+              read: alert.is_resolved || false,
+              location: location,
+            };
+          })
+        : [];
       
       // Transform SOS events to alerts format
       const sosAlerts: Alert[] = Array.isArray(sosEvents) 
@@ -148,9 +214,14 @@ const AlertsScreen = () => {
         : [];
       
       // Combine and sort by timestamp (newest first)
-      const allAlerts = [...sosAlerts, ...communityAlertsFormatted].sort((a, b) => 
+      const allAlerts = [...backendAlertsFormatted, ...sosAlerts, ...communityAlertsFormatted].sort((a, b) => 
         b.timestamp.getTime() - a.timestamp.getTime()
       );
+      
+      console.log('[AlertsScreen] Total alerts to display:', allAlerts.length);
+      console.log('[AlertsScreen] Backend alerts formatted:', backendAlertsFormatted.length);
+      console.log('[AlertsScreen] SOS alerts formatted:', sosAlerts.length);
+      console.log('[AlertsScreen] Community alerts formatted:', communityAlertsFormatted.length);
       
       setAlerts(allAlerts);
     } catch (error: any) {

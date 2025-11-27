@@ -7,7 +7,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
 from datetime import timedelta
+from math import radians, sin, cos, sqrt, atan2
 from .views import _is_user_premium
+from users.models import SecurityOfficer
+from security_app.models import OfficerProfile
 import json
 
 # Nearby Help Map API
@@ -75,6 +78,110 @@ def nearby_help_map(request):
         'places': nearby_places,
         'user_location': {'latitude': latitude, 'longitude': longitude},
         'radius': radius
+    })
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Calculate the great-circle distance between two points."""
+    R = 6371  # Earth radius in kilometers
+    phi1 = radians(lat1)
+    phi2 = radians(lat2)
+    dphi = radians(lat2 - lat1)
+    dlambda = radians(lon2 - lon1)
+
+    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def security_officer_locations(request):
+    """
+    Return active security officers accessible to the authenticated user.
+    GET /api/users/security_officers/?latitude=12.9&longitude=77.6
+    """
+    user = request.user
+    lat_qs = request.query_params.get('latitude')
+    lon_qs = request.query_params.get('longitude')
+
+    try:
+        ref_lat = float(lat_qs) if lat_qs is not None else None
+        ref_lon = float(lon_qs) if lon_qs is not None else None
+    except (TypeError, ValueError):
+        ref_lat = None
+        ref_lon = None
+
+    geofence_ids = list(user.geofences.values_list('id', flat=True))
+
+    officers = SecurityOfficer.objects.filter(is_active=True)
+    if user.organization_id:
+        officers = officers.filter(organization=user.organization)
+    if geofence_ids:
+        officers = officers.filter(assigned_geofence_id__in=geofence_ids)
+
+    officers = officers.select_related('organization', 'assigned_geofence')
+
+    profiles = OfficerProfile.objects.filter(officer__in=officers).select_related('officer')
+    profile_lookup = {profile.officer_id: profile for profile in profiles}
+
+    payload = []
+    for officer in officers:
+        profile = profile_lookup.get(officer.id)
+        location = None
+        source = None
+        last_seen = None
+        battery = None
+        on_duty = True
+
+        if profile:
+            on_duty = profile.on_duty
+            if profile.last_latitude is not None and profile.last_longitude is not None:
+                location = {
+                    'latitude': profile.last_latitude,
+                    'longitude': profile.last_longitude,
+                }
+                source = 'live'
+                last_seen = profile.last_seen_at
+                battery = profile.battery_level
+
+        if location is None and officer.assigned_geofence:
+            center = officer.assigned_geofence.get_center_point()
+            if center:
+                location = {
+                    'latitude': center[0],
+                    'longitude': center[1],
+                }
+                source = 'geofence_center'
+
+        if location is None:
+            continue
+
+        distance_km = None
+        if ref_lat is not None and ref_lon is not None:
+            distance_km = round(_haversine_km(ref_lat, ref_lon, location['latitude'], location['longitude']), 2)
+
+        payload.append({
+            'id': officer.id,
+            'name': officer.name,
+            'contact': officer.contact,
+            'email': officer.email,
+            'organization': officer.organization.name if officer.organization else None,
+            'geofence': {
+                'id': officer.assigned_geofence_id,
+                'name': officer.assigned_geofence.name if officer.assigned_geofence else None,
+            },
+            'location': location,
+            'location_source': source,
+            'last_seen_at': last_seen,
+            'battery_level': battery,
+            'distance_km': distance_km,
+            'is_on_duty': on_duty,
+        })
+
+    return Response({
+        'count': len(payload),
+        'officers': payload,
     })
 
 

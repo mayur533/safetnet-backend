@@ -41,10 +41,17 @@ SECRET_KEY = config('SECRET_KEY', default="django-insecure-5xl4(8z1!y&+nsci$=!@n
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.125').split(',')
-ALLOWED_HOSTS.append('safetnet.onrender.com')
-ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
-ALLOWED_HOSTS.append('192.168.0.125')  # Device IP for mobile app access
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+EXTRA_HOSTS = [
+    '0.0.0.0',
+    '127.0.0.1',
+    '192.168.0.125',  # local LAN IP for physical devices
+    'safetnet.onrender.com',
+    'safetnet-backend.onrender.com',
+]
+for host in EXTRA_HOSTS:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
 # Application definition
 
 INSTALLED_APPS = [

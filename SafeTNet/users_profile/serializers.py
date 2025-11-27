@@ -114,15 +114,40 @@ class UserProfileSerializer(serializers.ModelSerializer):
     location = serializers.SerializerMethodField()
     is_premium = serializers.SerializerMethodField()
     is_paid_user = serializers.SerializerMethodField()
+    geofences = serializers.SerializerMethodField()
+    geofence_ids = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = (
             'id', 'name', 'email', 'phone', 'plantype', 
             'planexpiry', 'plan_details', 'location', 'is_premium', 'is_paid_user',
-            'date_joined', 'last_login', 'first_name', 'last_name', 'username'
+            'date_joined', 'last_login', 'first_name', 'last_name', 'username',
+            'geofences', 'geofence_ids'
         )
         read_only_fields = ('id', 'email', 'date_joined', 'last_login', 'username')
+    
+    def get_geofence_ids(self, obj):
+        """Return list of geofence IDs for writing"""
+        return [g.id for g in obj.geofences.all()]
+    
+    def get_geofences(self, obj):
+        """Return geofence details for the user"""
+        geofences = obj.geofences.all()
+        if not geofences.exists():
+            return []
+        
+        return [
+            {
+                'id': g.id,
+                'name': g.name,
+                'description': g.description,
+                'organization_name': g.organization.name if g.organization else None,
+                'active': g.active,
+                'center_point': g.get_center_point(),
+            }
+            for g in geofences
+        ]
     
     def get_name(self, obj):
         """Get user's full name."""
@@ -257,6 +282,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         """Update user profile."""
+        # Handle geofence_ids if provided
+        geofence_ids = self.initial_data.get('geofence_ids', None)
+        if geofence_ids is not None:  # Allow empty list to clear geofences
+            from users.models import Geofence
+            geofences = Geofence.objects.filter(id__in=geofence_ids)
+            instance.geofences.set(geofences)
+        
         # Update first_name and last_name from name field if provided
         name = self.initial_data.get('name')
         if name:

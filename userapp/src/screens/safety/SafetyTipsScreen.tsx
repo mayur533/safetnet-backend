@@ -1,11 +1,28 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {View, Text, ScrollView, ActivityIndicator, RefreshControl} from 'react-native';
+import {useTheme} from '@react-navigation/native';
 import {apiService} from '../../services/apiService';
 
 const SafetyTipsScreen = () => {
   const [tips, setTips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const theme = useTheme();
+  const {colors, dark} = theme;
+
+  const themeColors = useMemo(
+    () => ({
+      background: colors.background || (dark ? '#0F172A' : '#F9FAFB'),
+      surface: colors.card || (dark ? '#1E293B' : '#FFFFFF'),
+      text: colors.text || (dark ? '#F8FAFC' : '#111827'),
+      textMuted: dark ? 'rgba(248, 250, 252, 0.7)' : '#6B7280',
+      primary: colors.primary || '#2563EB',
+      badgeBg: dark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF',
+      badgeText: dark ? '#93C5FD' : '#1E40AF',
+      border: colors.border || (dark ? 'rgba(148, 163, 184, 0.3)' : '#E5E7EB'),
+    }),
+    [colors, dark],
+  );
 
   const loadTips = async () => {
     try {
@@ -81,49 +98,72 @@ const SafetyTipsScreen = () => {
 
   if (loading) {
     return (
-      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB'}}>
-        <ActivityIndicator size="large" color="#2563EB" />
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: themeColors.background,
+        }}>
+        <ActivityIndicator size="large" color={themeColors.primary} />
       </View>
     );
   }
 
   return (
     <ScrollView 
-      style={{flex: 1, backgroundColor: '#F9FAFB'}}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+      style={{flex: 1, backgroundColor: themeColors.background}}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={themeColors.primary}
+          colors={[themeColors.primary]}
+        />
+      }>
       <View style={{paddingHorizontal: 24, paddingVertical: 16}}>
-        <Text style={{fontSize: 24, fontWeight: 'bold', color: '#111827', marginBottom: 16}}>
+        <Text style={{fontSize: 24, fontWeight: 'bold', color: themeColors.text, marginBottom: 16}}>
           Safety Tips
         </Text>
 
         {tips.length === 0 ? (
           <View style={{padding: 32, alignItems: 'center'}}>
-            <Text style={{color: '#6B7280', fontSize: 16}}>No safety tips available</Text>
+            <Text style={{color: themeColors.textMuted, fontSize: 16}}>No safety tips available</Text>
           </View>
         ) : (
           tips.map((tip) => (
           <View
               key={tip.id}
             style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: 12,
-                padding: 16,
+                backgroundColor: themeColors.surface,
+                borderRadius: 14,
+                padding: 18,
               marginBottom: 16,
-                shadowColor: '#000',
-                shadowOffset: {width: 0, height: 2},
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
+                shadowColor: dark ? '#000' : '#111827',
+                shadowOffset: {width: 0, height: 4},
+                shadowOpacity: dark ? 0.35 : 0.1,
+                shadowRadius: 12,
                 elevation: 3,
+                borderWidth: dark ? 1 : 0,
+                borderColor: dark ? themeColors.border : 'transparent',
             }}>
-              <Text style={{fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 8}}>
+              <Text style={{fontSize: 18, fontWeight: '600', color: themeColors.text, marginBottom: 8}}>
                 {tip.title}
               </Text>
-              <Text style={{fontSize: 14, color: '#6B7280', lineHeight: 20}}>
+              <Text style={{fontSize: 14, color: themeColors.textMuted, lineHeight: 20}}>
                 {tip.content}
               </Text>
               {tip.category && (
-                <View style={{marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#EFF6FF', borderRadius: 6}}>
-                  <Text style={{fontSize: 12, color: '#1E40AF', fontWeight: '500'}}>
+                <View
+                  style={{
+                    marginTop: 12,
+                    alignSelf: 'flex-start',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    backgroundColor: themeColors.badgeBg,
+                    borderRadius: 999,
+                  }}>
+                  <Text style={{fontSize: 12, color: themeColors.badgeText, fontWeight: '600', textTransform: 'capitalize'}}>
                     {tip.category}
             </Text>
               </View>

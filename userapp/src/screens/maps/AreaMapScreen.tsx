@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,41 +9,10 @@ import {
   Platform,
   Dimensions,
   Linking,
+  ScrollView,
 } from 'react-native';
-// Conditionally import MapView to handle module loading errors gracefully
-let MapView: any = null;
-let Marker: any = null;
-let PROVIDER_GOOGLE: any = null;
-let Circle: any = null;
-let mapsModuleAvailable = false;
-
-// Try to load react-native-maps with error handling
-try {
-  // Use dynamic import to catch module loading errors
-  const mapsModule = require('react-native-maps');
-  if (mapsModule) {
-    MapView = mapsModule.default || mapsModule.MapView;
-    Marker = mapsModule.Marker;
-    PROVIDER_GOOGLE = mapsModule.PROVIDER_GOOGLE || 'google';
-    Circle = mapsModule.Circle;
-    mapsModuleAvailable = MapView !== null && Marker !== null;
-    if (mapsModuleAvailable) {
-      console.log('react-native-maps loaded successfully');
-    }
-  }
-} catch (error: any) {
-  console.warn('react-native-maps not available:', error?.message || error);
-  mapsModuleAvailable = false;
-}
-
-// Import Geolocation - it should be properly linked now
 import Geolocation from '@react-native-community/geolocation';
-
-// Set default options for Geolocation
-Geolocation.setRNConfiguration({
-  skipPermissionRequests: false,
-  authorizationLevel: 'whenInUse',
-});
+import GeolocationService from 'react-native-geolocation-service';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '@react-navigation/native';
@@ -51,6 +20,12 @@ import {useAuthStore} from '../../stores/authStore';
 import {apiService} from '../../services/apiService';
 import {useSubscription} from '../../lib/hooks/useSubscription';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
+import {MapView, Marker, Circle, PROVIDER_GOOGLE, mapsModuleAvailable} from '../../utils/mapComponents';
+
+Geolocation.setRNConfiguration({
+  skipPermissionRequests: false,
+  authorizationLevel: 'whenInUse',
+});
 
 const {width, height} = Dimensions.get('window');
 
@@ -69,6 +44,23 @@ interface NearbyHelp {
   distance?: number;
 }
 
+const formatRelativeTime = (timestamp?: string | null) => {
+  if (!timestamp) {
+    return 'No live ping';
+  }
+
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  if (diffMs < 60000) {
+    return 'moments ago';
+  }
+  if (diffMs < 3600000) {
+    const minutes = Math.round(diffMs / 60000);
+    return `${minutes} min ago`;
+  }
+  const hours = Math.round(diffMs / 3600000);
+  return `${hours} hr${hours > 1 ? 's' : ''} ago`;
+};
+
 const AreaMapScreen = () => {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -83,6 +75,15 @@ const AreaMapScreen = () => {
   const [loading, setLoading] = useState(true);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [geofences, setGeofences] = useState<any[]>([]);
+  const [securityOfficers, setSecurityOfficers] = useState<any[]>([]);
+  const [loadingOfficers, setLoadingOfficers] = useState(false);
+  const [locationProvider, setLocationProvider] = useState<'gps' | 'enhanced' | null>(null);
+  const locationRequestOptions = useRef({
+    enableHighAccuracy: true,
+    timeout: 25000,
+    maximumAge: 15000,
+    distanceFilter: 0,
+  }).current;
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
@@ -96,12 +97,184 @@ const AreaMapScreen = () => {
     buttons: [],
   });
 
-  // Request location permission
-  useEffect(() => {
-    requestLocationPermission();
+  const requestPosition = useCallback(
+    (provider: 'legacy' | 'enhanced') =>
+      new Promise<Location>((resolve, reject) => {
+        const getter =
+          provider === 'enhanced'
+            ? GeolocationService.getCurrentPosition
+            : Geolocation.getCurrentPosition;
+
+        getter(
+          (position) => {
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          },
+          (error) => reject({...error, provider}),
+          {
+            ...locationRequestOptions,
+            forceRequestLocation: provider === 'enhanced',
+            showLocationDialog: provider === 'enhanced',
+          },
+        );
+      }),
+    [locationRequestOptions],
+  );
+
+  const handleLocationSuccess = useCallback(
+    (location: Location, providerLabel: 'gps' | 'enhanced') => {
+      setUserLocation(location);
+      setLocationProvider(providerLabel);
+      loadNearbyHelp(location);
+      loadSecurityOfficers(location);
+      if (user?.id && isPremium) {
+        loadGeofences();
+      }
+      setLoading(false);
+
+      if (mapRef.current) {
+        mapRef.current.animateToRegion(
+          {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          },
+          800,
+        );
+      }
+    },
+    [isPremium, loadGeofences, loadSecurityOfficers, loadNearbyHelp, user],
+  );
+
+  const showPermissionAlert = useCallback((config: {
+    title: string;
+    message: string;
+    buttons: Array<{text: string; style?: 'default' | 'cancel' | 'destructive'; onPress: () => void}>;
+    type?: 'error' | 'success' | 'info' | 'warning';
+  }) => {
+    setAlertConfig({
+      title: config.title,
+      message: config.message,
+      type: config.type ?? 'warning',
+      buttons: config.buttons,
+    });
+    setAlertVisible(true);
   }, []);
 
-  const requestLocationPermission = async () => {
+  const handleLocationFailure = useCallback(
+    async (error: any) => {
+      console.error('Location error:', error);
+      setLoading(false);
+
+      if (Platform.OS === 'android') {
+        const hasPermission = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+
+        if (!hasPermission && error.code === 1) {
+          showPermissionAlert({
+            title: 'Location Permission Required',
+            message: 'Please enable location permission in settings to see nearby help.',
+            buttons: [
+              {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  Linking.openSettings();
+                  setAlertVisible(false);
+                },
+              },
+              {text: 'Retry', onPress: () => requestLocationPermission()},
+            ],
+          });
+          return;
+        }
+
+        if (error.code === 2) {
+          showPermissionAlert({
+            title: 'Location Services Off',
+            message: 'Turn on device location or GPS for accurate tracking.',
+            buttons: [
+              {text: 'Dismiss', style: 'cancel', onPress: () => setAlertVisible(false)},
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  Linking.openSettings();
+                  setAlertVisible(false);
+                },
+              },
+              {text: 'Retry', onPress: () => requestLocationPermission()},
+            ],
+          });
+          return;
+        }
+      } else if (error.code === 1) {
+        showPermissionAlert({
+          title: 'Location Permission Required',
+          message: 'Please enable location permission in settings.',
+          buttons: [
+            {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                Linking.openSettings();
+                setAlertVisible(false);
+              },
+            },
+          ],
+        });
+        return;
+      }
+
+      // Generic warning
+      showPermissionAlert({
+        title: 'Unable to determine location',
+        message: error?.message || 'No location provider available. Please ensure GPS is enabled and try again.',
+        buttons: [
+          {text: 'OK', style: 'cancel', onPress: () => setAlertVisible(false)},
+          {text: 'Retry', onPress: () => requestLocationPermission()},
+        ],
+        type: 'error',
+      });
+    },
+    [showPermissionAlert],
+  );
+
+  const getCurrentLocation = useCallback(async () => {
+    const tryOrder: Array<'legacy' | 'enhanced'> =
+      Platform.OS === 'android' ? ['enhanced', 'legacy'] : ['legacy', 'enhanced'];
+
+    for (const provider of tryOrder) {
+      try {
+        if (Platform.OS !== 'ios') {
+          await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        } else if (provider === 'enhanced') {
+          await GeolocationService.requestAuthorization?.('whenInUse');
+        } else {
+          await Geolocation.requestAuthorization();
+        }
+
+        const location = await requestPosition(provider);
+        handleLocationSuccess(location, provider === 'enhanced' ? 'enhanced' : 'gps');
+        return;
+      } catch (error) {
+        console.warn(
+          provider === 'enhanced'
+            ? 'Enhanced provider failed, falling back to legacy GPS'
+            : 'Primary GPS provider failed, retrying with enhanced provider',
+          error,
+        );
+      }
+    }
+
+    handleLocationFailure({
+      code: 2,
+      message: 'Unable to determine location using available providers',
+    });
+  }, [handleLocationFailure, handleLocationSuccess, requestPosition]);
+
+  const requestLocationPermission = useCallback(async () => {
     if (Platform.OS === 'android') {
       try {
         // Check if permission is already granted
@@ -111,11 +284,12 @@ const AreaMapScreen = () => {
         
         if (hasPermission) {
           setLocationPermissionGranted(true);
-          // Request authorization from Geolocation module if not already authorized
-          try {
-            await Geolocation.requestAuthorization();
-          } catch (authError) {
-            console.warn('Geolocation authorization error:', authError);
+          if (Platform.OS === 'ios') {
+            try {
+              await Geolocation.requestAuthorization();
+            } catch (authError) {
+              console.warn('Geolocation authorization error:', authError);
+            }
           }
           getCurrentLocation();
           return;
@@ -134,12 +308,6 @@ const AreaMapScreen = () => {
         );
         if (granted === PermissionsAndroid.RESULTS.GRANTED) {
           setLocationPermissionGranted(true);
-          // Request authorization from Geolocation module
-          try {
-            await Geolocation.requestAuthorization();
-          } catch (authError) {
-            console.warn('Geolocation authorization error:', authError);
-          }
           getCurrentLocation();
         } else {
           setLocationPermissionGranted(false);
@@ -180,113 +348,26 @@ const AreaMapScreen = () => {
         setLoading(false);
       }
     }
-  };
+  }, [getCurrentLocation]);
 
-  const getCurrentLocation = () => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        const location: Location = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-        setUserLocation(location);
-        loadNearbyHelp(location);
-        if (user?.id && isPremium) {
-          loadGeofences();
-        }
-        setLoading(false);
-        
-        // Center map on user location
-        if (mapRef.current) {
-          mapRef.current.animateToRegion({
-            latitude: location.latitude,
-            longitude: location.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }, 1000);
-        }
-      },
-      (error) => {
-        console.error('Location error:', error);
-        setLoading(false);
-        
-        // Check if permission is actually granted before showing error
-        const checkPermissionAndShowError = async () => {
-          if (Platform.OS === 'android') {
-            const hasPermission = await PermissionsAndroid.check(
-              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-            );
-            
-            // Only show error if permission is denied, not if it's granted but GPS failed
-            if (!hasPermission && error.code === 1) {
-              setAlertConfig({
-                title: 'Location Permission Required',
-                message: 'Please enable location permission in settings to see nearby help.',
-                type: 'warning',
-                buttons: [
-                  {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
-                  {text: 'Open Settings', onPress: () => {
-                    Linking.openSettings();
-                    setAlertVisible(false);
-                  }},
-                  {text: 'Retry', onPress: () => {
-                    setAlertVisible(false);
-                    getCurrentLocation();
-                  }},
-                ],
-              });
-              setAlertVisible(true);
-            } else if (error.code === 2) {
-              // Position unavailable - GPS might be off
-              setAlertConfig({
-                title: 'Location Unavailable',
-                message: 'Please ensure location services are enabled on your device.',
-                type: 'warning',
-                buttons: [
-                  {text: 'OK', onPress: () => setAlertVisible(false)},
-                  {text: 'Retry', onPress: () => {
-                    setAlertVisible(false);
-                    getCurrentLocation();
-                  }},
-                ],
-              });
-              setAlertVisible(true);
-            } else {
-              // For timeout or other errors when permission is granted, just log silently
-              console.warn('Location error (permission granted):', error.message);
-            }
-          } else {
-            // iOS - only show if permission denied
-            if (error.code === 1) {
-              setAlertConfig({
-                title: 'Location Permission Required',
-                message: 'Please enable location permission in settings.',
-                type: 'warning',
-                buttons: [
-                  {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
-                  {text: 'Open Settings', onPress: () => {
-                    Linking.openSettings();
-                    setAlertVisible(false);
-                  }},
-                ],
-              });
-              setAlertVisible(true);
-            } else {
-              console.warn('Location error:', error.message);
-            }
-          }
-        };
-        
-        checkPermissionAndShowError();
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 30000, // Increased timeout to 30 seconds
-        maximumAge: 60000, // Accept cached location up to 1 minute old
-        distanceFilter: 10, // Update if moved 10 meters
-      }
-    );
-  };
+  useEffect(() => {
+    requestLocationPermission();
+  }, [requestLocationPermission]);
+
+  const loadSecurityOfficers = useCallback(async (location: Location) => {
+    if (!location) return;
+    setLoadingOfficers(true);
+    try {
+      const response = await apiService.getSecurityOfficers(location.latitude, location.longitude);
+      const officers = Array.isArray(response?.officers) ? response.officers : [];
+      setSecurityOfficers(officers);
+    } catch (error) {
+      console.error('Failed to load security officers:', error);
+      setSecurityOfficers([]);
+    } finally {
+      setLoadingOfficers(false);
+    }
+  }, [user]);
 
   const loadNearbyHelp = async (location: Location) => {
     try {
@@ -315,7 +396,7 @@ const AreaMapScreen = () => {
     }
   };
 
-  const loadGeofences = async () => {
+  const loadGeofences = useCallback(async () => {
     if (!user?.id) return;
     
     try {
@@ -337,7 +418,7 @@ const AreaMapScreen = () => {
       console.error('Failed to load geofences:', error);
       setGeofences([]);
     }
-  };
+  }, [user]);
 
   const getMarkerIcon = (type: string) => {
     switch (type) {
@@ -431,6 +512,48 @@ const AreaMapScreen = () => {
     setAlertVisible(true);
   };
 
+  const handleOfficerPress = (officer: any) => {
+    const distanceText = officer.distance_km ? `${officer.distance_km} km away` : null;
+    const batteryText =
+      typeof officer.battery_level === 'number' ? `Battery ${officer.battery_level}%` : null;
+    const lastSeenText = officer.last_seen_at ? `Last seen ${formatRelativeTime(officer.last_seen_at)}` : null;
+    const statusText = officer.is_on_duty ? 'On duty' : 'Off duty';
+
+    const message = [statusText, officer.geofence?.name, distanceText, batteryText, lastSeenText]
+      .filter(Boolean)
+      .join('\n');
+
+    const buttons: Array<{text: string; onPress: () => void; style?: 'default' | 'cancel' | 'destructive'}> = [
+      {text: 'Close', style: 'cancel', onPress: () => setAlertVisible(false)},
+    ];
+
+    if (officer.contact) {
+      buttons.push({
+        text: 'Call Officer',
+        onPress: () => {
+          Linking.openURL(`tel:${officer.contact}`).catch(() => {
+            setAlertConfig({
+              title: 'Error',
+              message: 'Could not start call',
+              type: 'error',
+              buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+            });
+            setAlertVisible(true);
+          });
+          setAlertVisible(false);
+        },
+      });
+    }
+
+    setAlertConfig({
+      title: officer.name,
+      message,
+      type: 'info',
+      buttons,
+    });
+    setAlertVisible(true);
+  };
+
   const centerOnUserLocation = () => {
     if (userLocation && mapRef.current) {
       mapRef.current.animateToRegion({
@@ -489,6 +612,7 @@ const AreaMapScreen = () => {
           
           {nearbyHelp.length > 0 ? (
             <View style={styles.helpListContainer}>
+              <Text style={[styles.sectionHeading, {color: colors.text}]}>Emergency Services</Text>
               {nearbyHelp.map((help) => (
                 <TouchableOpacity
                   key={help.id}
@@ -519,6 +643,34 @@ const AreaMapScreen = () => {
               <Text style={[styles.emptyStateText, {color: colors.text}]}>No nearby help found</Text>
             </View>
           )}
+
+          {securityOfficers.length > 0 && (
+            <View style={[styles.helpListContainer, {marginTop: 32}]}>
+              <Text style={[styles.sectionHeading, {color: colors.text}]}>Security Officers</Text>
+              {securityOfficers.map((officer) => (
+                <TouchableOpacity
+                  key={`officer-list-${officer.id}`}
+                  style={[styles.helpListItem, {backgroundColor: colors.card, borderColor: colors.border}]}
+                  onPress={() => handleOfficerPress(officer)}
+                  activeOpacity={0.7}>
+                  <View style={[styles.helpListIcon, {backgroundColor: '#F97316'}]}>
+                    <MaterialIcons name="shield" size={24} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.helpListContent}>
+                    <Text style={[styles.helpListName, {color: colors.text}]}>{officer.name}</Text>
+                    {officer.geofence?.name && (
+                      <Text style={[styles.helpListAddress, {color: colors.text}]}>{officer.geofence.name}</Text>
+                    )}
+                    <Text style={[styles.helpListDistance, {color: colors.text}]}>
+                      {officer.distance_km ? `${officer.distance_km} km • ` : ''}
+                      {formatRelativeTime(officer.last_seen_at)}
+                    </Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={24} color={colors.text} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </ScrollView>
       </View>
     );
@@ -535,104 +687,172 @@ const AreaMapScreen = () => {
         onDismiss={() => setAlertVisible(false)}
       />
       <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        initialRegion={{
-          latitude: userLocation.latitude,
-          longitude: userLocation.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-        showsCompass={true}
-        toolbarEnabled={false}
-        mapType="standard">
-        
-        {/* User location marker */}
-        <Marker
-          coordinate={userLocation}
-          title="Your Location"
-          description="You are here">
-          <View style={[styles.userMarker, {backgroundColor: colors.primary}]}>
-            <MaterialIcons name="person-pin-circle" size={32} color="#FFFFFF" />
-          </View>
-        </Marker>
-
-        {/* Nearby help markers */}
-        {nearbyHelp.map((help) => (
+        <MapView
+          ref={mapRef}
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          initialRegion={{
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+          showsUserLocation={true}
+          showsMyLocationButton={false}
+          showsCompass={true}
+          toolbarEnabled={false}
+          mapType="standard">
+          
+          {/* User location marker */}
           <Marker
-            key={help.id}
-            coordinate={help.location}
-            title={help.name}
-            description={help.address || help.type}
-            onPress={() => handleMarkerPress(help)}>
-            <View style={[styles.helpMarker, {backgroundColor: getMarkerColor(help.type)}]}>
-              <MaterialIcons name={getMarkerIcon(help.type) as any} size={24} color="#FFFFFF" />
+            coordinate={userLocation}
+            title="Your Location"
+            description="You are here">
+            <View style={[styles.userMarker, {backgroundColor: colors.primary}]}>
+              <MaterialIcons name="person-pin-circle" size={32} color="#FFFFFF" />
             </View>
           </Marker>
-        ))}
 
-        {/* Geofences (premium feature) */}
-        {isPremium && geofences.map((geo) => {
-          if (geo.center.lat === 0 && geo.center.lng === 0) return null;
-          const strokeColor = geo.isActive ? colors.primary : colors.notification;
-          const fillColor = geo.isActive 
-            ? `${colors.primary || '#2563EB'}20` 
-            : `${colors.notification || '#EF4444'}20`;
-          return (
-            <Circle
-              key={geo.id}
-              center={{latitude: geo.center.lat, longitude: geo.center.lng}}
-              radius={geo.radius || 100}
-              strokeColor={strokeColor}
-              fillColor={fillColor}
-              strokeWidth={2}
-            />
-          );
-        })}
-      </MapView>
+          {/* Nearby help markers */}
+          {nearbyHelp.map((help) => (
+            <Marker
+              key={help.id}
+              coordinate={help.location}
+              title={help.name}
+              description={help.address || help.type}
+              onPress={() => handleMarkerPress(help)}>
+              <View style={[styles.helpMarker, {backgroundColor: getMarkerColor(help.type)}]}>
+                <MaterialIcons name={getMarkerIcon(help.type) as any} size={24} color="#FFFFFF" />
+              </View>
+            </Marker>
+          ))}
 
-      {/* Floating action button to center on user location */}
-      <TouchableOpacity
-        style={[styles.centerButton, {backgroundColor: colors.primary}]}
-        onPress={centerOnUserLocation}
-        activeOpacity={0.8}>
-        <MaterialIcons name="my-location" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+          {/* Security officer markers */}
+          {securityOfficers
+            .filter((officer) => officer.location?.latitude && officer.location?.longitude)
+            .map((officer) => (
+              <Marker
+                key={`officer-${officer.id}`}
+                coordinate={{
+                  latitude: officer.location.latitude,
+                  longitude: officer.location.longitude,
+                }}
+                title={officer.name}
+                description={officer.geofence?.name || 'Security Officer'}
+                onPress={() => handleOfficerPress(officer)}>
+                <View style={styles.officerMarker}>
+                  <MaterialIcons name="shield" size={22} color="#FFFFFF" />
+                </View>
+              </Marker>
+            ))}
 
-      {/* Legend */}
-      <View style={[styles.legend, {backgroundColor: colors.card}]}>
-        <Text style={[styles.legendTitle, {color: colors.text}]}>Nearby Help</Text>
-        <View style={styles.legendItems}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendIcon, {backgroundColor: '#DC2626'}]}>
-              <MaterialIcons name="local-hospital" size={16} color="#FFFFFF" />
+          {/* Geofences (premium feature) */}
+          {isPremium && geofences.map((geo) => {
+            if (geo.center.lat === 0 && geo.center.lng === 0) return null;
+            const strokeColor = geo.isActive ? colors.primary : colors.notification;
+            const fillColor = geo.isActive 
+              ? `${colors.primary || '#2563EB'}20` 
+              : `${colors.notification || '#EF4444'}20`;
+            return (
+              <Circle
+                key={geo.id}
+                center={{latitude: geo.center.lat, longitude: geo.center.lng}}
+                radius={geo.radius || 100}
+                strokeColor={strokeColor}
+                fillColor={fillColor}
+                strokeWidth={2}
+              />
+            );
+          })}
+        </MapView>
+
+        {/* Floating action button to center on user location */}
+        <TouchableOpacity
+          style={[styles.centerButton, {backgroundColor: colors.primary}]}
+          onPress={centerOnUserLocation}
+          activeOpacity={0.8}>
+          <MaterialIcons name="my-location" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        {/* Legend */}
+        <View style={[styles.legend, {backgroundColor: colors.card}]}>
+          <Text style={[styles.legendTitle, {color: colors.text}]}>Nearby Help</Text>
+          <View style={styles.legendItems}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIcon, {backgroundColor: '#DC2626'}]}>
+                <MaterialIcons name="local-hospital" size={16} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.legendText, {color: colors.text}]}>Hospital</Text>
             </View>
-            <Text style={[styles.legendText, {color: colors.text}]}>Hospital</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendIcon, {backgroundColor: '#1D4ED8'}]}>
-              <MaterialIcons name="local-police" size={16} color="#FFFFFF" />
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIcon, {backgroundColor: '#1D4ED8'}]}>
+                <MaterialIcons name="local-police" size={16} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.legendText, {color: colors.text}]}>Police</Text>
             </View>
-            <Text style={[styles.legendText, {color: colors.text}]}>Police</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendIcon, {backgroundColor: '#F59E0B'}]}>
-              <MaterialIcons name="local-fire-department" size={16} color="#FFFFFF" />
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIcon, {backgroundColor: '#F59E0B'}]}>
+                <MaterialIcons name="local-fire-department" size={16} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.legendText, {color: colors.text}]}>Fire</Text>
             </View>
-            <Text style={[styles.legendText, {color: colors.text}]}>Fire</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendIcon, {backgroundColor: '#10B981'}]}>
-              <MaterialIcons name="local-pharmacy" size={16} color="#FFFFFF" />
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIcon, {backgroundColor: '#10B981'}]}>
+                <MaterialIcons name="local-pharmacy" size={16} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.legendText, {color: colors.text}]}>Pharmacy</Text>
             </View>
-            <Text style={[styles.legendText, {color: colors.text}]}>Pharmacy</Text>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIcon, {backgroundColor: '#F97316'}]}>
+                <MaterialIcons name="shield" size={16} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.legendText, {color: colors.text}]}>Security</Text>
+            </View>
           </View>
         </View>
-        </View>
+
+        {/* Officer panel */}
+        {securityOfficers.length > 0 && (
+          <View style={[styles.officerPanel, {backgroundColor: colors.card}]}>
+            <View style={styles.officerPanelHeader}>
+              <Text style={[styles.officerPanelTitle, {color: colors.text}]}>Nearby Security Officers</Text>
+              {locationProvider && (
+                <Text style={styles.providerBadge}>
+                  {locationProvider === 'gps' ? 'GPS lock' : 'Enhanced positioning'}
+                </Text>
+              )}
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.officerChipRow}>
+              {securityOfficers.slice(0, 5).map((officer) => (
+                <TouchableOpacity
+                  key={`officer-chip-${officer.id}`}
+                  style={styles.officerChip}
+                  activeOpacity={0.8}
+                  onPress={() => handleOfficerPress(officer)}>
+                  <View style={styles.officerChipIcon}>
+                    <MaterialIcons name="shield" size={18} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.officerChipTextWrapper}>
+                    <Text style={styles.officerChipName}>{officer.name}</Text>
+                    <Text style={styles.officerChipMeta}>
+                      {officer.distance_km ? `${officer.distance_km} km` : 'On call'} •{' '}
+                      {formatRelativeTime(officer.last_seen_at)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+        {loadingOfficers && (
+          <View style={styles.officerLoading}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[styles.officerLoadingText, {color: colors.text}]}>Syncing officer locations…</Text>
+          </View>
+        )}
       </View>
     </>
   );
@@ -700,6 +920,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
+  officerMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#F97316',
+  },
   centerButton: {
     position: 'absolute',
     bottom: 120,
@@ -753,6 +983,88 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 12,
   },
+  officerPanel: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 100,
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  officerPanelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  officerPanelTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  providerBadge: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  officerChipRow: {
+    gap: 12,
+    paddingRight: 16,
+  },
+  officerChip: {
+    minWidth: 200,
+    borderRadius: 12,
+    backgroundColor: '#111827',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  officerChipIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  officerChipTextWrapper: {
+    flex: 1,
+  },
+  officerChipName: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  officerChipMeta: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  officerLoading: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(17, 24, 39, 0.6)',
+  },
+  officerLoadingText: {
+    fontSize: 12,
+    color: '#F8FAFC',
+  },
   fallbackContainer: {
     flex: 1,
   },
@@ -794,6 +1106,11 @@ const styles = StyleSheet.create({
   helpListDistance: {
     fontSize: 12,
     opacity: 0.7,
+  },
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
   },
   emptyState: {
     alignItems: 'center',

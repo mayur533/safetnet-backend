@@ -1,9 +1,19 @@
-import React, {useState, useEffect} from 'react';
-import {View, Text, ScrollView, StyleSheet, Switch, TouchableOpacity} from 'react-native';
+import React, {useState, useEffect, useRef} from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Modal,
+} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useTheme} from '@react-navigation/native';
-import {useSettingsStore} from '../../stores/settingsStore';
-import type {ThemeMode} from '../../stores/settingsStore';
+import {useSettingsStore, DEFAULT_SOS_MESSAGES} from '../../stores/settingsStore';
+import type {ThemeMode, SosAudience} from '../../stores/settingsStore';
 import {shakeDetectionService} from '../../services/shakeDetectionService';
 
 const SettingsScreen = () => {
@@ -11,7 +21,14 @@ const SettingsScreen = () => {
   const setShakeToSendSOS = useSettingsStore((state) => state.setShakeToSendSOS);
   const themeMode = useSettingsStore((state) => state.themeMode);
   const setThemeMode = useSettingsStore((state) => state.setThemeMode);
+  const sosMessages = useSettingsStore((state) => state.sosMessages);
+  const setSosMessage = useSettingsStore((state) => state.setSosMessage);
+  const resetSosMessage = useSettingsStore((state) => state.resetSosMessage);
   const [isAccelerometerAvailable, setIsAccelerometerAvailable] = useState(false);
+  const [activeAudience, setActiveAudience] = useState<SosAudience>('family');
+  const [draftMessage, setDraftMessage] = useState(sosMessages.family);
+  const [customizeModalVisible, setCustomizeModalVisible] = useState(false);
+  const messageInputRef = useRef<TextInput>(null);
   const theme = useTheme();
 
   useEffect(() => {
@@ -43,11 +60,40 @@ const SettingsScreen = () => {
     };
   }, []);
 
+  useEffect(() => {
+    setDraftMessage(sosMessages[activeAudience]);
+  }, [activeAudience, sosMessages]);
+
+  const handleSaveMessage = async () => {
+    const trimmed = draftMessage.trim();
+    if (!trimmed) {
+      Alert.alert('Message required', 'Please enter a message before saving.');
+      return;
+    }
+    await setSosMessage(activeAudience, trimmed);
+  };
+
+  const handleResetMessage = async () => {
+    await resetSosMessage(activeAudience);
+  };
+
   const themeOptions: {mode: ThemeMode; label: string; icon: string}[] = [
     {mode: 'light', label: 'Light', icon: 'light-mode'},
     {mode: 'dark', label: 'Dark', icon: 'dark-mode'},
     {mode: 'system', label: 'System', icon: 'settings'},
   ];
+
+  const sosTabs: {key: SosAudience; label: string; icon: string}[] = [
+    {key: 'family', label: 'Family', icon: 'favorite'},
+    {key: 'police', label: 'Police', icon: 'local-police'},
+    {key: 'security', label: 'Security', icon: 'security'},
+  ];
+  const anyCustom = sosTabs.some(
+    (item) => sosMessages[item.key] !== DEFAULT_SOS_MESSAGES[item.key],
+  );
+
+  const openCustomizeModal = () => setCustomizeModalVisible(true);
+  const closeCustomizeModal = () => setCustomizeModalVisible(false);
 
   return (
     <ScrollView
@@ -130,6 +176,124 @@ const SettingsScreen = () => {
         </View>
         <Text style={[styles.themeHint, {color: theme.colors.notification}]}>System matches your device theme automatically.</Text>
       </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, {color: theme.colors.text}]}>SOS Messages</Text>
+        <Text style={[styles.sectionDescription, {color: theme.colors.notification}]}>
+          These messages are sent to your trusted contacts whenever you trigger SOS.
+        </Text>
+        <View
+          style={[
+            styles.sosCard,
+            {backgroundColor: theme.colors.card, borderColor: theme.colors.border},
+          ]}>
+          <View style={styles.sosCardHeader}>
+            <View>
+              <Text style={[styles.sosCardTitle, {color: theme.colors.text}]}>SOS Message Setup</Text>
+              <Text style={[styles.sosCardSubtitle, {color: theme.colors.notification}]}>
+                Family, police, and security get their own message.
+              </Text>
+              <Text style={[styles.sosStatusText, {color: anyCustom ? '#047857' : theme.colors.notification}]}>
+                {anyCustom ? 'Custom templates are active' : 'Currently using default templates'}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.customizeBtn} onPress={openCustomizeModal}>
+              <Text style={styles.customizeBtnText}>Customize</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={customizeModalVisible}
+        onRequestClose={closeCustomizeModal}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, {backgroundColor: theme.colors.card}]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, {color: theme.colors.text}]}>
+                Customize SOS messages
+              </Text>
+              <TouchableOpacity onPress={closeCustomizeModal}>
+                <MaterialIcons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.sectionDescription, {color: theme.colors.notification}]}>
+              Choose which group to edit, then write the message they should receive.
+            </Text>
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={{paddingBottom: 20}}
+              showsVerticalScrollIndicator={false}>
+              <View style={styles.audienceTabs}>
+                {sosTabs.map((audience) => {
+                  const isActive = audience.key === activeAudience;
+                  return (
+                    <TouchableOpacity
+                      key={audience.key}
+                      style={[
+                        styles.audienceTab,
+                        {
+                          backgroundColor: isActive ? '#2563EB' : theme.colors.card,
+                          borderColor: isActive ? '#2563EB' : theme.colors.border,
+                        },
+                      ]}
+                      onPress={() => setActiveAudience(audience.key)}
+                      activeOpacity={0.85}>
+                      <MaterialIcons
+                        name={audience.icon}
+                        size={18}
+                        color={isActive ? '#FFFFFF' : theme.colors.text}
+                      />
+                      <Text
+                        style={[
+                          styles.audienceTabLabel,
+                          {color: isActive ? '#FFFFFF' : theme.colors.text},
+                        ]}>
+                        {audience.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <View
+                style={[
+                  styles.messageEditor,
+                  {backgroundColor: theme.colors.card, borderColor: theme.colors.border},
+                ]}>
+                <TextInput
+                  ref={messageInputRef}
+                  style={[styles.messageInput, {color: theme.colors.text}]}
+                  multiline
+                  value={draftMessage}
+                  editable
+                  onChangeText={setDraftMessage}
+                  placeholder="Type what should be sent for this group when you trigger SOS..."
+                  placeholderTextColor={theme.colors.notification}
+                />
+                <Text style={[styles.characterCount, {color: theme.colors.notification}]}>
+                  {draftMessage.length} characters
+                </Text>
+              </View>
+              <View style={styles.messageActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.secondaryAction]}
+                  activeOpacity={0.85}
+                  onPress={handleResetMessage}>
+                  <Text style={[styles.actionText, {color: '#111827'}]}>Reset to default</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.primaryAction]}
+                  activeOpacity={0.85}
+                  onPress={handleSaveMessage}>
+                  <Text style={[styles.actionText, {color: '#FFFFFF'}]}>Save message</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -144,6 +308,10 @@ const styles = StyleSheet.create({
   section: {
     marginTop: 24,
     gap: 12,
+  },
+  sectionDescription: {
+    fontSize: 13,
+    lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 16,
@@ -204,6 +372,121 @@ const styles = StyleSheet.create({
   themeHint: {
     fontSize: 12,
     marginTop: 4,
+  },
+  sosCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    gap: 16,
+  },
+  sosCardHeader: {
+    flexDirection: 'column',
+    gap: 12,
+  },
+  sosCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sosCardSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  customizeBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+  },
+  customizeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  sosStatusText: {
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  audienceTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  audienceTab: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  audienceTabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  messageEditor: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 16,
+  },
+  messageInput: {
+    minHeight: 100,
+    fontSize: 15,
+    textAlignVertical: 'top',
+  },
+  characterCount: {
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  primaryAction: {
+    backgroundColor: '#2563EB',
+  },
+  secondaryAction: {
+    backgroundColor: '#E5E7EB',
+  },
+  actionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalBody: {
+    marginTop: 8,
   },
 });
 

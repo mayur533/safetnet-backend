@@ -12,22 +12,41 @@ import {
   Modal,
   Linking,
   TextInput,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
-import {useSettingsStore} from '../../stores/settingsStore';
+import {useSettingsStore, DEFAULT_SOS_TEMPLATE} from '../../stores/settingsStore';
 import {useContactStore} from '../../stores/contactStore';
 import {useSubscription} from '../../lib/hooks/useSubscription';
 import {CustomVibration} from '../../modules/VibrationModule';
 import {shakeDetectionService} from '../../services/shakeDetectionService';
 import {dispatchSOSAlert} from '../../services/sosDispatcher';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
+import {apiService} from '../../services/apiService';
 
 const COMMUNITY_MESSAGES = [
   'Suspicious activity near my location.',
   'Medical assistance needed urgently.',
   'Please check in, safety concern reported.',
 ];
+
+const withAlpha = (color: string, alpha: number): string => {
+  if (color.startsWith('#')) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith('rgba')) {
+    return color.replace(/[\d.]+\)$/g, `${alpha})`);
+  }
+  if (color.startsWith('rgb')) {
+    return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+  }
+  return color;
+};
 
 const categoryCards = [
   {
@@ -114,7 +133,7 @@ const HomeScreen = ({navigation}: any) => {
   const route = useRoute();
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const {isPremium} = useSubscription();
+  const {isPremium, promptUpgrade} = useSubscription();
   const shakeToSendSOS = useSettingsStore((state) => state.shakeToSendSOS);
   const theme = useTheme();
   const colors = theme.colors;
@@ -127,22 +146,8 @@ const HomeScreen = ({navigation}: any) => {
   const softSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F3F4F6';
   const inputSurface = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F9FAFB';
   const placeholderColor = isDarkMode ? 'rgba(255, 255, 255, 0.4)' : '#9CA3AF';
-  // Helper function to add alpha to colors
-  const withAlpha = (color: string, alpha: number): string => {
-    if (color.startsWith('#')) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-    if (color.startsWith('rgba')) {
-      return color.replace(/[\d.]+\)$/g, `${alpha})`);
-    }
-    if (color.startsWith('rgb')) {
-      return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
-    }
-    return color;
-  };
+  const quickBoxBackground = isDarkMode ? withAlpha(colors.primary, 0.15) : '#EFF6FF';
+  const quickBorderColor = isDarkMode ? withAlpha(colors.primary, 0.35) : '#BFDBFE';
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isSendingAlert, setIsSendingAlert] = useState(false);
   const [isButtonPressed, setIsButtonPressed] = useState(false);
@@ -161,11 +166,17 @@ const HomeScreen = ({navigation}: any) => {
     type: 'info',
   });
   const [actionCard, setActionCard] = useState<CategoryCard | null>(null);
+  const familyContacts = useContactStore((state) => state.contacts);
+  const contactsInitialized = useContactStore((state) => state.initialized);
+  const loadContacts = useContactStore((state) => state.loadContacts);
   const [customFamilyMessage, setCustomFamilyMessage] = useState('');
   const [selectedCommunityContact, setSelectedCommunityContact] = useState<any>(null);
   const [communityContacts, setCommunityContacts] = useState<any[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
   const [selectedQuickMessage, setSelectedQuickMessage] = useState(COMMUNITY_MESSAGES[0]);
   const [customCommunityMessage, setCustomCommunityMessage] = useState(COMMUNITY_MESSAGES[0]);
+  const [familyActionMode, setFamilyActionMode] = useState<'single' | 'all'>('single');
+  const [selectedFamilyContactId, setSelectedFamilyContactId] = useState<string | null>(null);
 
   const cardRows: CategoryCard[][] = [];
   for (let i = 0; i < categoryCards.length; i += 2) {
@@ -180,6 +191,48 @@ const HomeScreen = ({navigation}: any) => {
       navigation.setParams({showLoginModal: undefined});
     }
   }, [route?.params?.showLoginModal, navigation]);
+
+  useEffect(() => {
+    if (!contactsInitialized) {
+      loadContacts().catch(() => {});
+    }
+  }, [contactsInitialized, loadContacts]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCommunities = async () => {
+      if (!user?.id) {
+        setCommunityContacts([]);
+        return;
+      }
+      setCommunityLoading(true);
+      try {
+        const response = await apiService.getChatGroups(Number(user.id));
+        const items = Array.isArray(response) ? response : response?.results || [];
+        const mapped = items.map((item: any) => ({
+          id: item.id?.toString() || item.community_id || item.name || `${item}`,
+          label: item.name || item.community_name || 'Community',
+          phone: item.contact_phone || item.phone || item.support_number || null,
+        }));
+        if (isMounted) {
+          setCommunityContacts(mapped);
+        }
+      } catch (error) {
+        console.error('Error loading communities:', error);
+        if (isMounted) {
+          setCommunityContacts([]);
+        }
+      } finally {
+        if (isMounted) {
+          setCommunityLoading(false);
+        }
+      }
+    };
+    fetchCommunities();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const alertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hapticIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -304,7 +357,7 @@ const HomeScreen = ({navigation}: any) => {
     // Vibration and notification are already handled in shakeDetectionService
     if (fromShake) {
       try {
-        const sosMessage = useSettingsStore.getState().sosMessageTemplate || 'Emergency SOS alert! Please help immediately.';
+        const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
         await dispatchSOSAlert(sosMessage);
         console.log('SOS alert sent from shake detection');
         // Notification and vibration already handled by shakeDetectionService
@@ -322,7 +375,7 @@ const HomeScreen = ({navigation}: any) => {
 
     // Normal UI flow - dispatch SOS alert
     try {
-      const sosMessage = useSettingsStore.getState().sosMessageTemplate || 'Emergency SOS alert! Please help immediately.';
+      const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
       await dispatchSOSAlert(sosMessage);
       
       // Check if family contacts exist to show appropriate message
@@ -383,6 +436,14 @@ const HomeScreen = ({navigation}: any) => {
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    if (familyActionMode === 'single') {
+      if (!selectedFamilyContactId && familyContacts.length > 0) {
+        setSelectedFamilyContactId(familyContacts[0].id?.toString() ?? null);
+      }
+    }
+  }, [familyContacts, familyActionMode, selectedFamilyContactId]);
+
   // Shake detection setup
   useEffect(() => {
     if (shakeToSendSOS && isAuthenticated) {
@@ -436,11 +497,8 @@ const HomeScreen = ({navigation}: any) => {
 
     // Check if premium feature and user is not premium
     if (card.isPremium && !isPremium) {
-      setAlertState({
-        visible: true,
-        title: 'Premium Feature',
-        message: 'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
-        type: 'info',
+      promptUpgrade('This safety automation is reserved for Premium members.', {
+        onUpgrade: () => navigation.navigate('Billing'),
       });
       return;
     }
@@ -456,6 +514,8 @@ const HomeScreen = ({navigation}: any) => {
       setCustomCommunityMessage(initialMessage);
     } else if (card.type === 'sms') {
       setCustomFamilyMessage(card.smsBody || '');
+      setFamilyActionMode('single');
+      setSelectedFamilyContactId(familyContacts[0]?.id?.toString() ?? null);
     }
 
     setActionCard(card);
@@ -465,6 +525,8 @@ const HomeScreen = ({navigation}: any) => {
 
   const closeActionModal = () => {
     setActionCard(null);
+    setFamilyActionMode('single');
+    setSelectedFamilyContactId(familyContacts[0]?.id?.toString() ?? null);
   };
 
   const handleCall = async (phone?: string) => {
@@ -489,32 +551,112 @@ const HomeScreen = ({navigation}: any) => {
     }
   };
 
-  const handleSendSMS = (phone?: string, message?: string) => {
-    if (phone) {
-      const body = message ? `?body=${encodeURIComponent(message)}` : '';
-      Linking.openURL(`sms:${phone}${body}`).catch(() => {});
+  const handleSendSMS = (phone?: string | string[], message?: string) => {
+    const targets = Array.isArray(phone)
+      ? phone.filter((item) => !!item)
+      : phone
+        ? [phone]
+        : [];
+    if (targets.length === 0) {
+      closeActionModal();
+      return;
     }
+    const recipients = targets.join(',');
+    const body = message ? `?body=${encodeURIComponent(message)}` : '';
+    Linking.openURL(`sms:${recipients}${body}`).catch(() => {});
     closeActionModal();
   };
 
   const handleSendCommunityMessage = () => {
     const message = customCommunityMessage.trim() || selectedQuickMessage;
-    if (selectedCommunityContact && selectedCommunityContact.phone) {
-    handleSendSMS(selectedCommunityContact.phone, message);
-    } else {
+    const availableContacts =
+      actionCard && actionCard.contacts && actionCard.contacts.length > 0
+        ? actionCard.contacts
+        : communityContacts;
+
+    if (selectedCommunityContact) {
+      if (!selectedCommunityContact.phone) {
+        setAlertState({
+          visible: true,
+          title: 'No number available',
+          message: 'This community does not have a phone number.',
+          type: 'warning',
+        });
+        return;
+      }
+      handleSendSMS(selectedCommunityContact.phone, message);
+      return;
+    }
+
+    const numbers = availableContacts.map((contact: any) => contact.phone).filter(Boolean);
+    if (!numbers.length) {
       setAlertState({
         visible: true,
-        title: 'No Contact Selected',
-        message: 'Please select a community contact first.',
-        type: 'error',
+        title: 'No contacts available',
+        message: 'Add community contacts with phone numbers to send alerts.',
+        type: 'warning',
       });
+      return;
     }
+    handleSendSMS(numbers, message);
+  };
+
+  const selectedFamilyContact = familyContacts.find(
+    (contact) => contact.id?.toString() === selectedFamilyContactId,
+  );
+
+  const handleFamilyCallAction = () => {
+    if (!selectedFamilyContact || !selectedFamilyContact.phone) {
+      setAlertState({
+        visible: true,
+        title: 'Select a contact',
+        message: 'Please choose a family contact before calling.',
+        type: 'warning',
+      });
+      return;
+    }
+    void handleCall(selectedFamilyContact.phone);
+  };
+
+  const handleFamilyMessageAction = () => {
+    const messageBody = customFamilyMessage.trim() || actionCard?.smsBody || DEFAULT_SOS_TEMPLATE;
+    if (familyActionMode === 'single') {
+      if (!selectedFamilyContact || !selectedFamilyContact.phone) {
+        setAlertState({
+          visible: true,
+          title: 'Select a contact',
+          message: 'Please choose a family contact before messaging.',
+          type: 'warning',
+        });
+        return;
+      }
+      handleSendSMS(selectedFamilyContact.phone, messageBody);
+      return;
+    }
+
+    if (!familyContacts.length) {
+      setAlertState({
+        visible: true,
+        title: 'No contacts',
+        message: 'Please add at least one family contact first.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    const phones = familyContacts
+      .map((contact) => contact.phone)
+      .filter((phone) => !!phone);
+    handleSendSMS(phones, messageBody);
   };
 
   const renderActionContent = () => {
     if (!actionCard) {
       return null;
     }
+
+    const contactsLoading = !contactsInitialized;
+    const hasFamilyContacts = familyContacts.length > 0;
 
     const cancelButtonStyle = [
       styles.modalButton,
@@ -530,6 +672,195 @@ const HomeScreen = ({navigation}: any) => {
       styles.modalButton,
       {backgroundColor: colors.primary, borderColor: colors.primary},
     ];
+
+    if (actionCard.key === 'family') {
+      const modeOptions: Array<{key: 'single' | 'all'; label: string}> = [
+        {key: 'single', label: 'Single contact'},
+        {key: 'all', label: 'All contacts'},
+      ];
+
+      return (
+        <>
+          <View style={styles.actionHeader}>
+            <MaterialIcons name={actionCard.icon} size={32} color={actionCard.iconColor} />
+            <Text style={[styles.actionTitle, {color: colors.text}]}>{actionCard.title}</Text>
+          </View>
+          <Text style={[styles.actionDescription, {color: mutedTextColor}]}>
+            Choose who should receive your update.
+          </Text>
+          <View style={styles.familyModeRow}>
+            {modeOptions.map((option) => {
+              const isActive = familyActionMode === option.key;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.familyModeOption,
+                    {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)},
+                    isActive && {backgroundColor: colors.primary, borderColor: colors.primary},
+                  ]}
+                  onPress={() => {
+                    setFamilyActionMode(option.key);
+                    if (option.key === 'single' && familyContacts.length > 0) {
+                      setSelectedFamilyContactId(familyContacts[0].id?.toString() ?? null);
+                    }
+                  }}
+                  activeOpacity={0.8}>
+                  <Text
+                    style={[
+                      styles.familyModeLabel,
+                      {color: isActive ? '#FFFFFF' : colors.text},
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {contactsLoading ? (
+            <Text style={[styles.familyAllNote, {color: mutedTextColor}]}>Loading contacts…</Text>
+          ) : familyActionMode === 'single' ? (
+            hasFamilyContacts ? (
+              <View style={styles.familyList}>
+                {familyContacts.map((contact) => {
+                  const contactId = contact.id?.toString() ?? '';
+                  const isSelected = selectedFamilyContactId === contactId;
+                  return (
+                    <TouchableOpacity
+                      key={contactId || contact.phone}
+                      style={[
+                        styles.familyContactRow,
+                        {
+                          borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1),
+                          backgroundColor: isSelected
+                            ? withAlpha(colors.primary, isDarkMode ? 0.35 : 0.15)
+                            : inputSurface,
+                        },
+                      ]}
+                      onPress={() => setSelectedFamilyContactId(contactId)}
+                      activeOpacity={0.8}>
+                      <View>
+                        <Text style={[styles.familyContactName, {color: colors.text}]}>
+                          {contact.name || 'Unknown'}
+                        </Text>
+                        <Text style={[styles.familyContactPhone, {color: mutedTextColor}]}>
+                          {contact.phone || 'No number'}
+                        </Text>
+                      </View>
+                      {isSelected && (
+                        <MaterialIcons
+                          name="check-circle"
+                          size={20}
+                          color={isDarkMode ? '#A7F3D0' : '#047857'}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.emptyContactsText, {color: mutedTextColor}]}>
+                No family contacts found. Add one in Emergency Contacts.
+              </Text>
+            )
+          ) : hasFamilyContacts ? (
+            <Text style={[styles.familyAllNote, {color: mutedTextColor}]}>
+              All {familyContacts.length} contacts will receive the SMS.
+            </Text>
+          ) : (
+            <Text style={[styles.emptyContactsText, {color: mutedTextColor}]}>
+              No family contacts found. Add one in Emergency Contacts.
+            </Text>
+          )}
+
+          <TextInput
+            style={[
+              styles.actionInput,
+              {
+                marginTop: 16,
+                backgroundColor: inputSurface,
+                borderColor: colors.border,
+                color: colors.text,
+              },
+            ]}
+            multiline
+            numberOfLines={3}
+            value={customFamilyMessage}
+            onChangeText={setCustomFamilyMessage}
+            placeholder="Type your emergency message"
+            placeholderTextColor={placeholderColor}
+          />
+
+          <View style={styles.wideButtonColumn}>
+            {familyActionMode === 'single' && (
+              <TouchableOpacity
+                style={[styles.wideButton, styles.wideButtonPrimary]}
+                onPress={handleFamilyCallAction}
+                activeOpacity={0.85}>
+                <MaterialIcons name="call" size={20} color="#FFFFFF" />
+                <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>Call</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary]}
+              onPress={handleFamilyMessageAction}
+              activeOpacity={0.85}>
+              <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>
+                {familyActionMode === 'single' ? 'Message' : 'Message all'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonGhost, {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)}]}
+              onPress={closeActionModal}
+              activeOpacity={0.8}>
+              <MaterialIcons name="close" size={20} color={colors.text} />
+              <Text style={[styles.wideButtonText, {color: colors.text}]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
+
+    if (actionCard.key === 'security') {
+      return (
+        <>
+          <View style={styles.actionHeader}>
+            <MaterialIcons name={actionCard.icon} size={32} color={actionCard.iconColor} />
+            <Text style={[styles.actionTitle, {color: colors.text}]}>{actionCard.title}</Text>
+          </View>
+          <Text style={[styles.actionDescription, {color: mutedTextColor}]}>
+            Choose how you want to reach the security team.
+          </Text>
+          <View style={styles.wideButtonColumn}>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary]}
+              onPress={() => {
+                void handleCall(actionCard.phone);
+              }}
+              activeOpacity={0.85}>
+              <MaterialIcons name="call" size={20} color="#FFFFFF" />
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>Call</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary]}
+              onPress={() => handleSendSMS(actionCard.phone, actionCard.smsBody)}
+              activeOpacity={0.85}>
+              <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>Message</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonGhost, {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)}]}
+              onPress={closeActionModal}
+              activeOpacity={0.8}>
+              <MaterialIcons name="close" size={20} color={colors.text} />
+              <Text style={[styles.wideButtonText, {color: colors.text}]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
 
     if (actionCard.type === 'call') {
       return (
@@ -580,15 +911,20 @@ const HomeScreen = ({navigation}: any) => {
             placeholder="Type your emergency message"
             placeholderTextColor={placeholderColor}
           />
-          <View style={styles.actionButtonRow}>
-            <TouchableOpacity style={cancelButtonStyle} onPress={closeActionModal} activeOpacity={0.7}>
-              <Text style={cancelButtonTextStyle}>Cancel</Text>
+          <View style={styles.wideButtonColumn}>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary]}
+              onPress={() => handleSendSMS(actionCard.phone, customFamilyMessage.trim() || actionCard.smsBody)}
+              activeOpacity={0.85}>
+              <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>Send Message</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={primaryButtonStyle}
-              onPress={() => handleSendSMS(actionCard.phone, customFamilyMessage.trim() || actionCard.smsBody)}
-              activeOpacity={0.7}>
-              <Text style={styles.primaryButtonText}>Send Message</Text>
+              style={[styles.wideButton, styles.wideButtonGhost, {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)}]}
+              onPress={closeActionModal}
+              activeOpacity={0.8}>
+              <MaterialIcons name="close" size={20} color={colors.text} />
+              <Text style={[styles.wideButtonText, {color: colors.text}]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -596,6 +932,12 @@ const HomeScreen = ({navigation}: any) => {
     }
 
     if (actionCard.type === 'community') {
+      const communityOptions =
+        actionCard.contacts && actionCard.contacts.length > 0
+          ? actionCard.contacts
+          : communityContacts;
+      const hasCommunityOptions = communityOptions.length > 0;
+
       return (
         <>
           <View style={styles.actionHeader}>
@@ -603,56 +945,78 @@ const HomeScreen = ({navigation}: any) => {
             <Text style={[styles.actionTitle, {color: colors.text}]}>{actionCard.title}</Text>
           </View>
           <Text style={[styles.actionDescription, {color: mutedTextColor}]}>Choose a circle to alert.</Text>
-          <View style={styles.chipRow}>
-            {actionCard.contacts && actionCard.contacts.length > 0 ? (
-              actionCard.contacts.map((contact) => {
-                const isActive = selectedCommunityContact && contact.id === selectedCommunityContact.id;
-              return (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.communityChipRow}>
+            {communityLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : hasCommunityOptions ? (
+              <>
                 <TouchableOpacity
-                  key={contact.id}
                   style={[
-                    styles.chip,
-                    {
-                      backgroundColor: softSurface,
-                      borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1),
-                    },
-                    isActive && {backgroundColor: colors.primary, borderColor: colors.primary},
+                    styles.communityChip,
+                    {borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1)},
+                    !selectedCommunityContact && styles.communityChipActive,
                   ]}
-                  onPress={() => {
-                    setSelectedCommunityContact(contact);
-                  }}
+                  onPress={() => setSelectedCommunityContact(null)}
                   activeOpacity={0.7}>
                   <Text
                     style={[
-                      styles.chipText,
-                      {color: mutedTextColor},
-                      isActive && {color: isDarkMode ? colors.background : '#FFFFFF'},
+                      styles.communityChipText,
+                      !selectedCommunityContact && styles.communityChipTextActive,
                     ]}>
-                    {contact.label}
+                    All Circles
                   </Text>
                 </TouchableOpacity>
-              );
-              })
+                {communityOptions.map((contact) => {
+                  const isActive = selectedCommunityContact && contact.id === selectedCommunityContact.id;
+                  return (
+                    <TouchableOpacity
+                      key={contact.id}
+                      style={[
+                        styles.communityChip,
+                        {borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1)},
+                        isActive && styles.communityChipActive,
+                      ]}
+                      onPress={() => {
+                        setSelectedCommunityContact(contact);
+                      }}
+                      activeOpacity={0.7}>
+                      <Text
+                        style={[
+                          styles.communityChipText,
+                          isActive && styles.communityChipTextActive,
+                        ]}>
+                        {contact.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
             ) : (
               <Text style={[styles.emptyContactsText, {color: mutedTextColor}]}>
                 No community contacts available
               </Text>
             )}
-          </View>
-          <Text style={[styles.actionDescription, {marginTop: 12, color: mutedTextColor}]}>Quick messages</Text>
-          <View style={styles.chipRow}>
+          </ScrollView>
+          <Text style={[styles.quickTitle, {color: mutedTextColor}]}>Quick messages</Text>
+          <View
+            style={[
+              styles.quickMessagesBox,
+              {backgroundColor: quickBoxBackground, borderColor: quickBorderColor},
+            ]}>
             {actionCard.quickMessages.map((message) => {
               const isActive = message === selectedQuickMessage;
               return (
                 <TouchableOpacity
                   key={message}
                   style={[
-                    styles.chip,
+                    styles.quickMessageButton,
                     {
-                      backgroundColor: softSurface,
-                      borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1),
+                      backgroundColor: isActive ? colors.primary : colors.card,
+                      borderColor: isActive ? colors.primary : quickBorderColor,
                     },
-                    isActive && {backgroundColor: colors.primary, borderColor: colors.primary},
                   ]}
                   onPress={() => {
                     setSelectedQuickMessage(message);
@@ -661,9 +1025,8 @@ const HomeScreen = ({navigation}: any) => {
                   activeOpacity={0.7}>
                   <Text
                     style={[
-                      styles.chipText,
-                      {color: mutedTextColor},
-                      isActive && {color: isDarkMode ? colors.background : '#FFFFFF'},
+                      styles.quickMessageText,
+                      {color: isActive ? '#FFFFFF' : colors.text},
                     ]}>
                     {message}
                   </Text>
@@ -671,11 +1034,14 @@ const HomeScreen = ({navigation}: any) => {
               );
             })}
           </View>
+          <Text style={[styles.quickTitle, {marginTop: 16, color: mutedTextColor}]}>
+            Custom message
+          </Text>
           <TextInput
             style={[
               styles.actionInput,
               {
-                marginTop: 12,
+                marginTop: 8,
                 backgroundColor: inputSurface,
                 borderColor: colors.border,
                 color: colors.text,
@@ -691,15 +1057,22 @@ const HomeScreen = ({navigation}: any) => {
             placeholder="Custom message to your community"
             placeholderTextColor={placeholderColor}
           />
-          <View style={styles.actionButtonRow}>
-            <TouchableOpacity style={cancelButtonStyle} onPress={closeActionModal} activeOpacity={0.7}>
-              <Text style={cancelButtonTextStyle}>Cancel</Text>
+          <View style={styles.communityButtonRow}>
+            <TouchableOpacity
+              style={[styles.communityButton, styles.communityGhostButton, {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)}]}
+              onPress={closeActionModal}
+              activeOpacity={0.8}>
+              <MaterialIcons name="close" size={20} color={colors.text} />
+              <Text style={[styles.communityButtonText, {color: colors.text}]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={primaryButtonStyle}
+              style={[styles.communityButton, styles.communityPrimaryButton]}
               onPress={handleSendCommunityMessage}
-              activeOpacity={0.7}>
-              <Text style={styles.primaryButtonText}>Send Message</Text>
+              activeOpacity={0.85}>
+              <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+              <Text style={[styles.communityButtonText, styles.communityButtonTextPrimary]}>
+                Send
+              </Text>
             </TouchableOpacity>
           </View>
         </>
@@ -1271,6 +1644,82 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#FFFFFF',
   },
+  communityChipRow: {
+    paddingVertical: 12,
+    gap: 8,
+  },
+  communityChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 8,
+  },
+  communityChipActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  communityChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  communityChipTextActive: {
+    color: '#FFFFFF',
+  },
+  quickTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  quickMessagesBox: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    padding: 10,
+    gap: 8,
+  },
+  quickMessageButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  quickMessageText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  communityButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  communityButton: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+  },
+  communityGhostButton: {
+    backgroundColor: 'transparent',
+  },
+  communityPrimaryButton: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  communityButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  communityButtonTextPrimary: {
+    color: '#FFFFFF',
+  },
   modalButton: {
     flex: 1,
     paddingVertical: 12,
@@ -1294,6 +1743,74 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  familyModeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  familyModeOption: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  familyModeLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  familyList: {
+    marginTop: 16,
+    gap: 10,
+  },
+  familyContactRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  familyContactName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  familyContactPhone: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  familyAllNote: {
+    marginTop: 16,
+    fontSize: 13,
+  },
+  wideButtonColumn: {
+    gap: 12,
+    marginTop: 16,
+  },
+  wideButton: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+  },
+  wideButtonPrimary: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  wideButtonGhost: {
+    backgroundColor: 'transparent',
+  },
+  wideButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  wideButtonTextPrimary: {
     color: '#FFFFFF',
   },
   footer: {

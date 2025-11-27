@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
+from django.utils import timezone
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 from users.models import SecurityOfficer
@@ -360,8 +361,13 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         from .serializers import OfficerProfileSerializer
         serializer = OfficerProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        instance = serializer.save()
+
+        if 'last_latitude' in serializer.validated_data and 'last_longitude' in serializer.validated_data:
+            instance.last_seen_at = timezone.now()
+            instance.save(update_fields=['last_seen_at', 'updated_at'])
+
+        return Response(OfficerProfileSerializer(instance).data)
 
 
 class OfficerLoginView(APIView):

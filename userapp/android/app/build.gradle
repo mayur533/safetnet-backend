@@ -96,6 +96,10 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def mapApiKey = project.hasProperty("MAPS_API_KEY")
+        ? project.property("MAPS_API_KEY")
+        : (System.getenv("MAPS_API_KEY") ?: "")
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -108,6 +112,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        manifestPlaceholders = [
+            usesCleartextTraffic: true,
+            MAPS_API_KEY: mapApiKey
+        ]
     }
     signingConfigs {
         debug {
@@ -155,6 +163,9 @@ dependencies {
     // Geolocation should be autolinked - removed manual dependency to avoid conflicts
     // Manually add react-native-sensors dependency
     implementation(project(':react-native-sensors'))
+
+    // Google Play Services location provider for react-native-geolocation-service
+    implementation("com.google.android.gms:play-services-location:21.0.1")
     
     // React Native Maps - use autolinking instead of manual linking for New Architecture compatibility
     // implementation(project(':react-native-maps'))

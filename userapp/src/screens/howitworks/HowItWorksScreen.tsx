@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useMemo} from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useTheme} from '@react-navigation/native';
 import {useAuthStore} from '../../stores/authStore';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
@@ -27,6 +27,24 @@ const HowItWorksScreen = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [currentPage, setCurrentPage] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const theme = useTheme();
+  const {colors, dark} = theme;
+
+  const themeColors = useMemo(
+    () => ({
+      background: colors.background || (dark ? '#0F172A' : '#F9FAFB'),
+      card: colors.card || (dark ? '#1E293B' : '#FFFFFF'),
+      text: colors.text || (dark ? '#F8FAFC' : '#111827'),
+      textMuted: dark ? 'rgba(248, 250, 252, 0.7)' : '#6B7280',
+      primary: colors.primary || '#2563EB',
+      border: colors.border || (dark ? 'rgba(148, 163, 184, 0.4)' : '#E5E7EB'),
+      overlay: dark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(15, 23, 42, 0.04)',
+      navigationBg: dark ? 'rgba(15, 23, 42, 0.92)' : '#F9FAFB',
+    }),
+    [colors, dark],
+  );
+
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
 
   const steps: Step[] = [
     {
@@ -133,7 +151,7 @@ const HowItWorksScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
+      <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
       
       <FlatList
         ref={flatListRef}
@@ -191,7 +209,7 @@ const HowItWorksScreen = () => {
               onPress={goToNext}
               activeOpacity={0.8}>
               <Text style={styles.nextButtonText}>Next</Text>
-              <MaterialIcons name="arrow-forward" size={24} color="#2563EB" />
+              <MaterialIcons name="arrow-forward" size={24} color={themeColors.primary} />
             </TouchableOpacity>
           </View>
         )}
@@ -200,11 +218,12 @@ const HowItWorksScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
+const createStyles = (themeColors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: themeColors.background,
+    },
   pageContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -218,42 +237,42 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     paddingBottom: 120,
   },
-  iconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  stepNumber: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  stepTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  stepDescription: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 16,
-    marginBottom: 32,
-  },
+    iconCircle: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 32,
+      shadowColor: themeColors.primary,
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    stepNumber: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: themeColors.textMuted,
+      marginBottom: 16,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    stepTitle: {
+      fontSize: 28,
+      fontWeight: 'bold',
+      color: themeColors.text,
+      textAlign: 'center',
+      marginBottom: 16,
+    },
+    stepDescription: {
+      fontSize: 16,
+      color: themeColors.textMuted,
+      textAlign: 'center',
+      lineHeight: 24,
+      paddingHorizontal: 16,
+      marginBottom: 32,
+    },
   paginationWrapper: {
     position: 'absolute',
     bottom: 100,
@@ -267,87 +286,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
   },
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D1D5DB',
-    marginHorizontal: 4,
-  },
-  paginationDotActive: {
-    width: 24,
-    backgroundColor: '#2563EB',
-  },
+    paginationDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: themeColors.border,
+      marginHorizontal: 4,
+    },
+    paginationDotActive: {
+      width: 24,
+      backgroundColor: themeColors.primary,
+    },
   termsTextContainer: {
     paddingHorizontal: 32,
     paddingBottom: 8,
     alignItems: 'center',
   },
-  termsServiceText: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  termsServiceLink: {
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  navigationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 32,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#F9FAFB',
-    minHeight: 70,
-  },
+    termsServiceText: {
+      fontSize: 12,
+      color: themeColors.textMuted,
+      textAlign: 'center',
+      lineHeight: 16,
+    },
+    termsServiceLink: {
+      color: themeColors.primary,
+      fontWeight: '600',
+    },
+    navigationContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingBottom: 32,
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: themeColors.navigationBg,
+      minHeight: 70,
+    },
   nextButtonContainer: {
     flex: 1,
     alignItems: 'flex-end',
   },
-  nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 8,
-  },
+    nextButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      backgroundColor: themeColors.card,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      gap: 8,
+    },
   placeholderButton: {
     flex: 1,
   },
-  nextButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-    backgroundColor: '#2563EB',
-    gap: 8,
-    shadowColor: '#2563EB',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  continueButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});
+    nextButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: themeColors.primary,
+    },
+    continueButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 32,
+      borderRadius: 12,
+      backgroundColor: themeColors.primary,
+      gap: 8,
+      shadowColor: themeColors.primary,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    continueButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+  });
 
 export default HowItWorksScreen;

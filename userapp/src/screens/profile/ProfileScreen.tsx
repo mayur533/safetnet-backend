@@ -25,7 +25,7 @@ const ProfileScreen = () => {
   const insets = useSafeAreaInsets();
   const {colors} = theme;
   const isDarkMode = theme.dark || false;
-  const {isPremium} = useSubscription();
+  const {isPremium, promptUpgrade} = useSubscription();
 
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
@@ -40,6 +40,7 @@ const ProfileScreen = () => {
     name: '',
     phone: '',
   });
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   // Theme-aware colors
   const themeColors = useMemo(
@@ -131,16 +132,16 @@ const ProfileScreen = () => {
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: () => {
-          logout();
-        },
-      },
-    ]);
+    setLogoutModalVisible(true);
+  };
+
+  const confirmLogout = async () => {
+    setLogoutModalVisible(false);
+    await logout();
+  };
+
+  const cancelLogout = () => {
+    setLogoutModalVisible(false);
   };
 
   const quickActions = [
@@ -197,10 +198,9 @@ const ProfileScreen = () => {
 
   const handleQuickAction = (action: typeof quickActions[0]) => {
     if (action.premium && !isPremium) {
-      Alert.alert('Premium Feature', 'This feature is available for Premium users only.', [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'Upgrade', onPress: () => navigation.navigate('Billing')},
-      ]);
+      promptUpgrade('This shortcut is for Premium members.', {
+        onUpgrade: () => navigation.navigate('Billing'),
+      });
       return;
     }
     navigation.navigate(action.screen);
@@ -430,6 +430,36 @@ const ProfileScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={logoutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelLogout}>
+        <View style={styles.centeredOverlay}>
+          <View style={[styles.logoutModalContent, {backgroundColor: themeColors.card}]}>
+            <View style={[styles.logoutIconContainer, {backgroundColor: themeColors.primaryLight}]}>
+              <MaterialIcons name="logout" size={28} color={themeColors.primary} />
+            </View>
+            <Text style={[styles.logoutTitle, {color: themeColors.text}]}>Sign out?</Text>
+            <Text style={[styles.logoutSubtitle, {color: themeColors.textMuted}]}>
+              Your session will end and you will need to sign in again to access your data.
+            </Text>
+            <View style={styles.logoutActions}>
+              <TouchableOpacity
+                style={[styles.logoutCancelButton, {borderColor: themeColors.border}]}
+                onPress={cancelLogout}>
+                <Text style={[styles.logoutCancelText, {color: themeColors.text}]}>Stay Logged In</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.logoutConfirmButton, {backgroundColor: themeColors.primary}]}
+                onPress={confirmLogout}>
+                <Text style={styles.logoutConfirmText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -615,6 +645,13 @@ const createStyles = (themeColors: any, insets: any) =>
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
       justifyContent: 'flex-end',
     },
+    centeredOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.45)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+    },
     modalContent: {
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
@@ -667,6 +704,57 @@ const createStyles = (themeColors: any, insets: any) =>
     modalButtonTextSave: {
       fontSize: 16,
       fontWeight: '600',
+      color: '#FFFFFF',
+    },
+    logoutModalContent: {
+      width: '100%',
+      borderRadius: 20,
+      paddingHorizontal: 24,
+      paddingVertical: 28,
+      alignItems: 'center',
+      maxWidth: 360,
+    },
+    logoutIconContainer: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
+    },
+    logoutTitle: {
+      fontSize: 20,
+      fontWeight: '700',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    logoutSubtitle: {
+      fontSize: 14,
+      textAlign: 'center',
+      marginBottom: 24,
+    },
+    logoutActions: {
+      width: '100%',
+      gap: 12,
+    },
+    logoutCancelButton: {
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    logoutCancelText: {
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    logoutConfirmButton: {
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    logoutConfirmText: {
+      fontSize: 16,
+      fontWeight: '700',
       color: '#FFFFFF',
     },
   });

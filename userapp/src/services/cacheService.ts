@@ -61,7 +61,13 @@ class CacheService {
   async get<T>(key: string): Promise<T | null> {
     try {
       const storage = await getAsyncStorage();
-      const cached = await storage.getItem(`${this.cachePrefix}${key}`);
+      if (!storage) {
+        console.warn(`AsyncStorage not available for key ${key}`);
+        return null;
+      }
+      
+      const cacheKey = `${this.cachePrefix}${key}`;
+      const cached = await storage.getItem(cacheKey);
       if (!cached) {
         return null;
       }
@@ -76,8 +82,12 @@ class CacheService {
       }
 
       return entry.data;
-    } catch (error) {
-      console.warn(`Failed to get cache for key ${key}:`, error);
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      // Don't log as error if it's just a missing key
+      if (!errorMessage.includes('not found') && !errorMessage.includes('does not exist')) {
+        console.warn(`Failed to get cache for key ${key}:`, errorMessage);
+      }
       return null;
     }
   }
@@ -88,6 +98,11 @@ class CacheService {
   async set<T>(key: string, data: T, config?: CacheConfig): Promise<void> {
     try {
       const storage = await getAsyncStorage();
+      if (!storage) {
+        console.warn(`AsyncStorage not available for setting key ${key}`);
+        return;
+      }
+      
       const entry: CacheEntry<T> = {
         data,
         timestamp: Date.now(),
@@ -98,8 +113,12 @@ class CacheService {
         `${this.cachePrefix}${key}`,
         JSON.stringify(entry)
       );
-    } catch (error) {
-      console.warn(`Failed to set cache for key ${key}:`, error);
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      // Only log if it's not a simple storage unavailable error
+      if (!errorMessage.includes('not available')) {
+        console.warn(`Failed to set cache for key ${key}:`, errorMessage);
+      }
     }
   }
 
@@ -235,33 +254,56 @@ class CacheService {
       await this.set(key, freshData, config);
       return freshData;
     } catch (error: any) {
-      console.error(`Failed to get or fetch for key ${key}:`, error);
+      const errorMessage = error?.message || String(error);
       
       // Check if it's a network error
-      const isNetworkError = error?.message && (
-        error.message.includes('Network request failed') ||
-        error.message.includes('Failed to fetch') ||
-        error.message.includes('ECONNREFUSED') ||
-        error.message.includes('timeout') ||
-        error.message.toLowerCase().includes('network') ||
-        error.message.includes('connection')
+      const isNetworkError = errorMessage && (
+        errorMessage.includes('Network request failed') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('ECONNREFUSED') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.toLowerCase().includes('network') ||
+        errorMessage.includes('connection')
+      );
+      
+      // Check if it's an AsyncStorage error
+      const isStorageError = errorMessage && (
+        errorMessage.includes('AsyncStorage') ||
+        errorMessage.includes('storage') ||
+        errorMessage.includes('key') && errorMessage.includes('fetch')
       );
       
       // If it's a 404 (not found) error, clear the cache for that key
-      if (error?.message?.includes('404') || 
-          error?.message?.includes('not found') ||
-          error?.message?.includes('Group not found') ||
-          error?.message?.includes('group not found')) {
+      if (errorMessage?.includes('404') || 
+          errorMessage?.includes('not found') ||
+          errorMessage?.includes('Group not found') ||
+          errorMessage?.includes('group not found')) {
         console.warn(`Resource not found for key ${key}, clearing cache`);
         await this.invalidate(key);
         throw error; // Re-throw to let the caller handle it
       }
       
       // If fetch fails due to network error, try to return stale cache
+      try {
       const cached = await this.get<T>(key);
       if (cached) {
-        console.warn(`Returning stale cache for key ${key} due to ${isNetworkError ? 'network' : ''} error:`, error.message);
+          console.warn(`Returning stale cache for key ${key} due to ${isNetworkError ? 'network' : isStorageError ? 'storage' : ''} error`);
         return cached;
+        }
+      } catch (cacheError) {
+        // Ignore cache retrieval errors
+      }
+      
+      // If it's a storage error, provide helpful message
+      if (isStorageError) {
+        console.warn(`Storage error for key ${key}, attempting direct fetch:`, errorMessage);
+        // Try to fetch directly without caching
+        try {
+          return await fetchFn();
+        } catch (fetchError) {
+          // If direct fetch also fails, throw the original error
+          throw error;
+        }
       }
       
       // If it's a network error and no cache, throw a more helpful error

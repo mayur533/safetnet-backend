@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState, useRef} from 'react';
 import {
   View,
   Text,
@@ -30,12 +30,28 @@ const BillingScreen = () => {
   const [selectedProduct, setSelectedProduct] = useState(products[0]?.id);
   const [promoCode, setPromoCode] = useState('');
   const [showPromoInput, setShowPromoInput] = useState(false);
+  const [promoCodeValidation, setPromoCodeValidation] = useState<{
+    isValid: boolean | null;
+    discountPercentage?: number;
+    error?: string;
+    message?: string;
+    isLoading?: boolean;
+  }>({isValid: null});
 
   useEffect(() => {
     if (lastError) {
       Alert.alert('Billing', lastError);
     }
   }, [lastError]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (promoCodeValidationTimeoutRef.current) {
+        clearTimeout(promoCodeValidationTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const tokens = useMemo(
     () => ({
@@ -69,6 +85,64 @@ const BillingScreen = () => {
       Alert.alert('Nothing to restore', 'We could not find an active purchase.');
     }
   };
+
+  const promoCodeValidationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePromoCodeChange = (code: string) => {
+    setPromoCode(code);
+    
+    // Reset validation state when code is cleared
+    if (!code.trim()) {
+      setPromoCodeValidation({isValid: null});
+      // Clear any pending timeout
+      if (promoCodeValidationTimeoutRef.current) {
+        clearTimeout(promoCodeValidationTimeoutRef.current);
+        promoCodeValidationTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    // Clear previous timeout
+    if (promoCodeValidationTimeoutRef.current) {
+      clearTimeout(promoCodeValidationTimeoutRef.current);
+      promoCodeValidationTimeoutRef.current = null;
+    }
+
+    // When user types again, reset validation state to show validate button again
+    if (promoCodeValidation.isValid !== null) {
+      setPromoCodeValidation({isValid: null});
+    }
+  };
+
+  const validatePromoCodeNow = async () => {
+    const trimmedCode = promoCode.trim().toUpperCase();
+    if (!trimmedCode) {
+      setPromoCodeValidation({isValid: null});
+      return;
+    }
+
+    setPromoCodeValidation({isValid: null, isLoading: true});
+
+    try {
+      const result = await apiService.validatePromocode(trimmedCode);
+      setPromoCodeValidation({
+        isValid: result.valid,
+        discountPercentage: result.discount_percentage,
+        error: result.error,
+        message: result.message,
+        isLoading: false,
+      });
+    } catch (error) {
+      setPromoCodeValidation({
+        isValid: false,
+        error: 'Failed to validate promo code',
+        isLoading: false,
+      });
+    }
+  };
+
+  // Show validate button when there's text but no validation result yet
+  const showValidateButton = promoCode.trim().length >= 3 && promoCodeValidation.isValid === null && !promoCodeValidation.isLoading;
 
   const handleCancelSubscription = () => {
     Alert.alert(
@@ -248,14 +322,68 @@ const BillingScreen = () => {
 
         {showPromoInput && !isPremium && (
           <View style={[styles.promoCodeContainer, {backgroundColor: tokens.card, borderColor: tokens.border}]}>
-            <TextInput
-              style={[styles.promoCodeInput, {color: tokens.text, borderColor: tokens.border}]}
-              placeholder="Enter promo code"
-              placeholderTextColor={tokens.muted}
-              value={promoCode}
-              onChangeText={setPromoCode}
-              autoCapitalize="characters"
-            />
+            <View style={styles.promoCodeInputRow}>
+              <TextInput
+                style={[
+                  styles.promoCodeInput,
+                  {
+                    color: tokens.text,
+                    borderColor:
+                      promoCodeValidation.isValid === true
+                        ? '#10B981'
+                        : promoCodeValidation.isValid === false
+                        ? '#EF4444'
+                        : tokens.border,
+                    flex: 1,
+                  },
+                ]}
+                placeholder="Enter promo code"
+                placeholderTextColor={tokens.muted}
+                value={promoCode}
+                onChangeText={handlePromoCodeChange}
+                autoCapitalize="characters"
+                editable={!promoCodeValidation.isLoading}
+                returnKeyType="done"
+                onSubmitEditing={validatePromoCodeNow}
+              />
+              {promoCodeValidation.isLoading && (
+                <ActivityIndicator size="small" color={tokens.accent} style={styles.promoCodeLoader} />
+              )}
+              {showValidateButton && !promoCodeValidation.isLoading && (
+                <TouchableOpacity
+                  style={[styles.validateButtonInline, {backgroundColor: tokens.accent}]}
+                  onPress={validatePromoCodeNow}
+                  activeOpacity={0.7}>
+                  <Text style={styles.validateButtonInlineText}>Validate</Text>
+                </TouchableOpacity>
+              )}
+              {promoCodeValidation.isValid === true && !promoCodeValidation.isLoading && (
+                <MaterialIcons name="check-circle" size={24} color="#10B981" style={styles.promoCodeIcon} />
+              )}
+              {promoCodeValidation.isValid === false && !promoCodeValidation.isLoading && (
+                <MaterialIcons name="error" size={24} color="#EF4444" style={styles.promoCodeIcon} />
+              )}
+            </View>
+
+            {/* Promocode Validation Feedback - Show below input */}
+            {promoCodeValidation.isValid === true && promoCodeValidation.discountPercentage && !promoCodeValidation.isLoading && (
+              <View style={[styles.promoCodeSuccess, {backgroundColor: '#ECFDF5', borderColor: '#10B981'}]}>
+                <MaterialIcons name="local-offer" size={18} color="#10B981" />
+                <Text style={[styles.promoCodeSuccessText, {color: '#047857'}]}>
+                  {promoCodeValidation.message || `You'll get ${promoCodeValidation.discountPercentage}% discount`}
+                </Text>
+              </View>
+            )}
+
+            {promoCodeValidation.isValid === false && promoCodeValidation.error && !promoCodeValidation.isLoading && (
+              <View style={[styles.promoCodeError, {backgroundColor: '#FEF2F2', borderColor: '#EF4444'}]}>
+                <MaterialIcons name="error-outline" size={18} color="#EF4444" />
+                <Text style={[styles.promoCodeErrorText, {color: '#DC2626'}]}>
+                  {promoCodeValidation.error}
+                </Text>
+              </View>
+            )}
+
           </View>
         )}
 
@@ -480,6 +608,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
+    gap: 10,
+  },
+  promoCodeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   promoCodeInput: {
     borderWidth: 1,
@@ -487,6 +621,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+  },
+  promoCodeLoader: {
+    marginLeft: 8,
+  },
+  promoCodeIcon: {
+    marginLeft: 8,
+  },
+  promoCodeSuccess: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  promoCodeSuccessText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  promoCodeError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  promoCodeErrorText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  validateButtonInline: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  validateButtonInlineText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   cancelButton: {
     flexDirection: 'row',

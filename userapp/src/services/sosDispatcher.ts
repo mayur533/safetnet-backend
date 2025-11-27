@@ -1,10 +1,10 @@
-import {Alert, Linking, Platform, PermissionsAndroid, NativeModules} from 'react-native';
+import {Alert, Platform, PermissionsAndroid, NativeModules} from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import {useContactStore} from '../stores/contactStore';
 import {requestDirectCall} from './callService';
 import {checkNetworkStatus} from './networkService';
 import {sendSmsDirect} from './smsService';
-import {useSettingsStore, DEFAULT_SOS_TEMPLATE} from '../stores/settingsStore';
+import {useSettingsStore, DEFAULT_SOS_TEMPLATE, DEFAULT_SOS_MESSAGES} from '../stores/settingsStore';
 import {useOfflineSosStore} from '../stores/offlineSosStore';
 import {useAuthStore} from '../stores/authStore';
 import {apiService} from './apiService';
@@ -35,14 +35,12 @@ const loadPushNotification = (forceReload: boolean = false) => {
   }
 };
 
-const buildSmsUrl = (phones: string[], message: string) => {
-  const encodedMessage = encodeURIComponent(message);
-  return `sms:${phones.join(',')}?body=${encodedMessage}`;
-};
-
 // Configure notifications once
 let notificationsConfigured = false;
 let channelCreated = false;
+
+const POLICE_CONTACT = {name: 'Police', phone: '9561606066'};
+const SECURITY_CONTACTS = [{name: 'Security Officer', phone: '+18005550101'}];
 
 export const configureNotifications = () => {
   const notificationModule = loadPushNotification();
@@ -357,64 +355,59 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     console.warn('User not authenticated, skipping backend SOS');
   }
 
-  // If no family contacts, send to police and security officer
-  if (!hasFamilyContacts) {
-    console.log('No family contacts found. Sending SOS to Police and Security Officer.');
-    // Police and Security Officer numbers (from categoryCards)
-    const emergencyContacts = [
-      {name: 'Police', phone: '9561606066'},
-      {name: 'Security Officer', phone: '9561606067'},
-    ];
-    
-  const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-  const smsMessage = message || template;
-    const emergencyPhones = emergencyContacts.map(ec => ec.phone);
-    const smsUrl = buildSmsUrl(emergencyPhones, smsMessage);
-    
-    try {
-      // In testing mode, just log instead of actually opening SMS
-      console.log('Would send SMS to:', emergencyPhones);
-      console.log('Message:', smsMessage);
-      // await Linking.openURL(smsUrl);
-        smsInitiated = true;
-      } catch (error) {
-      console.error('Error preparing emergency SMS:', error);
-      }
-    
-    // Try to call police (primary emergency contact)
-    try {
-      console.log('Would call:', emergencyContacts[0].phone);
-      // await requestDirectCall(emergencyContacts[0].phone);
-      callInitiated = true;
-    } catch (error) {
-      console.error('Error preparing emergency call:', error);
-    }
-  } else {
-    // Has family contacts - send to them
-    const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
-    const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-    const smsMessage = message || template;
-    const smsUrl = buildSmsUrl(smsRecipients, smsMessage);
-    
-    try {
-      // In testing mode, just log instead of actually opening SMS
-      console.log('Would send SMS to family contacts:', smsRecipients);
-      console.log('Message:', smsMessage);
-      // await Linking.openURL(smsUrl);
-      smsInitiated = true;
-    } catch (error) {
-      console.error('Error preparing SMS:', error);
-    }
+  const settingsState = useSettingsStore.getState();
+  const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
+  const familyMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
+  const policeMessage = messageTemplates.police || DEFAULT_SOS_MESSAGES.police;
+  const securityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
 
-    if (primaryContact && primaryContact.phone) {
+  const sendSmsGroup = async (label: string, recipients: string[], body: string) => {
+    if (!recipients.length) {
+      return false;
+    }
+    try {
+      const sent = await sendSmsDirect(recipients, body);
+      console.log(`SMS sent to ${label}:`, recipients);
+      return sent;
+    } catch (error) {
+      console.error(`Failed to send ${label} SMS:`, error);
+      return false;
+    }
+  };
+
+  if (hasFamilyContacts) {
+    const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+    const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
+    smsInitiated = smsInitiated || familySuccess;
+
+    if (primaryContact?.phone) {
       try {
-        console.log('Would call primary contact:', primaryContact.phone);
-        // await requestDirectCall(primaryContact.phone);
+        await requestDirectCall(primaryContact.phone);
         callInitiated = true;
       } catch (error) {
-        console.error('Error preparing call:', error);
+        console.error('Error calling primary contact:', error);
       }
     }
+  } else {
+    console.log('No family contacts configured. Skipping family SMS.');
+  }
+
+  const securityPhones = SECURITY_CONTACTS.map((contact) => contact.phone);
+  const securitySuccess = await sendSmsGroup('security officers', securityPhones, securityMessage);
+  smsInitiated = smsInitiated || securitySuccess;
+
+  const policeSmsSuccess = await sendSmsGroup('police hotline', [POLICE_CONTACT.phone], policeMessage);
+  smsInitiated = smsInitiated || policeSmsSuccess;
+
+  try {
+    await requestDirectCall(POLICE_CONTACT.phone);
+    callInitiated = true;
+  } catch (error) {
+    console.error('Error calling police hotline:', error);
+    Alert.alert(
+      'Unable to call police',
+      'We could not place the call automatically. Please dial the police hotline manually.',
+    );
   }
 
   // Send push notification immediately (don't await to avoid blocking)

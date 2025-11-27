@@ -1,7 +1,6 @@
 import React, {useState} from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
 import {useNavigation} from '@react-navigation/native';
-import {Alert} from 'react-native';
 import CustomHeader from '../components/common/CustomHeader';
 import CustomDrawer from '../components/common/CustomDrawer';
 import {useAuthStore} from '../stores/authStore';
@@ -31,7 +30,12 @@ const AppNavigator = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const handleUpgradePress = () => {
-    Alert.alert('Upgrade to Premium', 'Premium purchase options will be available soon.');
+    navigation.navigate('Billing');
+  };
+
+  const redirectToLogin = async () => {
+    const {logout} = useAuthStore.getState();
+    await logout();
   };
 
   // Screen configurations with icons and subtitles
@@ -163,14 +167,13 @@ const AppNavigator = () => {
           options={{headerTitle: 'SUPPORT CONTACTS'}}
         />
       </Stack.Navigator>
-      <CustomDrawer 
-        visible={drawerVisible} 
-        onClose={() => setDrawerVisible(false)} 
+      <CustomDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
         navigation={navigation}
-        showLoginModal={() => {
+        showLoginModal={async () => {
           setDrawerVisible(false);
-          // Navigate to Home and trigger login modal
-          navigation.navigate('Home', {showLoginModal: true});
+          await redirectToLogin();
         }}
       />
     </>

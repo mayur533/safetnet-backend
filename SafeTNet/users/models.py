@@ -42,6 +42,12 @@ class User(AbstractUser):
         blank=True,
         related_name='users'
     )
+    geofences = models.ManyToManyField(
+        'Geofence',
+        blank=True,
+        related_name='associated_users',
+        help_text='Geofences associated with this user for alert notifications'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -134,9 +140,16 @@ class Alert(models.Model):
     geofence = models.ForeignKey(
         Geofence,
         on_delete=models.CASCADE,
-        related_name='alerts',
+        related_name='legacy_alerts',
         null=True,
-        blank=True
+        blank=True,
+        help_text='Legacy single geofence field (deprecated, use geofences instead)'
+    )
+    geofences = models.ManyToManyField(
+        Geofence,
+        blank=True,
+        related_name='alerts',
+        help_text='Geofences associated with this alert. All users, subadmins, and security officers associated with these geofences will see this alert.'
     )
     user = models.ForeignKey(
         User,

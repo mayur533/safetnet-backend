@@ -17,6 +17,7 @@ import {create} from 'zustand';
 import {User} from '../models/user.types';
 import {apiService, LoginResponse} from '../services/apiService';
 import {useContactStore} from './contactStore';
+import {navigationRef} from '../navigation/navigationRef';
 
 interface AuthState {
   user: User | null;
@@ -152,6 +153,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     const storage = await getStorage();
     await storage.removeItem('authState');
     console.log('Auth state cleared after logout');
+    setTimeout(() => {
+      if (navigationRef.isReady()) {
+        navigationRef.reset({
+          index: 0,
+          routes: [{name: 'AuthStack', state: {routes: [{name: 'Login'}]}}],
+        });
+      }
+    }, 0);
   },
   load: async () => {
     try {

@@ -245,7 +245,7 @@ class Geofence(models.Model):
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='geofences',
+        related_name='user_profile_geofences',
         help_text="User who owns this geofence"
     )
     name = models.CharField(

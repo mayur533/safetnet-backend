@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -20,12 +21,14 @@ import {useContactStore} from '../../stores/contactStore';
 import {apiService} from '../../services/apiService';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
 
+type ContactCategory = 'Family' | 'Emergency' | 'Friend';
+
 interface Contact {
   id: string;
   name: string;
   phone: string;
   email?: string;
-  type: 'Family' | 'Emergency' | 'Friend';
+  type: ContactCategory;
   relationship?: string;
 }
 
@@ -97,7 +100,7 @@ const EmergencyContactScreen = () => {
     name: c.name || c.full_name || '',
     phone: c.phone || c.phone_number || '',
     email: c.email || '',
-    type: (c.type || c.contact_type || 'Family') as 'Family' | 'Emergency' | 'Friend',
+    type: (c.type || c.contact_type || 'Family') as ContactCategory,
     relationship: c.relationship || '',
   }));
   const [showAddModal, setShowAddModal] = useState(false);
@@ -107,7 +110,7 @@ const EmergencyContactScreen = () => {
     phone: '',
     email: '',
     relationship: '',
-    type: 'Family' as 'Family' | 'Emergency' | 'Friend',
+    type: null as ContactCategory | null,
   });
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertConfig, setAlertConfig] = useState({
@@ -116,6 +119,7 @@ const EmergencyContactScreen = () => {
     type: 'info' as 'error' | 'success' | 'info' | 'warning',
     buttons: [] as Array<{text: string; style?: 'default' | 'cancel' | 'destructive'; onPress: () => void}>,
   });
+  const [savingContact, setSavingContact] = useState(false);
 
   // Load contacts from API on mount
   useEffect(() => {
@@ -158,7 +162,7 @@ const EmergencyContactScreen = () => {
       phone: '',
       email: '',
       relationship: '',
-      type: 'Family',
+      type: null,
     });
     setShowAddModal(true);
   };
@@ -210,11 +214,27 @@ const EmergencyContactScreen = () => {
     setAlertVisible(true);
   };
 
+  const isSaveDisabled = savingContact || !formData.name.trim() || !formData.phone.trim() || !formData.type;
+
   const handleSaveContact = async () => {
-    if (!formData.name || !formData.phone) {
+    const nameTrimmed = formData.name.trim();
+    const phoneTrimmed = formData.phone.trim();
+    
+    if (!nameTrimmed || !phoneTrimmed) {
       setAlertConfig({
         title: 'Error',
         message: 'Please fill in name and phone number',
+        type: 'error',
+        buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
+      });
+      setAlertVisible(true);
+      return;
+    }
+
+    if (!formData.type) {
+      setAlertConfig({
+        title: 'Error',
+        message: 'Please select the contact type (Family, Emergency, or Friend)',
         type: 'error',
         buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
       });
@@ -233,32 +253,33 @@ const EmergencyContactScreen = () => {
       return;
     }
 
+    setSavingContact(true);
     try {
     if (editingContact) {
         // Update existing contact
         const contactId = parseInt(editingContact.id);
         if (!isNaN(contactId)) {
           const contactData = {
-            name: formData.name,
-            phone: formData.phone,
-            email: formData.email || null,
-            relationship: formData.relationship || null,
+            name: nameTrimmed,
+            phone: phoneTrimmed,
+            email: formData.email?.trim() || '',
+            relationship: formData.relationship?.trim() || '',
             type: formData.type.toLowerCase(),
           };
           await apiService.updateFamilyContact(user.id, contactId, contactData);
-          await updateContact(contactId, contactData);
+          await updateContact(contactId, {...contactData, type: formData.type});
         }
     } else {
-        // Add new contact
       if (contacts.length >= maxContacts) {
+          setSavingContact(false);
         requirePremium('You have reached the contact limit. Upgrade to add more.');
         return;
       }
         const contactData = {
-          name: formData.name,
-          phone: formData.phone,
-          email: formData.email || null,
-          relationship: formData.relationship || null,
+          name: nameTrimmed,
+          phone: phoneTrimmed,
+          email: formData.email?.trim() || '',
+          relationship: formData.relationship?.trim() || '',
           type: formData.type.toLowerCase(),
       };
         const result = await apiService.addFamilyContact(user.id, contactData);
@@ -275,30 +296,18 @@ const EmergencyContactScreen = () => {
         buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
       });
       setAlertVisible(true);
+    } finally {
+      setSavingContact(false);
     }
   };
 
   const handleCall = (phone: string) => {
-    setAlertConfig({
-      title: 'Call',
-      message: `Call ${phone}?`,
-      type: 'info',
-      buttons: [
-        {text: 'Cancel', style: 'cancel', onPress: () => setAlertVisible(false)},
-      {text: 'Call', onPress: () => {
-          setAlertVisible(false);
-        // In a real app, you would use Linking.openURL(`tel:${phone}`)
-          setAlertConfig({
-            title: 'Call',
-            message: `Calling ${phone}...`,
-            type: 'info',
-            buttons: [{text: 'OK', onPress: () => setAlertVisible(false)}],
-          });
-          setAlertVisible(true);
-      }},
-      ],
-    });
-    setAlertVisible(true);
+    try {
+      Linking.openURL(`tel:${phone}`);
+    } catch (error) {
+      console.error('Error initiating call:', error);
+      showToast('Unable to start call', ToastAndroid.SHORT);
+    }
   };
 
   const getContactIcon = (type: string) => {
@@ -417,7 +426,12 @@ const EmergencyContactScreen = () => {
                   activeOpacity={0.7}>
                   <MaterialIcons name="phone" size={20} color={iconMutedColor} />
                   <Text style={styles.contactDetailText}>{contact.phone}</Text>
+                  <View style={styles.callAction}>
                   <MaterialIcons name="call" size={20} color={colors.primary} />
+                    <Text style={[styles.callActionLabel, {color: colors.primary}]}>
+                      Call
+                    </Text>
+                  </View>
                 </TouchableOpacity>
 
                 {contact.email && (
@@ -537,7 +551,7 @@ const EmergencyContactScreen = () => {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Type</Text>
+                <Text style={styles.inputLabel}>Type *</Text>
                 <View style={styles.typeSelector}>
                   {(['Family', 'Emergency', 'Friend'] as const).map((type) => (
                     <TouchableOpacity
@@ -564,6 +578,9 @@ const EmergencyContactScreen = () => {
                     </TouchableOpacity>
                   ))}
                 </View>
+                {!formData.type && (
+                  <Text style={styles.validationText}>Select a contact type to continue</Text>
+                )}
               </View>
             </ScrollView>
 
@@ -575,10 +592,24 @@ const EmergencyContactScreen = () => {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  isSaveDisabled && styles.saveButtonDisabled,
+                ]}
                 onPress={handleSaveContact}
-                activeOpacity={0.7}>
-                <Text style={styles.saveButtonText}>Save</Text>
+                activeOpacity={0.7}
+                disabled={isSaveDisabled}>
+                {savingContact ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" style={styles.saveButtonSpinner} />
+                ) : (
+                  <MaterialIcons name="save" size={20} color="#FFFFFF" style={styles.saveButtonSpinner} />
+                )}
+                <Text style={styles.saveButtonText}>
+                  {savingContact
+                    ? (editingContact ? 'Saving...' : 'Adding...')
+                    : editingContact ? 'Save Changes' : 'Add Contact'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -736,6 +767,15 @@ const createStyles = (colors: Theme['colors'], tokens: ThemeTokens, isDarkMode: 
       color: colors.text,
       marginLeft: 12,
     },
+    callAction: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    callActionLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+    },
     contactActions: {
       flexDirection: 'row',
       justifyContent: 'space-around',
@@ -874,6 +914,8 @@ const createStyles = (colors: Theme['colors'], tokens: ThemeTokens, isDarkMode: 
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
+      gap: 8,
     },
     cancelButton: {
       backgroundColor: tokens.softSurfaceColor,
@@ -893,10 +935,21 @@ const createStyles = (colors: Theme['colors'], tokens: ThemeTokens, isDarkMode: 
       shadowRadius: isDarkMode ? 6 : 4,
       elevation: isDarkMode ? 4 : 2,
     },
+    saveButtonSpinner: {
+      marginRight: 4,
+    },
+    saveButtonDisabled: {
+      opacity: 0.6,
+    },
     saveButtonText: {
       fontSize: 16,
       fontWeight: '600',
       color: '#FFFFFF',
+    },
+    validationText: {
+      marginTop: 8,
+      fontSize: 12,
+      color: '#EF4444',
     },
   });
 

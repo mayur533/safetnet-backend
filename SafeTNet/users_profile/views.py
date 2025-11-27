@@ -20,6 +20,8 @@ from .models import (
     User, FamilyContact, CommunityMembership, SOSEvent,
     LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
 )
+# Import PromoCode from users app
+from users.models import PromoCode
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
     FamilyContactSerializer, FamilyContactCreateSerializer,
@@ -112,7 +114,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         user_id = self.kwargs.get('user_id')
         if user_id:
             try:
-                user = User.objects.get(id=user_id)
+                user = User.objects.select_related('organization').prefetch_related('geofences', 'geofences__organization').get(id=user_id)
                 # Allow users to access their own profile
                 if self.request.user.id == user.id:
                     return user
@@ -122,8 +124,8 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             except User.DoesNotExist:
                 raise Http404("User not found")
         else:
-            # For /profile/ endpoint, return current user
-            return self.request.user
+            # For /profile/ endpoint, return current user with optimized queries
+            return User.objects.select_related('organization').prefetch_related('geofences', 'geofences__organization').get(pk=self.request.user.pk)
     
     def get(self, request, *args, **kwargs):
         """Get user profile."""
@@ -637,6 +639,61 @@ class SubscriptionView(APIView):
             }, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ValidatePromoCodeView(APIView):
+    """
+    Validate a promo code.
+    POST /users/validate-promocode/
+    """
+    permission_classes = [permissions.AllowAny]  # Allow validation without auth
+    
+    def post(self, request):
+        """Validate a promo code and return its details."""
+        code = request.data.get('code', '').strip().upper()
+        
+        if not code:
+            return Response({
+                'valid': False,
+                'error': 'Promo code is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            promo_code = PromoCode.objects.get(code=code)
+        except PromoCode.DoesNotExist:
+            return Response({
+                'valid': False,
+                'error': 'Invalid promo code'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if code is valid
+        is_valid = promo_code.is_valid()
+        
+        if not is_valid:
+            if not promo_code.is_active:
+                error_message = 'This promo code is no longer active'
+            elif timezone.now() >= promo_code.expiry_date:
+                error_message = 'This promo code has expired'
+            else:
+                error_message = 'This promo code is invalid'
+            
+            return Response({
+                'valid': False,
+                'error': error_message,
+                'code': promo_code.code,
+                'discount_percentage': float(promo_code.discount_percentage),
+                'expiry_date': promo_code.expiry_date.isoformat(),
+                'is_active': promo_code.is_active,
+            }, status=status.HTTP_200_OK)
+        
+        # Return valid promo code details
+        return Response({
+            'valid': True,
+            'code': promo_code.code,
+            'discount_percentage': float(promo_code.discount_percentage),
+            'expiry_date': promo_code.expiry_date.isoformat(),
+            'message': f'You will get {promo_code.discount_percentage}% discount',
+        }, status=status.HTTP_200_OK)
 
 
 class CancelSubscriptionView(APIView):

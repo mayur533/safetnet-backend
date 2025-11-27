@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useMemo} from 'react';
-import {View, Text, TouchableOpacity, Modal, BackHandler, StyleSheet, Alert, ScrollView} from 'react-native';
+import {View, Text, TouchableOpacity, Modal, BackHandler, StyleSheet, ScrollView} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useTheme} from '@react-navigation/native';
@@ -60,7 +60,7 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const {isPremium} = useSubscription();
+  const {isPremium, promptUpgrade} = useSubscription();
   const [activeScreen, setActiveScreen] = useState('Home');
   
   // Get user name - use email if name is not available
@@ -117,14 +117,9 @@ const CustomDrawer = ({visible, onClose, navigation, showLoginModal}: CustomDraw
     // Check premium features
     if (isPremiumFeature && !isPremium) {
       onClose();
-      Alert.alert(
-        'Premium Feature',
-        'This feature is available for Premium users only. Upgrade to Premium to unlock this feature.',
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {text: 'Upgrade', onPress: () => navigation.navigate('Billing' as never)}
-        ]
-      );
+      promptUpgrade('This module is part of the Premium toolkit.', {
+        onUpgrade: () => navigation.navigate('Billing' as never),
+      });
       return;
     }
 

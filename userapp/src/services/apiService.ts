@@ -6,6 +6,7 @@
 // Import AsyncStorage using the initialization utility
 import { getAsyncStorage, getAsyncStorageSync } from '../utils/asyncStorageInit';
 import { cacheService } from './cacheService';
+import { useNetworkToastStore } from '../stores/networkToastStore';
 
 // Get AsyncStorage synchronously (will be initialized on first async call)
 let AsyncStorage: any = getAsyncStorageSync();
@@ -17,9 +18,11 @@ getAsyncStorage().then((storage) => {
   console.error('Failed to initialize AsyncStorage in apiService:', error);
 });
 
+// Use LAN IP so physical devices can reach the backend directly
+// Update this IP if your development machine changes networks
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.0.125:8000/api/user' // Use device IP for physical device
-  : 'http://localhost:8000/api/user';
+  ? 'http://192.168.0.125:8000/api/user'
+  : 'http://192.168.0.125:8000/api/user';
 
 interface LoginResponse {
   message: string;
@@ -66,6 +69,94 @@ interface RegisterResponse {
 class ApiService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+
+  /**
+   * Test backend connectivity and health
+   * Returns true if backend is reachable, false otherwise
+   */
+  /**
+   * Check backend connectivity (optional - for diagnostic purposes)
+   * Note: This is a simple connectivity test, not a full health check
+   */
+  async checkBackendHealth(): Promise<{isHealthy: boolean; message: string; details?: any}> {
+    // Use the login endpoint itself as a simple connectivity test
+    // We'll just try to reach it (without actually logging in)
+    const healthCheckUrl = `${API_BASE_URL}/login/`;
+    const timeoutMs = 3000; // 3 second timeout for quick check
+    
+    try {
+      console.log(`[Health Check] Testing backend connectivity at: ${healthCheckUrl}`);
+      
+      // Create an AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      // Try an OPTIONS request or HEAD request to test connectivity
+      // We'll do a minimal POST request with invalid data to test connectivity
+      const response = await fetch(healthCheckUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}), // Empty body will get validation error but confirms backend is reachable
+      });
+
+      clearTimeout(timeoutId);
+
+      const text = await response.text();
+      console.log(`[Health Check] Response status: ${response.status}`);
+      
+      // Any response (even 400/401) means backend is reachable
+      // 400 = validation error (backend is up)
+      // 401 = auth error (backend is up but requires auth)
+      // 404 = endpoint not found (but backend is up)
+      if (response.status < 500) {
+        return {
+          isHealthy: true,
+          message: 'Backend is reachable and responding',
+          details: {status: response.status, url: healthCheckUrl},
+        };
+      } else {
+        return {
+          isHealthy: false,
+          message: `Backend responded with server error: ${response.status} ${response.statusText}`,
+          details: {status: response.status, text: text.substring(0, 200)},
+        };
+      }
+    } catch (error: any) {
+      console.error('[Health Check] Error:', error);
+      
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      const errorName = error?.name || '';
+      
+      if (error.name === 'AbortError' || errorMessage.includes('timeout')) {
+        return {
+          isHealthy: false,
+          message: `Backend timeout: Server at ${API_BASE_URL} did not respond within ${timeoutMs}ms. Is the backend running?`,
+          details: {url: healthCheckUrl, timeout: timeoutMs},
+        };
+      }
+      
+      if (
+        errorMessage.includes('Network request failed') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorName === 'TypeError'
+      ) {
+        return {
+          isHealthy: false,
+          message: `Cannot connect to backend at ${API_BASE_URL}. Please check: 1) Backend server is running, 2) IP address is correct (current: 192.168.0.125), 3) Device is on the same network`,
+          details: {url: healthCheckUrl, error: errorMessage},
+        };
+      }
+      
+      return {
+        isHealthy: false,
+        message: `Backend health check failed: ${errorMessage}`,
+        details: {url: healthCheckUrl, error: errorMessage},
+      };
+    }
+  }
 
   /**
    * Set tokens after login/register
@@ -132,11 +223,21 @@ class ApiService {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
+    // Add timeout to fetch request
+    const timeoutMs = 30000; // 30 seconds
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
+      console.log(`[API Request] ${options.method || 'GET'} ${url}`);
+      
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       // Read response text first (can only read once)
       const text = await response.text();
@@ -172,8 +273,11 @@ class ApiService {
           errorMessage = text || errorMessage;
         }
         
-        if (response.status === 401 && this.refreshToken) {
-          // Try to refresh token
+        // Only try token refresh for authenticated endpoints (not login/register)
+        // Login endpoints should never have 401 (they return 400 for invalid credentials)
+        const isAuthEndpoint = endpoint.includes('/login/') || endpoint.includes('/register/') || endpoint === '/';
+        if (response.status === 401 && this.refreshToken && !isAuthEndpoint) {
+          // Try to refresh token for authenticated endpoints
           const refreshed = await this.refreshAccessToken();
           if (refreshed) {
             // Retry request with new token
@@ -195,22 +299,87 @@ class ApiService {
           }
         }
         
+        // For login/register endpoints, 401 shouldn't happen - backend returns 400 for invalid credentials
+        if (response.status === 401 && isAuthEndpoint) {
+          console.warn('[API Request] Received 401 on auth endpoint - this is unusual, backend should return 400 for invalid credentials');
+        }
+        
         throw new Error(errorMessage);
       }
 
       return text ? JSON.parse(text) : {};
     } catch (error: any) {
-      console.error('API request error:', error);
-      // Handle network errors specifically
-      if (error.message && error.message.includes('Network request failed')) {
-        throw new Error('Network request failed. Please check your internet connection and ensure the server is running.');
-      } else if (error.message && error.message.includes('Failed to fetch')) {
-        throw new Error('Failed to connect to server. Please check if the backend is running and the IP address is correct.');
-      } else if (error.message && error.message.includes('ECONNREFUSED')) {
-        throw new Error('Connection refused. Please ensure the backend server is running on port 8000.');
-      } else if (error.message && error.message.includes('timeout')) {
-        throw new Error('Request timeout. The server took too long to respond.');
+      // Clean up timeout if still active
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
+      
+      console.error('[API Request Error] Full error details:', {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        url: url,
+        endpoint: endpoint,
+      });
+      
+      // Handle network errors specifically
+      // Check error message, name, and string representation
+      const errorMessage = error?.message || error?.toString() || '';
+      const errorName = error?.name || '';
+      const errorString = String(error || '');
+      
+      // Timeout errors (check first)
+      if (
+        error.name === 'AbortError' ||
+        errorMessage.includes('timeout') ||
+        errorString.includes('timeout') ||
+        errorMessage.includes('TIMEOUT') ||
+        errorMessage.includes('aborted')
+      ) {
+        console.error('[API Request Error] Request timeout');
+        useNetworkToastStore.getState().show();
+        throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${API_BASE_URL} took too long to respond. Please check if the backend is running.`);
+      }
+      
+      // Network request failed - common in React Native
+      if (
+        errorMessage.includes('Network request failed') ||
+        errorString.includes('Network request failed') ||
+        (errorName === 'TypeError' && errorMessage.includes('Network'))
+      ) {
+        console.error('[API Request Error] Network request failed - backend may be unreachable');
+        useNetworkToastStore.getState().show();
+        throw new Error(`Cannot connect to backend at ${API_BASE_URL}. Please check: 1) Backend server is running on port 8000, 2) IP address is correct (current: 192.168.0.125), 3) Device is on the same network.`);
+      } 
+      // Failed to fetch - common in web browsers
+      else if (
+        errorMessage.includes('Failed to fetch') ||
+        errorString.includes('Failed to fetch') ||
+        (errorName === 'TypeError' && errorMessage.includes('fetch'))
+      ) {
+        console.error('[API Request Error] Failed to fetch - connection error');
+        useNetworkToastStore.getState().show();
+        throw new Error(`Failed to connect to server at ${API_BASE_URL}. Please check if the backend is running and the IP address is correct.`);
+      } 
+      // Connection refused
+      else if (
+        errorMessage.includes('ECONNREFUSED') ||
+        errorString.includes('ECONNREFUSED') ||
+        errorMessage.includes('Connection refused')
+      ) {
+        console.error('[API Request Error] Connection refused');
+        useNetworkToastStore.getState().show();
+        throw new Error(`Connection refused by ${API_BASE_URL}. Please ensure the backend server is running on port 8000.`);
+      }
+      // TypeError without specific message (often network related)
+      else if (errorName === 'TypeError') {
+        console.error('[API Request Error] TypeError - likely network issue');
+        useNetworkToastStore.getState().show();
+        throw new Error(`Network error connecting to ${API_BASE_URL}. Please check: 1) Backend server is running, 2) IP address is correct, 3) Device network connection. Error: ${errorMessage || 'Unknown TypeError'}`);
+      }
+      
+      // For other errors, re-throw as-is but log details
+      console.error('[API Request Error] Other error:', error);
       throw error;
     }
   }
@@ -254,31 +423,49 @@ class ApiService {
    */
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
-      console.log('Attempting login with:', { email, url: `${API_BASE_URL}/login/` });
+      console.log('[Login] Attempting login with:', { email, url: `${API_BASE_URL}/login/` });
+      
+      // Note: We don't do a separate health check before login because:
+      // 1. The login request itself will fail fast if backend is unreachable
+      // 2. Health check endpoints often require authentication
+      // 3. It adds unnecessary latency to the login flow
+      
       const response = await this.request('/login/', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
 
-      console.log('Login response:', response);
+      console.log('[Login] Login successful, received tokens:', {
+        hasAccessToken: !!response.tokens?.access,
+        hasRefreshToken: !!response.tokens?.refresh,
+        userId: response.user?.id,
+      });
 
       if (response.tokens) {
         await this.setTokens(response.tokens.access, response.tokens.refresh);
+        console.log('[Login] Tokens saved successfully');
+      } else {
+        console.warn('[Login] No tokens in response:', response);
+        throw new Error('Login successful but no tokens received from server');
       }
 
       return response;
     } catch (error: any) {
-      console.error('Login error:', error.message || error);
-      // Provide more user-friendly error messages
-      if (error.message && error.message.includes('Network')) {
-        throw new Error('Network error: Unable to connect to server. Please check your internet connection and ensure the backend is running.');
-      } else if (error.message && error.message.includes('401') || error.message && error.message.includes('Unauthorized')) {
-        throw new Error('Invalid email or password. Please try again.');
-      } else if (error.message && error.message.includes('404')) {
-        throw new Error('Login endpoint not found. Please check the API configuration.');
-      } else if (error.message && error.message.includes('500')) {
-        throw new Error('Server error. Please try again later.');
+      console.error('[Login] Login error:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+      
+      // Provide user-friendly error messages
+      if (error.message && error.message.includes('400')) {
+        throw new Error('Invalid email or password. Please check your credentials and try again.');
+      } else if (error.message && error.message.includes('401')) {
+        // This shouldn't happen for login, but handle it gracefully
+        throw new Error('Authentication failed. Please check your credentials and try again.');
       }
+      
+      // Re-throw the error as-is if it's already a user-friendly message
       throw error;
     }
   }
@@ -350,6 +537,18 @@ class ApiService {
   }
 
   /**
+   * Get community memberships (with caching)
+   */
+  async getCommunityGroups(userId: number): Promise<any> {
+    const cacheKey = `community_groups_${userId}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/${userId}/communities/`),
+      { compareByHash: true }
+    );
+  }
+
+  /**
    * Add family contact (invalidates cache)
    */
   async addFamilyContact(userId: number, contact: any): Promise<any> {
@@ -376,6 +575,70 @@ class ApiService {
   }
 
   /**
+   * Get alerts for user based on their geofences (with caching)
+   */
+  async getAlerts(): Promise<any> {
+    const cacheKey = 'user_alerts';
+    try {
+      // Use the admin alerts endpoint which filters by user's geofences
+      // The endpoint is at /api/auth/admin/alerts/
+      const adminApiUrl = API_BASE_URL.replace('/api/user', '/api/auth');
+      const url = `${adminApiUrl}/admin/alerts/`;
+      
+      console.log('[getAlerts] Fetching alerts from:', url);
+      
+      return await cacheService.getOrFetch(
+        cacheKey,
+        async () => {
+          const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+          };
+          if (this.accessToken) {
+            headers['Authorization'] = `Bearer ${this.accessToken}`;
+            console.log('[getAlerts] Using access token');
+          } else {
+            console.warn('[getAlerts] No access token available');
+          }
+          
+          const response = await fetch(url, {
+            method: 'GET',
+            headers,
+          });
+          
+          console.log('[getAlerts] Response status:', response.status);
+          
+          if (!response.ok) {
+            const text = await response.text();
+            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            try {
+              const errorData = JSON.parse(text);
+              errorMessage = errorData.message || errorData.detail || errorMessage;
+            } catch {
+              errorMessage = text || errorMessage;
+            }
+            console.error('[getAlerts] Error response:', errorMessage);
+            throw new Error(errorMessage);
+          }
+          
+          const data = await response.json();
+          console.log('[getAlerts] Response data type:', Array.isArray(data) ? 'array' : typeof data);
+          console.log('[getAlerts] Has results field:', 'results' in data);
+          
+          // Handle paginated response (results field) or direct array
+          const alerts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
+          console.log('[getAlerts] Returning', alerts.length, 'alerts');
+          return alerts;
+        },
+        { compareByHash: true }
+      );
+    } catch (error: any) {
+      console.error('[getAlerts] Error fetching alerts:', error);
+      // Return empty array on error instead of throwing
+      return [];
+    }
+  }
+
+  /**
    * Get SOS events (with caching)
    */
   async getSOSEvents(userId: number): Promise<any> {
@@ -385,6 +648,46 @@ class ApiService {
       () => this.request(`/${userId}/sos_events/`),
       { compareByHash: true }
     );
+  }
+
+  /**
+   * Validate a promo code
+   */
+  async validatePromocode(code: string): Promise<{
+    valid: boolean;
+    code?: string;
+    discount_percentage?: number;
+    expiry_date?: string;
+    error?: string;
+    message?: string;
+  }> {
+    try {
+      const url = `${API_BASE_URL.replace('/api/user', '/api/user')}/validate-promocode/`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: code.trim().toUpperCase() }),
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        return {
+          valid: false,
+          error: data.error || 'Failed to validate promo code',
+        };
+      }
+
+      return data;
+    } catch (error: any) {
+      console.error('[Validate Promocode] Error:', error);
+      return {
+        valid: false,
+        error: 'Network error. Please check your connection.',
+      };
+    }
   }
 
   /**
@@ -510,6 +813,18 @@ class ApiService {
       cacheKey,
       () => this.request(`/nearby_help/?latitude=${latitude}&longitude=${longitude}&radius=${radius}`),
       { compareByHash: true, ttlMinutes: 30 } // Cache for 30 minutes as locations don't change frequently
+    );
+  }
+
+  /**
+   * Get security officers near the user (uses live/offline data)
+   */
+  async getSecurityOfficers(latitude: number, longitude: number): Promise<any> {
+    const cacheKey = `security_officers_${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
+    return cacheService.getOrFetch(
+      cacheKey,
+      () => this.request(`/security_officers/?latitude=${latitude}&longitude=${longitude}`),
+      {compareByHash: true, ttlMinutes: 5},
     );
   }
 

@@ -30,6 +30,7 @@ urlpatterns = [
     # Subscription/Billing
     path('subscribe/', views.SubscriptionView.as_view(), name='subscribe'),
     path('subscribe/cancel/', views.CancelSubscriptionView.as_view(), name='cancel-subscription'),
+    path('validate-promocode/', views.ValidatePromoCodeView.as_view(), name='validate-promocode'),
     
     # Geofencing (Premium only)
     path('<int:user_id>/geofences/', views.GeofenceListView.as_view(), name='geofences'),
@@ -40,6 +41,7 @@ urlpatterns = [
     
     # Nearby Help (for map view)
     path('nearby_help/', views_new_apis.nearby_help_map, name='nearby-help'),
+    path('security_officers/', views_new_apis.security_officer_locations, name='security-officers'),
     
     # Safety Tips
     path('safety_tips/', views_new_apis.safety_tips_feed, name='safety-tips'),

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -70,6 +70,70 @@ interface Message {
   base64_image?: string; // Base64 encoded image for offline display
 }
 
+const MAX_FILE_NAME_DISPLAY = 32;
+
+const resolveFileName = (message: Message): string => {
+  let fileName = message.file_name;
+
+  if (!fileName && message.file_url) {
+    const urlParts = message.file_url.split('/');
+    fileName = urlParts[urlParts.length - 1];
+    if (fileName) {
+      fileName = fileName.split('?')[0];
+    }
+  }
+
+  if (!fileName && message.image_url) {
+    const urlParts = message.image_url.split('/');
+    fileName = urlParts[urlParts.length - 1];
+    if (fileName) {
+      fileName = fileName.split('?')[0];
+    }
+  }
+
+  if (!fileName || fileName.trim() === '') {
+    fileName = 'Document';
+  }
+
+  if (fileName.length > MAX_FILE_NAME_DISPLAY) {
+    const lastDot = fileName.lastIndexOf('.');
+    if (lastDot > -1) {
+      const name = fileName.substring(0, lastDot);
+      const ext = fileName.substring(lastDot);
+      const truncatedName = name.substring(0, Math.max(8, MAX_FILE_NAME_DISPLAY - ext.length - 3));
+      return `${truncatedName}...${ext}`;
+    }
+    return `${fileName.substring(0, MAX_FILE_NAME_DISPLAY)}...`;
+  }
+
+  return fileName;
+};
+
+const resolveFileExtension = (message: Message): string => {
+  let fileName = message.file_name;
+  if (!fileName && message.file_url) {
+    const urlParts = message.file_url.split('/');
+    fileName = urlParts[urlParts.length - 1].split('?')[0];
+  }
+  if (!fileName && message.image_url) {
+    const urlParts = message.image_url.split('/');
+    fileName = urlParts[urlParts.length - 1].split('?')[0];
+  }
+  const ext = fileName?.includes('.') ? fileName.split('.').pop() : undefined;
+  return ext ? ext.toUpperCase() : '';
+};
+
+const formatFileSize = (bytes?: number): string => {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+};
+
 interface GroupMember {
   id: number;
   name: string;
@@ -138,6 +202,15 @@ const ChatScreen = () => {
   
   // Track failed image loads
   const [failedImages, setFailedImages] = useState<Set<string | number>>(new Set());
+  
+  const handleRetryImage = useCallback((messageId: string | number) => {
+    setFailedImages((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
+    setLoadingImages((prev) => new Set(prev).add(messageId));
+  }, []);
   
   // Track loading states for images and videos
   const [loadingImages, setLoadingImages] = useState<Set<string | number>>(new Set());
@@ -604,50 +677,33 @@ const ChatScreen = () => {
   };
 
   const handleOpenFile = async (message: Message) => {
+    const messageId = message.id;
+    setLoadingFiles((prev) => new Set(prev).add(messageId));
     let fileUri: string | null = null;
     let mimeType: string | null = null;
     
+    try {
     if (message.isOwn) {
-      // For sender, check if we have the original local file path stored
-      // First check AsyncStorage for the original file path
       try {
         const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
-        if (stored?.localPath) {
-          // Check if the original file still exists
-          const exists = await RNFS.exists(stored.localPath);
-          if (exists) {
+          if (stored?.localPath && (await RNFS.exists(stored.localPath))) {
             fileUri = stored.localPath.startsWith('file://') 
               ? stored.localPath 
               : `file://${stored.localPath}`;
           } else {
-            // Original file not found, use server URL
             fileUri = message.file_url || message.image_url || null;
-          }
-        } else {
-          // No stored path, try to use server URL or check if it's a local path
-          fileUri = message.file_url || message.image_url || null;
-          if (fileUri && !fileUri.startsWith('http') && !fileUri.startsWith('file://')) {
-            // Might be a local path, check if it exists
-            const exists = await RNFS.exists(fileUri);
-            if (exists) {
-              fileUri = `file://${fileUri}`;
-            }
-          }
         }
       } catch (error) {
         console.error('Error getting stored file for sender:', error);
         fileUri = message.file_url || message.image_url || null;
       }
     } else {
-      // For receiver, check if downloaded
       if (message.localFilePath) {
-        const exists = await RNFS.exists(message.localFilePath);
-        if (exists) {
+          if (await RNFS.exists(message.localFilePath)) {
           fileUri = message.localFilePath.startsWith('file://') 
             ? message.localFilePath 
             : `file://${message.localFilePath}`;
         } else {
-          // File was deleted, need to re-download
           await handleDownloadFile(message);
           const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
           if (stored?.localPath) {
@@ -657,47 +713,42 @@ const ChatScreen = () => {
           }
         }
       } else if (message.file_url || message.image_url) {
-        // Not downloaded yet - show download option (don't auto-download on open)
         showToast('Please download the file first', ToastAndroid.SHORT);
         return;
       }
     }
     
-    if (fileUri) {
-      try {
-        // Check file type and open accordingly
+      if (!fileUri) {
+        showToast('File not available', ToastAndroid.SHORT);
+        return;
+      }
+
         const fileName = message.file_name || message.image_url?.split('/').pop() || '';
         const hasImageUrl = !!message.image_url;
         const isImage = hasImageUrl || isImageFile(fileName);
         const isVideo = isVideoFile(fileName);
         
-        // Get MIME type for system handler
         mimeType = getMimeType(fileName);
         if (isImage) mimeType = 'image/*';
         else if (isVideo) mimeType = 'video/*';
         
-        if (isImage || isVideo) {
-          // For images/videos, use system handler to let user choose app
           const uriToOpen = fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`;
+
+      if (isImage || isVideo) {
           try {
-            // Try opening with intent (Android)
             if (Platform.OS === 'android') {
               await Linking.openURL(uriToOpen);
             } else {
-              // iOS - show preview modal
               setPreviewUri(fileUri);
               setPreviewType(isImage ? 'image' : 'video');
               setPreviewModalVisible(true);
             }
           } catch (error) {
-            // Fallback to preview modal
             setPreviewUri(fileUri);
             setPreviewType(isImage ? 'image' : 'video');
             setPreviewModalVisible(true);
           }
         } else {
-          // Open with system handler (let user choose app)
-          const uriToOpen = fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`;
           try {
             await Linking.openURL(uriToOpen);
           } catch (error) {
@@ -707,7 +758,12 @@ const ChatScreen = () => {
       } catch (error) {
         console.error('Error opening file:', error);
         showToast('Failed to open file', ToastAndroid.SHORT);
-      }
+    } finally {
+      setLoadingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
     }
   };
 
@@ -1114,6 +1170,10 @@ const ChatScreen = () => {
     const fileName = item.file_name || item.image_url?.split('/').pop() || '';
     const isImage = item.image_url || (hasFile && isImageFile(fileName));
     const isVideo = hasFile && isVideoFile(fileName);
+    const fileExtension = resolveFileExtension(item);
+    const displayFileName = resolveFileName(item);
+    const formattedFileSize = formatFileSize(item.file_size);
+    const isFileLoading = loadingFiles.has(item.id);
     
     // Determine file URI - prioritize base64, then local path, then URL
     let fileUri = '';
@@ -1206,12 +1266,18 @@ const ChatScreen = () => {
                 activeOpacity={0.9}
                 style={styles.imagePreviewContainer}>
                 {failedImages.has(item.id) && !item.base64_image ? (
-                  <View style={[styles.messageImagePreview, styles.imageErrorContainer]}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleRetryImage(item.id)}
+                    style={[styles.messageImagePreview, styles.imageErrorContainer]}>
                     <MaterialIcons name="broken-image" size={48} color={isOwn ? 'rgba(255, 255, 255, 0.5)' : colors.text} />
                     <Text style={[styles.imageErrorText, {color: isOwn ? 'rgba(255, 255, 255, 0.7)' : colors.text, opacity: 0.7}]}>
                       Image not available
                     </Text>
-                  </View>
+                    <Text style={[styles.imageRetryText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.primary}]}>
+                      Tap to retry
+                    </Text>
+                  </TouchableOpacity>
                 ) : (
                   <View style={styles.imageWrapper}>
                     {loadingImages.has(item.id) && (
@@ -1394,8 +1460,7 @@ const ChatScreen = () => {
                   }}
                   activeOpacity={0.7}>
                   <MaterialIcons name="insert-drive-file" size={24} color={isOwn ? '#FFFFFF' : colors.primary} />
-                  <View style={styles.messageFileInfo}>
-                    <View style={styles.messageFileRow}>
+                  <View style={styles.messageFileContent}>
                       <Text
                         style={[
                           styles.messageFileName,
@@ -1403,67 +1468,20 @@ const ChatScreen = () => {
                         ]}
                         numberOfLines={1}
                         ellipsizeMode="tail">
-                        {(() => {
-                          // Try multiple sources for file name
-                          let fileName = item.file_name;
-                          
-                          // If no file_name, try to extract from URL
-                          if (!fileName && item.file_url) {
-                            const urlParts = item.file_url.split('/');
-                            fileName = urlParts[urlParts.length - 1];
-                            // Remove query params if any
-                            if (fileName) {
-                              fileName = fileName.split('?')[0];
-                            }
-                          }
-                          
-                          // If still no name, use default
-                          if (!fileName || fileName === '') {
-                            fileName = 'Document';
-                          }
-                          
-                          // Truncate to 10 chars
-                          if (fileName && fileName.length > 10) {
-                            const nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
-                            const ext = fileName.substring(fileName.lastIndexOf('.'));
-                            if (nameWithoutExt.length > 7 && ext) {
-                              return nameWithoutExt.substring(0, 7) + '...' + ext;
-                            }
-                            return fileName.substring(0, 10) + '...';
-                          }
-                          return fileName;
-                        })()}
+                      {displayFileName}
                       </Text>
-                      {(() => {
-                        // Get file extension from multiple sources
-                        let fileName = item.file_name || '';
-                        if (!fileName && item.file_url) {
-                          const urlParts = item.file_url.split('/');
-                          fileName = urlParts[urlParts.length - 1].split('?')[0];
-                        }
-                        const fileExtension = fileName ? fileName.split('.').pop()?.toUpperCase() : '';
-                        return fileExtension && fileExtension.length > 0 && fileExtension.length < 6 ? (
-                          <Text
-                            style={[
-                              styles.messageFileType,
-                              {color: isOwn ? 'rgba(255, 255, 255, 0.8)' : colors.text, opacity: 0.8},
-                            ]}>
-                            {fileExtension}
-                          </Text>
-                        ) : null;
-                      })()}
-                    </View>
-                    {item.file_size && (
+                    {formattedFileSize ? (
                       <Text
                         style={[
                           styles.messageFileSize,
                           {color: isOwn ? 'rgba(255, 255, 255, 0.8)' : colors.text, opacity: 0.7},
                         ]}>
-                        {(item.file_size / (1024 * 1024)).toFixed(2)} MB
+                        {formattedFileSize}
                       </Text>
-                    )}
+                    ) : null}
                   </View>
-                  {loadingFiles.has(item.id) ? (
+                  <View style={styles.messageFileAction}>
+                    {isFileLoading ? (
                     <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
                   ) : needsDownload ? (
                     <TouchableOpacity
@@ -1482,6 +1500,22 @@ const ChatScreen = () => {
                   ) : (
                     <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
                   )}
+                  </View>
+                  {fileExtension ? (
+                    <View
+                      style={[
+                        styles.messageFileTypeBadge,
+                        {backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.08)'},
+                      ]}>
+                      <Text
+                        style={[
+                          styles.messageFileTypeBadgeText,
+                          {color: isOwn ? '#FFFFFF' : colors.text},
+                        ]}>
+                        {fileExtension}
+                      </Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               </View>
             )}
@@ -2135,6 +2169,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
   },
+  imageRetryText: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '600',
+  },
   fileNameOverlay: {
     position: 'absolute',
     bottom: 8,
@@ -2177,19 +2216,14 @@ const styles = StyleSheet.create({
     gap: 12,
     maxWidth: '100%',
     flexShrink: 1,
+    position: 'relative',
   },
-  messageFileInfo: {
+  messageFileContent: {
     flex: 1,
-    minWidth: 0, // Allow flex to shrink below content size
-    maxWidth: '75%', // Prevent overflow
+    minWidth: 0,
   },
-  messageFileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-    flexWrap: 'nowrap',
-    width: '100%',
+  messageFileAction: {
+    paddingLeft: 8,
   },
   messageFileName: {
     fontSize: 14,
@@ -2199,14 +2233,20 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginRight: 4,
   },
-  messageFileType: {
-    fontSize: 12,
-    fontWeight: '600',
-    flexShrink: 0,
-    marginLeft: 2,
-  },
   messageFileSize: {
     fontSize: 12,
+  },
+  messageFileTypeBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  messageFileTypeBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   multiSelectCheckbox: {
     padding: 8,
