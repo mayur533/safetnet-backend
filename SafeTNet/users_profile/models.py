@@ -2,6 +2,7 @@
 Simplified user-related models; rely on the project's AUTH_USER_MODEL.
 """
 from django.db import models
+import uuid
 from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -225,6 +226,27 @@ class LiveLocationShare(models.Model):
         blank=True,
         help_text="Current location (longitude, latitude)"
     )
+    plan_type = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Plan type when session started (free/premium)"
+    )
+    stop_reason = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text="Reason session ended (user, limit, expired)"
+    )
+    share_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        help_text="Public token used to access the live location session"
+    )
+    last_broadcast_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last location update broadcast"
+    )
     
     class Meta:
         db_table = 'users_live_location_share'
@@ -235,6 +257,30 @@ class LiveLocationShare(models.Model):
     def __str__(self):
         user_email = self.user.email if hasattr(self.user, 'email') else 'User'
         return f"Live Share - {user_email}"
+
+
+class LiveLocationTrackPoint(models.Model):
+    """
+    Historical track points captured during a live location session.
+    """
+    share = models.ForeignKey(
+        LiveLocationShare,
+        related_name='track_points',
+        on_delete=models.CASCADE,
+        help_text="Live location session this point belongs to"
+    )
+    latitude = models.FloatField(help_text="Latitude component of the recorded point")
+    longitude = models.FloatField(help_text="Longitude component of the recorded point")
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'users_live_location_track_point'
+        verbose_name = 'Live Location Track Point'
+        verbose_name_plural = 'Live Location Track Points'
+        ordering = ['recorded_at']
+
+    def __str__(self):
+        return f"{self.share_id} @ {self.recorded_at}"
 
 
 class Geofence(models.Model):

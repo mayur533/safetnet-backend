@@ -40,7 +40,13 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // Show loading while redirecting
-  if (!isAuthenticated && pathname !== '/login' && pathname !== '/register' && pathname !== '/forgot-password' && pathname !== '/reset-password') {
+  if (
+    !isAuthenticated &&
+    pathname !== '/login' &&
+    pathname !== '/register' &&
+    pathname !== '/forgot-password' &&
+    pathname !== '/reset-password'
+  ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">

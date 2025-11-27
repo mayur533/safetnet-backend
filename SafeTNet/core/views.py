@@ -22,3 +22,12 @@ def root_view(request):
         },
         'status': 'running'
     })
+
+
+@require_http_methods(["GET"])
+def live_share_view(request, share_token):
+    """
+    Render a lightweight public page that streams live location updates
+    for the provided share token.
+    """
+    return render(request, "core/live_share.html", {"share_token": share_token})

@@ -20,7 +20,8 @@ import {useAuthStore} from '../../stores/authStore';
 import {apiService} from '../../services/apiService';
 import {useSubscription} from '../../lib/hooks/useSubscription';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
-import {MapView, Marker, Circle, PROVIDER_GOOGLE, mapsModuleAvailable} from '../../utils/mapComponents';
+import {MapView, Marker, Circle, UrlTile, PROVIDER_GOOGLE, mapsModuleAvailable, PROVIDER_DEFAULT} from '../../utils/mapComponents';
+import MapTileLayer from '../../utils/MapTileLayer';
 
 Geolocation.setRNConfiguration({
   skipPermissionRequests: false,
@@ -354,6 +355,14 @@ const AreaMapScreen = () => {
     requestLocationPermission();
   }, [requestLocationPermission]);
 
+  const helpLegendData = [
+    {key: 'hospital', label: 'Hospital', icon: 'local-hospital', color: '#DC2626'},
+    {key: 'police', label: 'Police', icon: 'local-police', color: '#1D4ED8'},
+    {key: 'fire', label: 'Fire', icon: 'local-fire-department', color: '#F59E0B'},
+    {key: 'pharmacy', label: 'Pharmacy', icon: 'local-pharmacy', color: '#10B981'},
+    {key: 'clinic', label: 'Clinic', icon: 'medical-services', color: '#8B5CF6'},
+  ];
+
   const loadSecurityOfficers = useCallback(async (location: Location) => {
     if (!location) return;
     setLoadingOfficers(true);
@@ -686,85 +695,93 @@ const AreaMapScreen = () => {
         buttons={alertConfig.buttons}
         onDismiss={() => setAlertVisible(false)}
       />
-      <View style={[styles.container, {backgroundColor: colors.background, paddingTop: insets.top}]}>
-        <MapView
-          ref={mapRef}
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          initialRegion={{
-            latitude: userLocation.latitude,
-            longitude: userLocation.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }}
-          showsUserLocation={true}
-          showsMyLocationButton={false}
-          showsCompass={true}
-          toolbarEnabled={false}
-          mapType="standard">
+      <View style={[styles.container, {backgroundColor: colors.background}]}>
+        <View style={styles.mapWrapper}>
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_DEFAULT}
+            style={styles.map}
+            initialRegion={{
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            }}
+            showsUserLocation={true}
+            showsMyLocationButton={false}
+            showsCompass={true}
+            toolbarEnabled={false}
+            mapType="standard"
+            loadingEnabled={true}
+            loadingBackgroundColor="#0F172A"
+            loadingIndicatorColor="#2563EB">
           
-          {/* User location marker */}
-          <Marker
-            coordinate={userLocation}
-            title="Your Location"
-            description="You are here">
-            <View style={[styles.userMarker, {backgroundColor: colors.primary}]}>
-              <MaterialIcons name="person-pin-circle" size={32} color="#FFFFFF" />
-            </View>
-          </Marker>
-
-          {/* Nearby help markers */}
-          {nearbyHelp.map((help) => (
+          {/* OpenStreetMap tile layer */}
+          <MapTileLayer maxZoom={19} zIndex={-1}>
+            {/* User location marker */}
             <Marker
-              key={help.id}
-              coordinate={help.location}
-              title={help.name}
-              description={help.address || help.type}
-              onPress={() => handleMarkerPress(help)}>
-              <View style={[styles.helpMarker, {backgroundColor: getMarkerColor(help.type)}]}>
-                <MaterialIcons name={getMarkerIcon(help.type) as any} size={24} color="#FFFFFF" />
+              coordinate={userLocation}
+              title="Your Location"
+              description="You are here">
+              <View style={[styles.userMarker, {backgroundColor: colors.primary}]}>
+                <MaterialIcons name="person-pin-circle" size={32} color="#FFFFFF" />
               </View>
             </Marker>
-          ))}
 
-          {/* Security officer markers */}
-          {securityOfficers
-            .filter((officer) => officer.location?.latitude && officer.location?.longitude)
-            .map((officer) => (
+            {/* Nearby help markers */}
+            {nearbyHelp.map((help) => (
               <Marker
-                key={`officer-${officer.id}`}
-                coordinate={{
-                  latitude: officer.location.latitude,
-                  longitude: officer.location.longitude,
-                }}
-                title={officer.name}
-                description={officer.geofence?.name || 'Security Officer'}
-                onPress={() => handleOfficerPress(officer)}>
-                <View style={styles.officerMarker}>
-                  <MaterialIcons name="shield" size={22} color="#FFFFFF" />
+                key={help.id}
+                coordinate={help.location}
+                title={help.name}
+                description={help.address || help.type}
+                onPress={() => handleMarkerPress(help)}>
+                <View style={[styles.helpMarker, {backgroundColor: getMarkerColor(help.type)}]}>
+                  <MaterialIcons name={getMarkerIcon(help.type) as any} size={24} color="#FFFFFF" />
                 </View>
               </Marker>
             ))}
 
-          {/* Geofences (premium feature) */}
-          {isPremium && geofences.map((geo) => {
-            if (geo.center.lat === 0 && geo.center.lng === 0) return null;
-            const strokeColor = geo.isActive ? colors.primary : colors.notification;
-            const fillColor = geo.isActive 
-              ? `${colors.primary || '#2563EB'}20` 
-              : `${colors.notification || '#EF4444'}20`;
-            return (
-              <Circle
-                key={geo.id}
-                center={{latitude: geo.center.lat, longitude: geo.center.lng}}
-                radius={geo.radius || 100}
-                strokeColor={strokeColor}
-                fillColor={fillColor}
-                strokeWidth={2}
-              />
-            );
-          })}
-        </MapView>
+            {/* Security officer markers */}
+            {securityOfficers
+              .filter((officer) => officer.location?.latitude && officer.location?.longitude)
+              .map((officer) => (
+                <Marker
+                  key={`officer-${officer.id}`}
+                  coordinate={{
+                    latitude: officer.location.latitude,
+                    longitude: officer.location.longitude,
+                  }}
+                  title={officer.name}
+                  description={officer.geofence?.name || 'Security Officer'}
+                  onPress={() => handleOfficerPress(officer)}>
+                  <View style={styles.officerMarker}>
+                    <MaterialIcons name="shield" size={22} color="#FFFFFF" />
+                  </View>
+                </Marker>
+              ))}
+
+            {/* Geofences (premium feature) */}
+            {isPremium && geofences.map((geo) => {
+              if (geo.center.lat === 0 && geo.center.lng === 0) return null;
+              const strokeColor = geo.isActive ? colors.primary : colors.notification;
+              const fillColor = geo.isActive 
+                ? `${colors.primary || '#2563EB'}20` 
+                : `${colors.notification || '#EF4444'}20`;
+              return (
+                <Circle
+                  key={geo.id}
+                  center={{latitude: geo.center.lat, longitude: geo.center.lng}}
+                  radius={geo.radius || 100}
+                  strokeColor={strokeColor}
+                  fillColor={fillColor}
+                  strokeWidth={2}
+                />
+              );
+            })}
+          </MapTileLayer>
+          </MapView>
+        </View>
 
         {/* Floating action button to center on user location */}
         <TouchableOpacity
@@ -774,48 +791,13 @@ const AreaMapScreen = () => {
           <MaterialIcons name="my-location" size={24} color="#FFFFFF" />
         </TouchableOpacity>
 
-        {/* Legend */}
-        <View style={[styles.legend, {backgroundColor: colors.card}]}>
-          <Text style={[styles.legendTitle, {color: colors.text}]}>Nearby Help</Text>
-          <View style={styles.legendItems}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendIcon, {backgroundColor: '#DC2626'}]}>
-                <MaterialIcons name="local-hospital" size={16} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.legendText, {color: colors.text}]}>Hospital</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendIcon, {backgroundColor: '#1D4ED8'}]}>
-                <MaterialIcons name="local-police" size={16} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.legendText, {color: colors.text}]}>Police</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendIcon, {backgroundColor: '#F59E0B'}]}>
-                <MaterialIcons name="local-fire-department" size={16} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.legendText, {color: colors.text}]}>Fire</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendIcon, {backgroundColor: '#10B981'}]}>
-                <MaterialIcons name="local-pharmacy" size={16} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.legendText, {color: colors.text}]}>Pharmacy</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendIcon, {backgroundColor: '#F97316'}]}>
-                <MaterialIcons name="shield" size={16} color="#FFFFFF" />
-              </View>
-              <Text style={[styles.legendText, {color: colors.text}]}>Security</Text>
-            </View>
-          </View>
-        </View>
-
         {/* Officer panel */}
         {securityOfficers.length > 0 && (
           <View style={[styles.officerPanel, {backgroundColor: colors.card}]}>
             <View style={styles.officerPanelHeader}>
-              <Text style={[styles.officerPanelTitle, {color: colors.text}]}>Nearby Security Officers</Text>
+              <Text style={[styles.officerPanelTitle, {color: colors.text}]}>
+                Nearby Security Officers
+              </Text>
               {locationProvider && (
                 <Text style={styles.providerBadge}>
                   {locationProvider === 'gps' ? 'GPS lock' : 'Enhanced positioning'}
@@ -847,6 +829,24 @@ const AreaMapScreen = () => {
             </ScrollView>
           </View>
         )}
+        {nearbyHelp.length > 0 && (
+          <View style={[styles.legendCard, {backgroundColor: colors.card}]}>
+            <Text style={[styles.legendTitle, {color: colors.text}]}>Nearby Help</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.legendItems}>
+              {helpLegendData.map((item) => (
+                <View key={item.key} style={styles.legendItem}>
+                  <View style={[styles.legendIcon, {backgroundColor: item.color}]}>
+                    <MaterialIcons name={item.icon as any} size={16} color="#FFFFFF" />
+                  </View>
+                  <Text style={[styles.legendText, {color: colors.text}]}>{item.label}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         {loadingOfficers && (
           <View style={styles.officerLoading}>
             <ActivityIndicator size="small" color={colors.primary} />
@@ -862,9 +862,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  mapWrapper: {
+    flex: 1,
+    minHeight: 360,
+  },
   map: {
-    width: width,
-    height: height,
+    ...StyleSheet.absoluteFillObject,
   },
   loadingContainer: {
     flex: 1,
@@ -932,7 +935,7 @@ const styles = StyleSheet.create({
   },
   centerButton: {
     position: 'absolute',
-    bottom: 120,
+    bottom: 180,
     right: 16,
     width: 48,
     height: 48,
@@ -945,49 +948,50 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
   },
-  legend: {
+  legendCard: {
     position: 'absolute',
     bottom: 16,
     left: 16,
     right: 16,
-    borderRadius: 12,
-    padding: 12,
-    elevation: 4,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 5,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowRadius: 4,
   },
   legendTitle: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   legendItems: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    alignItems: 'center',
+    gap: 16,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginRight: 8,
   },
   legendIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   legendText: {
-    fontSize: 12,
+    fontSize: 13,
   },
   officerPanel: {
     position: 'absolute',
     left: 16,
     right: 16,
-    bottom: 100,
+    bottom: 130,
     borderRadius: 14,
     padding: 16,
     shadowColor: '#000',
@@ -1053,7 +1057,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    bottom: 60,
+    bottom: 90,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,

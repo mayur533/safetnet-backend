@@ -2,6 +2,7 @@
 Serializers for User models.
 """
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -509,10 +510,54 @@ class LiveLocationShareSerializer(serializers.ModelSerializer):
     """
     Serializer for live location sharing.
     """
+    share_url = serializers.SerializerMethodField()
+    path_points = serializers.SerializerMethodField()
+
     class Meta:
         model = LiveLocationShare
-        fields = ('id', 'started_at', 'expires_at', 'is_active', 'current_location')
-        read_only_fields = ('id', 'started_at', 'expires_at', 'is_active')
+        fields = (
+            'id',
+            'share_token',
+            'share_url',
+            'started_at',
+            'expires_at',
+            'is_active',
+            'current_location',
+            'last_broadcast_at',
+            'path_points',
+            'plan_type',
+            'stop_reason',
+        )
+        read_only_fields = (
+            'id',
+            'share_token',
+            'share_url',
+            'started_at',
+            'expires_at',
+            'is_active',
+            'last_broadcast_at',
+            'path_points',
+            'plan_type',
+            'stop_reason',
+        )
+
+    def get_share_url(self, obj):
+        base_url = getattr(settings, 'LIVE_SHARE_BASE_URL', '').strip()
+        if not base_url:
+            return None
+        normalized_base = base_url[:-1] if base_url.endswith('/') else base_url
+        return f"{normalized_base}/{obj.share_token}"
+
+    def get_path_points(self, obj):
+        qs = obj.track_points.order_by('recorded_at')
+        return [
+            {
+                'latitude': point.latitude,
+                'longitude': point.longitude,
+                'recorded_at': point.recorded_at.isoformat(),
+            }
+            for point in qs
+        ]
 
 
 class LiveLocationShareCreateSerializer(serializers.Serializer):

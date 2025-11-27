@@ -6,42 +6,16 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
-from datetime import timedelta
 from math import radians, sin, cos, sqrt, atan2
 from .views import _is_user_premium
+from .models import LiveLocationShare
 from users.models import SecurityOfficer
 from security_app.models import OfficerProfile
-import json
 
 # Nearby Help Map API
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])  # Allow anyone to see nearby help
-def nearby_help_map(request):
-    """
-    Get nearby emergency services (hospitals, police stations, etc.)
-    GET /api/users/nearby_help/?latitude=40.7128&longitude=-74.0060&radius=5000
-    """
-    latitude_str = request.query_params.get('latitude')
-    longitude_str = request.query_params.get('longitude')
-    radius_str = request.query_params.get('radius', '5000')  # Default 5km
-    
-    try:
-        latitude = float(latitude_str) if latitude_str else None
-        longitude = float(longitude_str) if longitude_str else None
-        radius = int(radius_str) if radius_str else 5000
-    except (ValueError, TypeError):
-        latitude = None
-        longitude = None
-        radius = 5000
-    
-    if not latitude or not longitude:
-        return Response(
-            {'error': 'Latitude and longitude are required'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Mock data - In production, use Google Places API or similar
-    nearby_places = [
+def _build_nearby_help_payload(latitude, longitude):
+    """Return mock nearby help data."""
+    return [
         {
             'id': 1,
             'name': 'City Hospital',
@@ -73,6 +47,35 @@ def nearby_help_map(request):
             'address': '789 Pine Rd'
         }
     ]
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])  # Allow anyone to see nearby help
+def nearby_help_map(request):
+    """
+    Get nearby emergency services (hospitals, police stations, etc.)
+    GET /api/users/nearby_help/?latitude=40.7128&longitude=-74.0060&radius=5000
+    """
+    latitude_str = request.query_params.get('latitude')
+    longitude_str = request.query_params.get('longitude')
+    radius_str = request.query_params.get('radius', '5000')  # Default 5km
+    
+    try:
+        latitude = float(latitude_str) if latitude_str else None
+        longitude = float(longitude_str) if longitude_str else None
+        radius = int(radius_str) if radius_str else 5000
+    except (ValueError, TypeError):
+        latitude = None
+        longitude = None
+        radius = 5000
+    
+    if latitude is None or longitude is None:
+        return Response(
+            {'error': 'Latitude and longitude are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    nearby_places = _build_nearby_help_payload(latitude, longitude)
     
     return Response({
         'places': nearby_places,
@@ -94,34 +97,7 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return R * c
 
 
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def security_officer_locations(request):
-    """
-    Return active security officers accessible to the authenticated user.
-    GET /api/users/security_officers/?latitude=12.9&longitude=77.6
-    """
-    user = request.user
-    lat_qs = request.query_params.get('latitude')
-    lon_qs = request.query_params.get('longitude')
-
-    try:
-        ref_lat = float(lat_qs) if lat_qs is not None else None
-        ref_lon = float(lon_qs) if lon_qs is not None else None
-    except (TypeError, ValueError):
-        ref_lat = None
-        ref_lon = None
-
-    geofence_ids = list(user.geofences.values_list('id', flat=True))
-
-    officers = SecurityOfficer.objects.filter(is_active=True)
-    if user.organization_id:
-        officers = officers.filter(organization=user.organization)
-    if geofence_ids:
-        officers = officers.filter(assigned_geofence_id__in=geofence_ids)
-
-    officers = officers.select_related('organization', 'assigned_geofence')
-
+def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
     profiles = OfficerProfile.objects.filter(officer__in=officers).select_related('officer')
     profile_lookup = {profile.officer_id: profile for profile in profiles}
 
@@ -178,11 +154,75 @@ def security_officer_locations(request):
             'distance_km': distance_km,
             'is_on_duty': on_duty,
         })
+    return payload
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def security_officer_locations(request):
+    """
+    Return active security officers accessible to the authenticated user.
+    GET /api/users/security_officers/?latitude=12.9&longitude=77.6
+    """
+    user = request.user
+    lat_qs = request.query_params.get('latitude')
+    lon_qs = request.query_params.get('longitude')
+
+    try:
+        ref_lat = float(lat_qs) if lat_qs is not None else None
+        ref_lon = float(lon_qs) if lon_qs is not None else None
+    except (TypeError, ValueError):
+        ref_lat = None
+        ref_lon = None
+
+    geofence_ids = list(user.geofences.values_list('id', flat=True))
+
+    officers = SecurityOfficer.objects.filter(is_active=True)
+    if user.organization_id:
+        officers = officers.filter(organization=user.organization)
+    if geofence_ids:
+        officers = officers.filter(assigned_geofence_id__in=geofence_ids)
+
+    officers = officers.select_related('organization', 'assigned_geofence')
+
+    payload = _build_security_officer_payload(officers, ref_lat, ref_lon)
 
     return Response({
         'count': len(payload),
         'officers': payload,
     })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def public_security_officer_locations(request):
+    """
+    Public endpoint to retrieve active security officers near a coordinate.
+    GET /api/users/public/security_officers/?latitude=12.9&longitude=77.6
+    """
+    lat_qs = request.query_params.get('latitude')
+    lon_qs = request.query_params.get('longitude')
+    org_qs = request.query_params.get('organization_id')
+    geofence_qs = request.query_params.get('geofence_id')
+
+    try:
+        ref_lat = float(lat_qs) if lat_qs is not None else None
+        ref_lon = float(lon_qs) if lon_qs is not None else None
+    except (TypeError, ValueError):
+        ref_lat = None
+        ref_lon = None
+
+    if ref_lat is None or ref_lon is None:
+        return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    officers = SecurityOfficer.objects.filter(is_active=True).select_related('organization', 'assigned_geofence')
+    if org_qs:
+        officers = officers.filter(organization_id=org_qs)
+    if geofence_qs:
+        officers = officers.filter(assigned_geofence_id=geofence_qs)
+
+    payload = _build_security_officer_payload(officers, ref_lat, ref_lon)
+    return Response({'count': len(payload), 'officers': payload})
 
 
 # Safety Tips Feed API
@@ -349,6 +389,74 @@ class TrustedCircleView(APIView):
             })
         
         return Response({'message': 'Action completed'}, status=status.HTTP_200_OK)
+
+
+class PublicLiveLocationShareView(APIView):
+    """
+    Public view for third parties to fetch live location session details via share token.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, share_token):
+        share = LiveLocationShare.objects.select_related('user').filter(share_token=share_token).first()
+        if not share:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        if share.is_active and share.expires_at <= now:
+            share.is_active = False
+            if not share.stop_reason:
+                share.stop_reason = 'limit' if share.plan_type == 'free' else 'expired'
+            share.save(update_fields=['is_active', 'stop_reason'])
+
+        is_active = share.is_active and share.expires_at > now
+
+        user_name = getattr(share.user, 'name', '').strip()
+        if not user_name:
+            user_name = (share.user.get_full_name() or '').strip()
+        if not user_name:
+            user_name = share.user.email.split('@')[0]
+
+        payload = {
+            'share_token': str(share.share_token),
+            'session_id': share.id,
+            'is_active': is_active,
+            'started_at': share.started_at,
+            'expires_at': share.expires_at,
+            'current_location': share.current_location,
+            'last_broadcast_at': share.last_broadcast_at,
+            'stop_reason': share.stop_reason,
+            'plan_type': share.plan_type,
+            'path_points': [
+                {
+                    'latitude': point.latitude,
+                    'longitude': point.longitude,
+                    'recorded_at': point.recorded_at.isoformat(),
+                }
+                for point in share.track_points.order_by('recorded_at')
+            ],
+            'user': {
+                'id': share.user_id,
+                'name': user_name,
+            },
+        }
+
+        include_query = request.query_params.get('include', '')
+        include_parts = {part.strip().lower() for part in include_query.split(',') if part.strip()}
+
+        location = share.current_location or {}
+        lat = location.get('latitude')
+        lon = location.get('longitude')
+
+        if lat is not None and lon is not None:
+            if 'help' in include_parts:
+                payload['nearby_help'] = _build_nearby_help_payload(lat, lon)
+            if 'security' in include_parts:
+                officers = SecurityOfficer.objects.filter(is_active=True).select_related('organization', 'assigned_geofence')
+                payload['security_officers'] = _build_security_officer_payload(officers, lat, lon)
+
+        status_code = status.HTTP_200_OK if is_active else status.HTTP_410_GONE
+        return Response(payload, status=status_code)
 
 
 # Custom Alert Messages API (Premium)

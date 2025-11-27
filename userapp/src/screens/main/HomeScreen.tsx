@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {useRoute, useTheme} from '@react-navigation/native';
 import {
   View,
@@ -14,7 +14,13 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
+  Share,
+  PermissionsAndroid,
+  Alert,
+  AppState,
 } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
+import GeolocationService from 'react-native-geolocation-service';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
 import {useSettingsStore, DEFAULT_SOS_TEMPLATE} from '../../stores/settingsStore';
@@ -25,6 +31,12 @@ import {shakeDetectionService} from '../../services/shakeDetectionService';
 import {dispatchSOSAlert} from '../../services/sosDispatcher';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
 import {apiService} from '../../services/apiService';
+import {
+  getActiveLiveShareSession,
+  startLiveLocationShareUpdates,
+  stopLiveLocationShareUpdates,
+} from '../../services/liveLocationShareService';
+import {sendLiveShareNotification} from '../../services/notificationService';
 
 const COMMUNITY_MESSAGES = [
   'Suspicious activity near my location.',
@@ -127,7 +139,11 @@ const categoryCards = [
 
 type CategoryCard = typeof categoryCards[number];
 
-const {width, height} = Dimensions.get('window');
+const {width} = Dimensions.get('window');
+
+const LIVE_SHARE_BASE_URL = __DEV__
+  ? 'http://192.168.0.125:8000/live-share'
+  : 'https://safetnet.onrender.com/live-share';
 
 const HomeScreen = ({navigation}: any) => {
   const route = useRoute();
@@ -178,7 +194,11 @@ const HomeScreen = ({navigation}: any) => {
   const [customCommunityMessage, setCustomCommunityMessage] = useState(COMMUNITY_MESSAGES[0]);
   const [familyActionMode, setFamilyActionMode] = useState<'single' | 'all'>('single');
   const [selectedFamilyContactId, setSelectedFamilyContactId] = useState<string | null>(null);
-
+  const [isSharingCurrentLocation, setIsSharingCurrentLocation] = useState(false);
+  const [isStartingLiveShare, setIsStartingLiveShare] = useState(false);
+  const [activeLiveShare, setActiveLiveShare] = useState(getActiveLiveShareSession());
+  const [lastLiveSharePlan, setLastLiveSharePlan] = useState<'free' | 'premium'>(isPremium ? 'premium' : 'free');
+  
   const cardRows: CategoryCard[][] = [];
   for (let i = 0; i < categoryCards.length; i += 2) {
     cardRows.push(categoryCards.slice(i, i + 2));
@@ -379,9 +399,6 @@ const HomeScreen = ({navigation}: any) => {
       const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
       await dispatchSOSAlert(sosMessage);
       
-      // Check if family contacts exist to show appropriate message
-      const {contacts} = useContactStore.getState();
-      const hasFamilyContacts = contacts.length > 0;
       
       // Show success screen after alert is sent
     setShowSuccess(true);
@@ -430,11 +447,11 @@ const HomeScreen = ({navigation}: any) => {
 
   // Load settings on mount
   useEffect(() => {
-    const loadSettings = async () => {
+    const loadUserSettings = async () => {
       const {loadSettings} = useSettingsStore.getState();
       await loadSettings();
     };
-    loadSettings();
+    loadUserSettings();
   }, []);
 
   useEffect(() => {
@@ -467,7 +484,7 @@ const HomeScreen = ({navigation}: any) => {
         shakeDetectionService.stop();
       }
     };
-  }, [shakeToSendSOS, isAuthenticated]);
+  }, [sendAlert, shakeToSendSOS, isAuthenticated]);
 
   useEffect(() => {
     // Test vibration on component mount after a short delay
@@ -529,8 +546,9 @@ const HomeScreen = ({navigation}: any) => {
     setFamilyActionMode('single');
     setSelectedFamilyContactId(familyContacts[0]?.id?.toString() ?? null);
     setIsSendingCommunityMessage(false);
+    setIsSharingCurrentLocation(false);
+    setIsStartingLiveShare(false);
   };
-
   const handleCall = async (phone?: string) => {
     if (!phone) {
       closeActionModal();
@@ -567,6 +585,225 @@ const HomeScreen = ({navigation}: any) => {
     const body = message ? `?body=${encodeURIComponent(message)}` : '';
     Linking.openURL(`sms:${recipients}${body}`).catch(() => {});
     closeActionModal();
+  };
+
+  const ensureLocationPermission = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Location Permission',
+        message: 'SafeTNet needs location access to share your live position with trusted contacts.',
+        buttonPositive: 'Allow',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
+  const getCurrentPosition = (options = {enableHighAccuracy: true, timeout: 15000}) =>
+    new Promise<{latitude: number; longitude: number}>((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => reject(error),
+        options,
+      );
+    });
+
+  const getEnhancedPosition = () =>
+    new Promise<{latitude: number; longitude: number}>((resolve, reject) => {
+      GeolocationService.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => reject(error),
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          forceRequestLocation: true,
+          showLocationDialog: true,
+        },
+      );
+    });
+
+  const fetchLocationWithFallback = async () => {
+    try {
+      return await getCurrentPosition();
+    } catch (primaryError: any) {
+      if (Platform.OS === 'android') {
+        try {
+          return await getEnhancedPosition();
+        } catch (enhancedError) {
+          throw enhancedError;
+        }
+      }
+      throw primaryError;
+    }
+  };
+
+  const buildGoogleMapsUrl = (latitude: number, longitude: number) =>
+    `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+
+  const shareTextMessage = async (message: string) => {
+    try {
+      await Share.share({message});
+    } catch (error) {
+      console.warn('Share dialog dismissed or failed:', error);
+    }
+  };
+
+  const handleLiveShareTermination = useCallback(
+    (reason: 'user' | 'limit' | 'expired' | 'error', extraMessage?: string) => {
+      let message = extraMessage || 'Live location sharing stopped.';
+      if (reason === 'limit') {
+        message =
+          extraMessage ||
+          'You have reached the free live sharing limit. Upgrade to Premium for longer live sessions.';
+      } else if (reason === 'expired') {
+        message = extraMessage || 'Live location session has ended.';
+      } else if (reason === 'error') {
+        message = extraMessage || 'Live sharing ended due to a connection issue.';
+      }
+      setActiveLiveShare(null);
+      const isForeground = AppState.currentState === 'active';
+      if (isForeground) {
+        Alert.alert('Live location sharing', message);
+      } else {
+        sendLiveShareNotification('Live location sharing', message);
+      }
+    },
+    [],
+  );
+
+  const handleAutoLiveShareEnd = useCallback(
+    (payload: {reason: 'expired' | 'error'; message?: string}) => {
+      if (payload.reason === 'error') {
+        handleLiveShareTermination('error', payload.message);
+        return;
+      }
+      const reason = lastLiveSharePlan === 'free' ? 'limit' : 'expired';
+      handleLiveShareTermination(reason, payload.message);
+    },
+    [handleLiveShareTermination, lastLiveSharePlan],
+  );
+
+  const handleShareCurrentLocation = async () => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    const hasPermission = await ensureLocationPermission();
+    if (!hasPermission) {
+      setAlertState({
+        visible: true,
+        title: 'Permission needed',
+        message: 'Enable location permission to share your current location.',
+        type: 'warning',
+      });
+      return;
+    }
+    setIsSharingCurrentLocation(true);
+    try {
+      const coords = await fetchLocationWithFallback();
+      const mapsUrl = buildGoogleMapsUrl(coords.latitude, coords.longitude);
+      const message = `Here is my current location:\n${mapsUrl}`;
+      await shareTextMessage(message);
+      closeActionModal();
+    } catch (error: any) {
+      console.error('Unable to fetch current location:', error);
+      setAlertState({
+        visible: true,
+        title: 'Location unavailable',
+        message: 'Please ensure GPS is enabled and try again.',
+        type: 'error',
+      });
+    } finally {
+      setIsSharingCurrentLocation(false);
+    }
+  };
+
+  const handleStopLiveShare = async () => {
+    try {
+      await stopLiveLocationShareUpdates();
+      setActiveLiveShare(null);
+      handleLiveShareTermination('user');
+    } catch (error) {
+      console.warn('Failed to stop live share session:', error);
+    } finally {
+      setActiveLiveShare(getActiveLiveShareSession());
+    }
+  };
+
+  const handleShareLiveLocation = async () => {
+    if (!isAuthenticated || !user?.id) {
+      setShowLoginModal(true);
+      return;
+    }
+    setIsStartingLiveShare(true);
+    try {
+      const hasPermission = await ensureLocationPermission();
+      if (!hasPermission) {
+        setAlertState({
+          visible: true,
+          title: 'Permission needed',
+          message: 'Enable location permission to share live location.',
+          type: 'warning',
+        });
+        return;
+      }
+      const coords = await fetchLocationWithFallback();
+      const durationMinutes = isPremium ? 1440 : 15;
+      const response = await apiService.startLiveLocationShare(user.id, durationMinutes);
+      const session = response?.session;
+      const sessionId = session?.id;
+      if (!sessionId) {
+        throw new Error('Could not start live share session');
+      }
+      const sessionPlanType =
+        session?.plan_type === 'premium'
+          ? 'premium'
+          : session?.plan_type === 'free'
+          ? 'free'
+          : isPremium
+          ? 'premium'
+          : 'free';
+      setLastLiveSharePlan(sessionPlanType);
+      await startLiveLocationShareUpdates(user.id, sessionId, coords, {
+        onSessionEnded: handleAutoLiveShareEnd,
+      });
+      setActiveLiveShare(getActiveLiveShareSession());
+      const shareToken = session?.share_token || session?.shareToken;
+      const normalizedBase = LIVE_SHARE_BASE_URL.endsWith('/')
+        ? LIVE_SHARE_BASE_URL.slice(0, -1)
+        : LIVE_SHARE_BASE_URL;
+      const shareLink = shareToken
+        ? `${normalizedBase}/${shareToken}`
+        : buildGoogleMapsUrl(coords.latitude, coords.longitude);
+      const message = isPremium
+        ? `I'm sharing my live location. Track me here until I stop sharing:\n${shareLink}`
+        : `I'm sharing my live location for the next 15 minutes. Track me here:\n${shareLink}`;
+      await shareTextMessage(message);
+      closeActionModal();
+    } catch (error: any) {
+      console.error('Unable to start live sharing:', error);
+      setAlertState({
+        visible: true,
+        title: 'Live sharing failed',
+        message: error?.message || 'Please try again in a moment.',
+        type: 'error',
+      });
+    } finally {
+      setIsStartingLiveShare(false);
+    }
   };
 
   const handleSendCommunityMessage = async () => {
@@ -627,7 +864,7 @@ const HomeScreen = ({navigation}: any) => {
         // Send to all groups
         const sendPromises = availableGroups.map(async (group: any) => {
           if (group?.id) {
-            const groupId = parseInt(group.id);
+            const groupId = parseInt(group.id, 10);
             return apiService.sendChatMessage(Number(user.id), groupId, message);
           }
           return Promise.resolve();
@@ -647,7 +884,7 @@ const HomeScreen = ({navigation}: any) => {
 
       // If a specific group is selected, send to that group only
       if (selectedCommunityContact && selectedCommunityContact.id) {
-        const groupId = parseInt(selectedCommunityContact.id);
+        const groupId = parseInt(selectedCommunityContact.id, 10);
         await apiService.sendChatMessage(Number(user.id), groupId, message);
         setAlertState({
           visible: true,
@@ -685,7 +922,7 @@ const HomeScreen = ({navigation}: any) => {
       });
       return;
     }
-    void handleCall(selectedFamilyContact.phone);
+    handleCall(selectedFamilyContact.phone!);
   };
 
   const handleFamilyMessageAction = () => {
@@ -907,7 +1144,7 @@ const HomeScreen = ({navigation}: any) => {
             <TouchableOpacity
               style={[styles.wideButton, styles.wideButtonPrimary]}
               onPress={() => {
-                void handleCall(actionCard.phone);
+                handleCall(actionCard.phone);
               }}
               activeOpacity={0.85}>
               <MaterialIcons name="call" size={20} color="#FFFFFF" />
@@ -932,6 +1169,73 @@ const HomeScreen = ({navigation}: any) => {
       );
     }
 
+    if (actionCard.key === 'location') {
+      return (
+        <>
+          <View style={styles.actionHeader}>
+            <MaterialIcons name={actionCard.icon} size={32} color={actionCard.iconColor} />
+            <Text style={[styles.actionTitle, {color: colors.text}]}>{actionCard.title}</Text>
+          </View>
+          <Text style={[styles.actionDescription, {color: mutedTextColor}]}>
+            Choose how you’d like to share your location with trusted contacts.
+          </Text>
+          <View style={styles.wideButtonColumn}>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary]}
+              onPress={handleShareCurrentLocation}
+              activeOpacity={0.85}
+              disabled={isSharingCurrentLocation}>
+              {isSharingCurrentLocation ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <MaterialIcons name='my-location' size={20} color="#FFFFFF" />
+              )}
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>
+                Share current location
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonPrimary, {backgroundColor: '#1F2937'}]}
+              onPress={handleShareLiveLocation}
+              activeOpacity={0.85}
+              disabled={isStartingLiveShare}>
+              {isStartingLiveShare ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <MaterialIcons name='share-location' size={20} color="#FFFFFF" />
+              )}
+              <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>
+                Share live location
+              </Text>
+            </TouchableOpacity>
+            {activeLiveShare && (
+              <TouchableOpacity
+                style={[styles.wideButton, styles.wideButtonPrimary, {backgroundColor: '#DC2626', borderColor: '#DC2626'}]}
+                onPress={handleStopLiveShare}
+                activeOpacity={0.85}>
+                <MaterialIcons name='stop-circle' size={20} color="#FFFFFF" />
+                <Text style={[styles.wideButtonText, styles.wideButtonTextPrimary]}>
+                  Stop live sharing
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.wideButton, styles.wideButtonGhost, {borderColor: withAlpha(colors.border, isDarkMode ? 0.6 : 1)}]}
+              onPress={closeActionModal}
+              activeOpacity={0.85}>
+              <MaterialIcons name="close" size={20} color={colors.text} />
+              <Text style={[styles.wideButtonText, {color: colors.text}]}>Cancel</Text>
+            </TouchableOpacity>
+            {!isPremium && (
+              <Text style={[styles.helperText, {color: subtleTextColor}]}>
+                Free plan shares live location for 15 minutes. Upgrade for unlimited live tracking.
+              </Text>
+            )}
+          </View>
+        </>
+      );
+    }
+
     if (actionCard.type === 'call') {
       return (
         <>
@@ -947,7 +1251,7 @@ const HomeScreen = ({navigation}: any) => {
             <TouchableOpacity
               style={primaryButtonStyle}
               onPress={() => {
-                void handleCall(actionCard.phone);
+                handleCall(actionCard.phone);
               }}
               activeOpacity={0.7}>
               <Text style={styles.primaryButtonText}>Call</Text>
@@ -1647,7 +1951,12 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     flexShrink: 1,
   },
-  actionOverlay: {
+  cardSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+    actionOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1895,6 +2204,10 @@ const styles = StyleSheet.create({
   },
   wideButtonTextPrimary: {
     color: '#FFFFFF',
+  },
+  helperText: {
+    fontSize: 13,
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

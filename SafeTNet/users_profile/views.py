@@ -755,7 +755,10 @@ class LiveLocationShareView(APIView):
             expires_at = timezone.now() + timedelta(minutes=duration_minutes)
             live_share = LiveLocationShare.objects.create(
                 user=user,
-                expires_at=expires_at
+                expires_at=expires_at,
+                last_broadcast_at=timezone.now(),
+                plan_type='premium' if is_premium else 'free',
+                stop_reason='',
             )
             
             # Add shared_with users if provided
@@ -791,6 +794,86 @@ class LiveLocationShareView(APIView):
         return Response({
             'sessions': LiveLocationShareSerializer(active_sessions, many=True).data
         })
+
+
+class LiveLocationShareDetailView(APIView):
+    """
+    Update or stop a live location sharing session.
+    PATCH /users/<user_id>/live_location/<session_id>/
+    DELETE /users/<user_id>/live_location/<session_id>/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def patch(self, request, user_id, session_id):
+        """Update the current location of an active session."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only update your own live location session.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            live_share = LiveLocationShare.objects.get(id=session_id, user=request.user)
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not live_share.is_active or live_share.expires_at <= timezone.now():
+            updates = []
+            if live_share.is_active:
+                live_share.is_active = False
+                updates.append('is_active')
+            if live_share.expires_at <= timezone.now():
+                if not live_share.stop_reason:
+                    live_share.stop_reason = 'limit' if live_share.plan_type == 'free' else 'expired'
+                    updates.append('stop_reason')
+            if updates:
+                live_share.save(update_fields=updates)
+            return Response({'error': 'Live location session has ended'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        
+        if latitude is None or longitude is None:
+            return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            lat = float(latitude)
+            lng = float(longitude)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid latitude/longitude values'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        live_share.current_location = {'latitude': lat, 'longitude': lng}
+        live_share.last_broadcast_at = timezone.now()
+        live_share.save(update_fields=['current_location', 'last_broadcast_at'])
+
+        last_point = live_share.track_points.order_by('-recorded_at').first()
+        should_record = True
+        if last_point:
+            delta = timezone.now() - last_point.recorded_at
+            should_record = delta.total_seconds() >= 60
+        if should_record:
+            live_share.track_points.create(latitude=lat, longitude=lng)
+        return Response({'status': 'updated'}, status=status.HTTP_200_OK)
+    
+    def delete(self, request, user_id, session_id):
+        """Stop an active live sharing session."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only stop your own live location session.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            live_share = LiveLocationShare.objects.get(id=session_id, user=request.user)
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        live_share.is_active = False
+        live_share.expires_at = timezone.now()
+        live_share.current_location = None
+        live_share.stop_reason = 'user'
+        live_share.save(update_fields=['is_active', 'expires_at', 'current_location', 'stop_reason'])
+        return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
 
 
 # Geofencing endpoints (Premium only)

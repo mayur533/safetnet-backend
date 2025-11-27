@@ -1079,6 +1079,45 @@ class ApiService {
     await cacheService.invalidate(`chat_groups_${userId}`);
     return result;
   }
+
+  /**
+   * Start live location sharing session
+   */
+  async startLiveLocationShare(userId: number, durationMinutes: number, sharedWithUserIds: number[] = []): Promise<any> {
+    return this.request(`/${userId}/live_location/start/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        duration_minutes: durationMinutes,
+        shared_with_user_ids: sharedWithUserIds,
+      }),
+    });
+  }
+
+  /**
+   * Get active live location sessions
+   */
+  async getLiveLocationSessions(userId: number): Promise<any> {
+    return this.request(`/${userId}/live_location/`);
+  }
+
+  /**
+   * Update live location session with coordinates
+   */
+  async updateLiveLocationShare(userId: number, sessionId: number, latitude: number, longitude: number): Promise<any> {
+    return this.request(`/${userId}/live_location/${sessionId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({latitude, longitude}),
+    });
+  }
+
+  /**
+   * Stop live location session
+   */
+  async stopLiveLocationShare(userId: number, sessionId: number): Promise<any> {
+    return this.request(`/${userId}/live_location/${sessionId}/`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiService = new ApiService();

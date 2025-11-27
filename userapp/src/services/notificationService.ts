@@ -207,6 +207,55 @@ export const sendCommunityNotification = async (title: string, message: string, 
   }
 };
 
+export const sendLiveShareNotification = async (title: string, message: string) => {
+  try {
+    configureNotifications();
+    const notificationModule = loadPushNotification();
+    if (!notificationModule) {
+      console.warn('PushNotification not available');
+      return;
+    }
+
+    try {
+      const RNPushNotification = NativeModules.RNPushNotification;
+      if (!RNPushNotification || RNPushNotification === null) {
+        console.warn('RNPushNotification native module is null');
+        return;
+      }
+    } catch (error) {
+      console.warn('Could not check native module:', error);
+    }
+
+    const notificationConfig: any = {
+      id: 'live-share-' + Date.now(),
+      title,
+      message,
+      playSound: true,
+      soundName: 'default',
+      vibrate: true,
+      vibration: 1000,
+      tag: 'live-share',
+      userInfo: {
+        type: 'live-share',
+        timestamp: Date.now(),
+      },
+    };
+
+    if (Platform.OS === 'android') {
+      notificationConfig.channelId = 'alerts-channel';
+      notificationConfig.importance = 'high';
+      notificationConfig.priority = 'high';
+      notificationConfig.autoCancel = true;
+    }
+
+    if (notificationModule && typeof notificationModule.localNotification === 'function') {
+      notificationModule.localNotification(notificationConfig);
+    }
+  } catch (error) {
+    console.error('Error sending live share notification:', error);
+  }
+};
+
 
 
 

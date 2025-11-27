@@ -35,6 +35,11 @@ urlpatterns = [
     # Geofencing (Premium only)
     path('<int:user_id>/geofences/', views.GeofenceListView.as_view(), name='geofences'),
     
+    # Live location sharing
+    path('<int:user_id>/live_location/start/', views.LiveLocationShareView.as_view(), name='live-location-start'),
+    path('<int:user_id>/live_location/', views.LiveLocationShareView.as_view(), name='live-location-sessions'),
+    path('<int:user_id>/live_location/<int:session_id>/', views.LiveLocationShareDetailView.as_view(), name='live-location-detail'),
+    
     # Community Alerts
     path('<int:user_id>/community_alert/', views.CommunityAlertView.as_view(), name='community-alert'),
     path('<int:user_id>/community_alerts/', views.CommunityAlertListView.as_view(), name='community-alerts-list'),
@@ -42,6 +47,8 @@ urlpatterns = [
     # Nearby Help (for map view)
     path('nearby_help/', views_new_apis.nearby_help_map, name='nearby-help'),
     path('security_officers/', views_new_apis.security_officer_locations, name='security-officers'),
+    path('public/live_location/<uuid:share_token>/', views_new_apis.PublicLiveLocationShareView.as_view(), name='public-live-location'),
+    path('public/security_officers/', views_new_apis.public_security_officer_locations, name='public-security-officers'),
     
     # Safety Tips
     path('safety_tips/', views_new_apis.safety_tips_feed, name='safety-tips'),

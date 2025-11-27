@@ -384,6 +384,7 @@ AUTH_USER_MODEL = 'users.User'
 
 # Google Maps API Configuration
 GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY', default=None)
+LIVE_SHARE_BASE_URL = config('LIVE_SHARE_BASE_URL', default='https://safetnet.onrender.com/live-share')
 
 # Firebase Cloud Messaging Configuration
 FCM_SERVER_KEY = config('FCM_SERVER_KEY', default=None)

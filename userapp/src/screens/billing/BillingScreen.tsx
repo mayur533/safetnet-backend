@@ -10,6 +10,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import {useTheme} from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -54,6 +55,27 @@ const BillingScreen = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showListener = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideListener = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
+  const scrollRef = useRef<ScrollView>(null);
+  const [promoInputOffsetY, setPromoInputOffsetY] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const tokens = useMemo(
     () => ({
@@ -146,11 +168,6 @@ const BillingScreen = () => {
   // Show validate button when there's text but no validation result yet
   const showValidateButton = promoCode.trim().length >= 3 && promoCodeValidation.isValid === null && !promoCodeValidation.isLoading;
 
-  const keyboardOffset = useMemo(
-    () => insets.top + (showPromoInput ? 220 : 90),
-    [insets.top, showPromoInput]
-  );
-
   const handleCancelSubscription = () => {
     Alert.alert(
       'Cancel Subscription',
@@ -182,11 +199,20 @@ const BillingScreen = () => {
   return (
     <KeyboardAvoidingView
       style={{flex: 1}}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={keyboardOffset}>
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 16 : 0}>
       <View style={[styles.container, {backgroundColor: tokens.background, paddingTop: insets.top + 16}]}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          ref={scrollRef}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingBottom:
+                keyboardHeight > 0
+                  ? keyboardHeight + insets.bottom + 12
+                  : (showPromoInput ? 8 : 32) + insets.bottom,
+            },
+          ]}
           keyboardShouldPersistTaps="handled">
         <View style={[styles.heroCard, {backgroundColor: tokens.card, borderColor: tokens.border}]}>
           <View style={[styles.heroIcon, {backgroundColor: tokens.accent}]}>
@@ -334,7 +360,11 @@ const BillingScreen = () => {
         )}
 
         {showPromoInput && !isPremium && (
-          <View style={[styles.promoCodeContainer, {backgroundColor: tokens.card, borderColor: tokens.border}]}>
+          <View
+            style={[styles.promoCodeContainer, {backgroundColor: tokens.card, borderColor: tokens.border}]}
+            onLayout={(event) => {
+              setPromoInputOffsetY(event.nativeEvent.layout.y);
+            }}>
             <View style={styles.promoCodeInputRow}>
               <TextInput
                 style={[
@@ -358,6 +388,12 @@ const BillingScreen = () => {
                 editable={!promoCodeValidation.isLoading}
                 returnKeyType="done"
                 onSubmitEditing={validatePromoCodeNow}
+                onFocus={() => {
+                  scrollRef.current?.scrollTo({
+                    y: Math.max(promoInputOffsetY - 4, 0),
+                    animated: true,
+                  });
+                }}
               />
               {promoCodeValidation.isLoading && (
                 <ActivityIndicator size="small" color={tokens.accent} style={styles.promoCodeLoader} />
