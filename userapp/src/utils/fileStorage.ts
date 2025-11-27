@@ -12,7 +12,8 @@ export interface StoredFile {
   messageId: string | number;
   fileUrl: string;
   localPath: string;
-  fileName: string;
+  fileName: string; // Sanitized file name for local storage
+  originalFileName?: string; // Original file name from the message
   fileSize?: number;
   downloadedAt: string;
 }
@@ -111,12 +112,13 @@ export const downloadAndStoreFile = async (
     }).promise;
     
     if (downloadResult.statusCode === 200) {
-      // Store file info
+      // Store file info - preserve original file name
       const storedFile: StoredFile = {
         messageId: messageId.toString(),
         fileUrl,
         localPath,
-        fileName: sanitizedFileName,
+        fileName: sanitizedFileName, // Sanitized for local storage
+        originalFileName: fileName, // Original file name from message
         fileSize,
         downloadedAt: new Date().toISOString(),
       };

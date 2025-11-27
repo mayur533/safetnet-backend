@@ -47,6 +47,20 @@ import Video from 'react-native-video';
 import RNFS from 'react-native-fs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+let IntentLauncherAndroid: any = null;
+if (Platform.OS === 'android') {
+  try {
+    // RN 0.82+ no longer exports this module by default; wrap in try/catch
+    // to avoid bundler errors on platforms where it's unavailable.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const module = require('react-native/Libraries/Utilities/IntentLauncherAndroid');
+    IntentLauncherAndroid = module?.default || module;
+  } catch (error) {
+    console.warn('IntentLauncherAndroid not available:', error);
+    IntentLauncherAndroid = null;
+  }
+}
+
 interface Message {
   id: string | number;
   text: string;
@@ -75,26 +89,33 @@ const MAX_FILE_NAME_DISPLAY = 32;
 const resolveFileName = (message: Message): string => {
   let fileName = message.file_name;
 
-  if (!fileName && message.file_url) {
-    const urlParts = message.file_url.split('/');
-    fileName = urlParts[urlParts.length - 1];
-    if (fileName) {
-      fileName = fileName.split('?')[0];
+  // If no file_name, try to extract from URL
+  if (!fileName || fileName.trim() === '') {
+    if (message.file_url) {
+      const urlParts = message.file_url.split('/');
+      fileName = urlParts[urlParts.length - 1];
+      if (fileName) {
+        // Remove query parameters and hash
+        fileName = fileName.split('?')[0].split('#')[0];
+      }
+    }
+
+    if ((!fileName || fileName.trim() === '') && message.image_url) {
+      const urlParts = message.image_url.split('/');
+      fileName = urlParts[urlParts.length - 1];
+      if (fileName) {
+        // Remove query parameters and hash
+        fileName = fileName.split('?')[0].split('#')[0];
+      }
     }
   }
 
-  if (!fileName && message.image_url) {
-    const urlParts = message.image_url.split('/');
-    fileName = urlParts[urlParts.length - 1];
-    if (fileName) {
-      fileName = fileName.split('?')[0];
-    }
-  }
-
+  // Final fallback
   if (!fileName || fileName.trim() === '') {
     fileName = 'Document';
   }
 
+  // Truncate if too long
   if (fileName.length > MAX_FILE_NAME_DISPLAY) {
     const lastDot = fileName.lastIndexOf('.');
     if (lastDot > -1) {
@@ -199,6 +220,7 @@ const ChatScreen = () => {
     base64?: string; // Base64 encoded image
   }>>([]);
   const [previewComment, setPreviewComment] = useState('');
+  const [previewExternalMeta, setPreviewExternalMeta] = useState<{uri: string; mimeType?: string} | null>(null);
   
   // Track failed image loads
   const [failedImages, setFailedImages] = useState<Set<string | number>>(new Set());
@@ -209,11 +231,17 @@ const ChatScreen = () => {
       newSet.delete(messageId);
       return newSet;
     });
+    setLoadedImages((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
     setLoadingImages((prev) => new Set(prev).add(messageId));
   }, []);
   
   // Track loading states for images and videos
   const [loadingImages, setLoadingImages] = useState<Set<string | number>>(new Set());
+  const [loadedImages, setLoadedImages] = useState<Set<string | number>>(new Set()); // Track successfully loaded images
   const [loadingVideos, setLoadingVideos] = useState<Set<string | number>>(new Set());
   const [loadingFiles, setLoadingFiles] = useState<Set<string | number>>(new Set());
   
@@ -222,6 +250,86 @@ const ChatScreen = () => {
   
   // Base64 storage key
   const BASE64_STORAGE_KEY = 'chat_images_base64';
+
+  const openFileUri = async (uri: string, mimeType?: string): Promise<boolean> => {
+    if (!uri) {
+      return false;
+    }
+
+    const normalizedUri =
+      uri.startsWith('file://') ||
+      uri.startsWith('content://')
+        ? uri
+        : uri.startsWith('http') || uri.startsWith('https')
+        ? uri
+        : `file://${uri}`;
+
+    if (normalizedUri.startsWith('http')) {
+      return false;
+    }
+
+    if (
+      Platform.OS === 'android' &&
+      IntentLauncherAndroid &&
+      (normalizedUri.startsWith('file://') || normalizedUri.startsWith('content://'))
+    ) {
+      try {
+        await IntentLauncherAndroid.startActivity({
+          action: IntentLauncherAndroid.ACTION_VIEW || 'android.intent.action.VIEW',
+          data: normalizedUri,
+          type: mimeType || '*/*',
+          flags: IntentLauncherAndroid.FLAG_GRANT_READ_URI_PERMISSION,
+        });
+        return true;
+      } catch (error) {
+        console.warn('IntentLauncherAndroid failed to open file:', error);
+      }
+    }
+
+    try {
+      await Linking.openURL(normalizedUri);
+      return true;
+    } catch (error) {
+      console.warn('Linking failed to open file:', error);
+      return false;
+    }
+  };
+
+  const stripFileScheme = (path: string): string => {
+    if (!path) {
+      return path;
+    }
+    return path.startsWith('file://') ? path.replace('file://', '') : path;
+  };
+
+  const ensureLocalFilePath = async (message: Message, silentDownload: boolean = false): Promise<string | null> => {
+    const fileUrl = message.file_url || message.image_url || '';
+    const messageId = message.id;
+
+    const checkPath = async (candidate?: string | null): Promise<string | null> => {
+      if (!candidate) return null;
+      const normalized = stripFileScheme(candidate);
+      try {
+        const exists = await RNFS.exists(normalized);
+        return exists ? normalized : null;
+      } catch {
+        return null;
+      }
+    };
+
+    let localPath = await checkPath(message.localFilePath);
+
+    if (!localPath && fileUrl) {
+      const stored = await getStoredFile(messageId, fileUrl);
+      localPath = await checkPath(stored?.localPath);
+    }
+
+    if (!localPath && fileUrl) {
+      localPath = await handleDownloadFile(message, {silent: silentDownload});
+    }
+
+    return localPath;
+  };
 
   // Helper function to show truncated toast messages
   const showToast = (message: string, duration: number = ToastAndroid.SHORT) => {
@@ -253,6 +361,29 @@ const ChatScreen = () => {
       keyboardWillHideListener.remove();
     };
   }, []);
+
+  // Initialize loading state for images when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      setLoadingImages((prev) => {
+        const newSet = new Set(prev);
+        messages.forEach((msg) => {
+          // Only initialize loading for actual images (not files) without base64
+          const hasImageUrl = !!msg.image_url;
+          const hasFileUrl = !!msg.file_url;
+          const fileName = msg.file_name || '';
+          const isImageFileType = hasFileUrl && fileName && isImageFile(fileName);
+          const isImage = hasImageUrl || isImageFileType;
+          // Initialize loading state for images that haven't loaded or failed yet
+          if (isImage && !msg.base64_image && !newSet.has(msg.id)) {
+            newSet.add(msg.id);
+          }
+        });
+        return newSet;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]); // Only re-run when message count changes
 
   // Load group details and messages from API
   useEffect(() => {
@@ -292,6 +423,7 @@ const ChatScreen = () => {
           const isOwn = msg.sender_id === userIdNum;
           let localFilePath: string | undefined;
           let downloadStatus: 'downloading' | 'downloaded' | 'not_downloaded' = 'not_downloaded';
+          let file_name = msg.file_name;
           
           // For receivers, check if file is already downloaded
           if (!isOwn && (msg.file_url || msg.image_url)) {
@@ -299,6 +431,10 @@ const ChatScreen = () => {
             if (stored) {
               localFilePath = stored.localPath;
               downloadStatus = 'downloaded';
+              // Use stored original file name if message doesn't have file_name
+              if (!file_name && stored.originalFileName) {
+                file_name = stored.originalFileName;
+              }
             }
           }
           
@@ -315,15 +451,39 @@ const ChatScreen = () => {
             image_url: msg.image_url,
             file: msg.file,
             file_url: msg.file_url,
-            file_name: msg.file_name,
-            file_size: msg.file_size,
+            file_name: file_name || undefined,
+            file_size: msg.file_size || undefined,
             localFilePath,
             downloadStatus,
           };
+          
+          // Debug log for file messages
+          if (msg.file_url && !msg.image_url) {
+            console.log(`[Chat] File message ${msg.id}:`, {
+              file_name: file_name,
+              file_size: msg.file_size,
+              file_url: msg.file_url,
+            });
+          }
         })
       );
 
       setMessages(formattedMessages);
+      
+      // Initialize loading state for images without base64
+      setLoadingImages((prev) => {
+        const newSet = new Set(prev);
+        formattedMessages.forEach((msg) => {
+          // Only initialize loading for actual images (not files)
+          const hasImageUrl = !!msg.image_url;
+          const isImageFile = msg.file_url && msg.file_name && (msg.file_name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i));
+          const isImage = hasImageUrl || isImageFile;
+          if (isImage && !msg.base64_image && !newSet.has(msg.id)) {
+            newSet.add(msg.id);
+          }
+        });
+        return newSet;
+      });
     } catch (error: any) {
       console.error('Error loading group data:', error);
       showToast('Failed to load chat. Please try again.', ToastAndroid.LONG);
@@ -369,6 +529,7 @@ const ChatScreen = () => {
           const isOwn = msg.sender_id === userIdNum;
           let localFilePath: string | undefined;
           let downloadStatus: 'downloading' | 'downloaded' | 'not_downloaded' = 'not_downloaded';
+          let file_name = msg.file_name;
           
           // For receivers, check if file is already downloaded
           if (!isOwn && (msg.file_url || msg.image_url)) {
@@ -376,6 +537,10 @@ const ChatScreen = () => {
             if (stored) {
               localFilePath = stored.localPath;
               downloadStatus = 'downloaded';
+              // Use stored original file name if message doesn't have file_name
+              if (!file_name && stored.originalFileName) {
+                file_name = stored.originalFileName;
+              }
             }
           }
           
@@ -392,7 +557,7 @@ const ChatScreen = () => {
             image_url: msg.image_url,
             file: msg.file,
             file_url: msg.file_url,
-            file_name: msg.file_name,
+            file_name: file_name,
             file_size: msg.file_size,
             localFilePath,
             downloadStatus,
@@ -401,6 +566,21 @@ const ChatScreen = () => {
         })
       );
       setMessages(formattedMessages);
+      
+      // Initialize loading state for images without base64
+      setLoadingImages((prev) => {
+        const newSet = new Set(prev);
+        formattedMessages.forEach((msg) => {
+          // Only initialize loading for actual images (not files)
+          const hasImageUrl = !!msg.image_url;
+          const isImageFile = msg.file_url && msg.file_name && (msg.file_name.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i));
+          const isImage = hasImageUrl || isImageFile;
+          if (isImage && !msg.base64_image && !newSet.has(msg.id)) {
+            newSet.add(msg.id);
+          }
+        });
+        return newSet;
+      });
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -634,17 +814,42 @@ const ChatScreen = () => {
     }
   };
 
-  const handleDownloadFile = async (message: Message) => {
+  const handleDownloadFile = async (message: Message, options: {silent?: boolean} = {}): Promise<string | null> => {
+    const {silent = false} = options;
     if (!message.file_url && !message.image_url) return;
     
     const fileUrl = message.file_url || message.image_url || '';
     const messageId = message.id;
     
-    setDownloadingFiles((prev) => new Set(prev).add(messageId));
-    setLoadingFiles((prev) => new Set(prev).add(messageId));
+    if (!silent) {
+      setDownloadingFiles((prev) => new Set(prev).add(messageId));
+      setLoadingFiles((prev) => new Set(prev).add(messageId));
+    }
     
     try {
-      const fileName = message.file_name || message.image_url?.split('/').pop() || 'file';
+      // Get file name from message, or extract from URL, or use stored file name
+      let fileName = message.file_name;
+      if (!fileName) {
+        if (message.file_url) {
+          const urlParts = message.file_url.split('/');
+          fileName = urlParts[urlParts.length - 1]?.split('?')[0] || '';
+        } else if (message.image_url) {
+          const urlParts = message.image_url.split('/');
+          fileName = urlParts[urlParts.length - 1]?.split('?')[0] || '';
+        }
+      }
+      // If still no file name, check stored file
+      if (!fileName) {
+        const stored = await getStoredFile(messageId, fileUrl);
+        if (stored?.originalFileName) {
+          fileName = stored.originalFileName;
+        }
+      }
+      // Final fallback
+      if (!fileName || fileName.trim() === '') {
+        fileName = 'file';
+      }
+      
       const fileSize = message.file_size;
       
       const localPath = await downloadAndStoreFile(messageId, fileUrl, fileName, fileSize);
@@ -658,106 +863,69 @@ const ChatScreen = () => {
         )
       );
       
-      showToast('File downloaded');
+      if (!silent) {
+        showToast('File downloaded');
+      }
+      return localPath;
     } catch (error: any) {
       console.error('Error downloading file:', error);
-      showToast('Failed to download file', ToastAndroid.SHORT);
+      if (!silent) {
+        showToast('Failed to download file', ToastAndroid.SHORT);
+      }
+      return null;
     } finally {
-      setDownloadingFiles((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(messageId);
-        return newSet;
-      });
-      setLoadingFiles((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(messageId);
-        return newSet;
-      });
+      if (!silent) {
+        setDownloadingFiles((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+        setLoadingFiles((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+      }
     }
   };
 
   const handleOpenFile = async (message: Message) => {
     const messageId = message.id;
     setLoadingFiles((prev) => new Set(prev).add(messageId));
-    let fileUri: string | null = null;
-    let mimeType: string | null = null;
-    
+
     try {
-    if (message.isOwn) {
-      try {
-        const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
-          if (stored?.localPath && (await RNFS.exists(stored.localPath))) {
-            fileUri = stored.localPath.startsWith('file://') 
-              ? stored.localPath 
-              : `file://${stored.localPath}`;
-          } else {
-            fileUri = message.file_url || message.image_url || null;
-        }
-      } catch (error) {
-        console.error('Error getting stored file for sender:', error);
-        fileUri = message.file_url || message.image_url || null;
-      }
-    } else {
-      if (message.localFilePath) {
-          if (await RNFS.exists(message.localFilePath)) {
-          fileUri = message.localFilePath.startsWith('file://') 
-            ? message.localFilePath 
-            : `file://${message.localFilePath}`;
-        } else {
-          await handleDownloadFile(message);
-          const stored = await getStoredFile(message.id, message.file_url || message.image_url || '');
-          if (stored?.localPath) {
-            fileUri = stored.localPath.startsWith('file://')
-              ? stored.localPath
-              : `file://${stored.localPath}`;
-          }
-        }
-      } else if (message.file_url || message.image_url) {
-        showToast('Please download the file first', ToastAndroid.SHORT);
-        return;
-      }
-    }
-    
-      if (!fileUri) {
+      const localPath = await ensureLocalFilePath(message, true);
+
+      if (!localPath) {
         showToast('File not available', ToastAndroid.SHORT);
         return;
       }
 
-        const fileName = message.file_name || message.image_url?.split('/').pop() || '';
-        const hasImageUrl = !!message.image_url;
-        const isImage = hasImageUrl || isImageFile(fileName);
-        const isVideo = isVideoFile(fileName);
-        
-        mimeType = getMimeType(fileName);
-        if (isImage) mimeType = 'image/*';
-        else if (isVideo) mimeType = 'video/*';
-        
-          const uriToOpen = fileUri.startsWith('file://') ? fileUri : `file://${fileUri}`;
+      const fileUri = localPath.startsWith('file://') ? localPath : `file://${localPath}`;
+
+      const fileName = message.file_name || message.image_url?.split('/').pop() || '';
+      const hasImageUrl = !!message.image_url;
+      const isImage = hasImageUrl || isImageFile(fileName);
+      const isVideo = isVideoFile(fileName);
+      
+      let mimeType: string | null = getMimeType(fileName);
+      if (isImage) mimeType = 'image/*';
+      else if (isVideo) mimeType = 'video/*';
 
       if (isImage || isVideo) {
-          try {
-            if (Platform.OS === 'android') {
-              await Linking.openURL(uriToOpen);
-            } else {
-              setPreviewUri(fileUri);
-              setPreviewType(isImage ? 'image' : 'video');
-              setPreviewModalVisible(true);
-            }
-          } catch (error) {
-            setPreviewUri(fileUri);
-            setPreviewType(isImage ? 'image' : 'video');
-            setPreviewModalVisible(true);
-          }
-        } else {
-          try {
-            await Linking.openURL(uriToOpen);
-          } catch (error) {
-            showToast('No app available to open this file', ToastAndroid.SHORT);
-          }
+        setPreviewUri(fileUri);
+        setPreviewType(isImage ? 'image' : 'video');
+        setPreviewExternalMeta({uri: fileUri, mimeType: mimeType || undefined});
+        setPreviewModalVisible(true);
+      } else {
+        const opened = await openFileUri(fileUri, mimeType || '*/*');
+        if (!opened) {
+          showToast('No app available to open this file', ToastAndroid.SHORT);
         }
-      } catch (error) {
-        console.error('Error opening file:', error);
-        showToast('Failed to open file', ToastAndroid.SHORT);
+      }
+    } catch (error) {
+      console.error('Error opening file:', error);
+      showToast('Failed to open file', ToastAndroid.SHORT);
     } finally {
       setLoadingFiles((prev) => {
         const newSet = new Set(prev);
@@ -769,6 +937,25 @@ const ChatScreen = () => {
 
   const handleCloseSelection = () => {
     setSelectedMessage(null);
+  };
+
+  const closePreviewModal = () => {
+    setPreviewModalVisible(false);
+    setPreviewUri(null);
+    setPreviewExternalMeta(null);
+    setPreviewType('image');
+  };
+
+  const handleOpenPreviewExternally = async () => {
+    if (!previewExternalMeta) {
+      showToast('File not available', ToastAndroid.SHORT);
+      return;
+    }
+
+    const opened = await openFileUri(previewExternalMeta.uri, previewExternalMeta.mimeType || '*/*');
+    if (!opened) {
+      showToast('No app available to open this file', ToastAndroid.SHORT);
+    }
   };
 
   const handleEditMessage = () => {
@@ -863,11 +1050,18 @@ const ChatScreen = () => {
         const formData = new FormData();
         
         if (file.type === 'image') {
+          const imageFileName = file.fileName || file.name || 'image.jpg';
           formData.append('image', {
             uri: file.uri,
             type: file.mimeType || 'image/jpeg',
-            name: file.fileName || 'image.jpg',
+            name: imageFileName,
           } as any);
+          // Explicitly send file_name for images too
+          formData.append('file_name', imageFileName);
+          // Send file_size for images
+          if (file.fileSize) {
+            formData.append('file_size', file.fileSize.toString());
+          }
           formData.append('text', previewComment.trim());
           
           // Store base64 locally for this image
@@ -884,9 +1078,9 @@ const ChatScreen = () => {
           } as any);
           // Explicitly send file_name separately in FormData
           formData.append('file_name', fileName);
-          if (file.fileSize) {
-            formData.append('file_size', file.fileSize.toString());
-          }
+          // Always send file_size - it's required for proper display
+          const fileSize = file.fileSize || 0;
+          formData.append('file_size', fileSize.toString());
           if (previewComment.trim()) {
             formData.append('text', previewComment.trim());
           }
@@ -900,11 +1094,13 @@ const ChatScreen = () => {
             const fileUrl = newMessage.image_url || newMessage.file_url || '';
             if (fileUrl) {
               // Store the original local file path
+              const originalFileName = file.fileName || file.name || 'file';
               const storedFile = {
                 messageId: newMessage.id.toString(),
                 fileUrl: fileUrl,
                 localPath: file.uri.startsWith('file://') ? file.uri : `file://${file.uri}`,
-                fileName: file.fileName || 'file',
+                fileName: originalFileName.replace(/[^a-zA-Z0-9.-]/g, '_'), // Sanitized for storage
+                originalFileName: originalFileName, // Preserve original file name
                 fileSize: file.fileSize,
                 downloadedAt: new Date().toISOString(),
               };
@@ -1175,6 +1371,20 @@ const ChatScreen = () => {
     const formattedFileSize = formatFileSize(item.file_size);
     const isFileLoading = loadingFiles.has(item.id);
     
+    // Debug: Log file data for file messages
+    if (item.file_url && !item.image_url) {
+      console.log(`[Chat] Rendering file message ${item.id}:`, {
+        file_name: item.file_name,
+        file_size: item.file_size,
+        displayFileName,
+        formattedFileSize,
+        file_url: item.file_url,
+        hasFileName: !!item.file_name,
+        displayFileNameLength: displayFileName?.length || 0,
+        finalDisplayValue: displayFileName || item.file_name || 'Document',
+      });
+    }
+    
     // Determine file URI - prioritize base64, then local path, then URL
     let fileUri = '';
     if (item.base64_image) {
@@ -1265,114 +1475,126 @@ const ChatScreen = () => {
                 }}
                 activeOpacity={0.9}
                 style={styles.imagePreviewContainer}>
-                {failedImages.has(item.id) && !item.base64_image ? (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleRetryImage(item.id)}
-                    style={[styles.messageImagePreview, styles.imageErrorContainer]}>
-                    <MaterialIcons name="broken-image" size={48} color={isOwn ? 'rgba(255, 255, 255, 0.5)' : colors.text} />
-                    <Text style={[styles.imageErrorText, {color: isOwn ? 'rgba(255, 255, 255, 0.7)' : colors.text, opacity: 0.7}]}>
-                      Image not available
-                    </Text>
-                    <Text style={[styles.imageRetryText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.primary}]}>
-                      Tap to retry
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.imageWrapper}>
-                    {loadingImages.has(item.id) && (
-                      <View style={[styles.imageLoadingOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.3)'}]}>
-                        <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
-                        <Text style={[styles.imageLoadingText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.text}]}>
-                          Loading...
-                        </Text>
-                      </View>
-                    )}
-                    <Image
-                      source={{uri: fileUri || item.base64_image || item.image_url || item.file_url || ''}}
-                      style={[
-                        styles.messageImagePreview,
-                        imageDimensions[item.id.toString()] && (() => {
-                          const dims = imageDimensions[item.id.toString()];
-                          const maxSize = 250; // Max width/height
-                          const minSize = 180; // Min size (slightly bigger than square)
-                          const baseScale = 0.5; // Scale factor to reduce size
-                          
-                          // Calculate aspect ratio
-                          const aspectRatio = dims.width / dims.height;
-                          
-                          let width, height;
-                          
-                          if (aspectRatio > 1) {
-                            // Landscape: width is larger
-                            width = Math.min(maxSize, Math.max(minSize, dims.width * baseScale));
-                            height = width / aspectRatio;
-                            // Ensure height doesn't exceed max
-                            if (height > maxSize) {
-                              height = maxSize;
-                              width = height * aspectRatio;
-                            }
-                          } else {
-                            // Portrait or square: height is larger or equal
-                            height = Math.min(maxSize, Math.max(minSize, dims.height * baseScale));
+                <View style={styles.imageWrapper}>
+                  {/* Show loading overlay until image is loaded (and no base64) */}
+                  {!item.base64_image && !loadedImages.has(item.id) && (
+                    <View style={[styles.imageLoadingOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.3)'}]}>
+                      <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                      <Text style={[styles.imageLoadingText, {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.text}]}>
+                        Loading...
+                      </Text>
+                    </View>
+                  )}
+                  <Image
+                    source={{uri: fileUri || item.base64_image || item.image_url || item.file_url || ''}}
+                    style={[
+                      styles.messageImagePreview,
+                      imageDimensions[item.id.toString()] && (() => {
+                        const dims = imageDimensions[item.id.toString()];
+                        const maxSize = 250; // Max width/height
+                        const minSize = 180; // Min size (slightly bigger than square)
+                        const baseScale = 0.5; // Scale factor to reduce size
+                        
+                        // Calculate aspect ratio
+                        const aspectRatio = dims.width / dims.height;
+                        
+                        let width, height;
+                        
+                        if (aspectRatio > 1) {
+                          // Landscape: width is larger
+                          width = Math.min(maxSize, Math.max(minSize, dims.width * baseScale));
+                          height = width / aspectRatio;
+                          // Ensure height doesn't exceed max
+                          if (height > maxSize) {
+                            height = maxSize;
                             width = height * aspectRatio;
-                            // Ensure width doesn't exceed max
-                            if (width > maxSize) {
-                              width = maxSize;
-                              height = width / aspectRatio;
-                            }
                           }
-                          
-                          return {
-                            width: Math.round(width),
-                            height: Math.round(height),
-                          };
-                        })(),
-                        loadingImages.has(item.id) && styles.imageLoading,
-                      ]}
-                      resizeMode="contain"
-                      onLoadStart={() => {
+                        } else {
+                          // Portrait or square: height is larger or equal
+                          height = Math.min(maxSize, Math.max(minSize, dims.height * baseScale));
+                          width = height * aspectRatio;
+                          // Ensure width doesn't exceed max
+                          if (width > maxSize) {
+                            width = maxSize;
+                            height = width / aspectRatio;
+                          }
+                        }
+                        
+                        return {
+                          width: Math.round(width),
+                          height: Math.round(height),
+                        };
+                      })(),
+                      !item.base64_image && (loadingImages.has(item.id) || (!loadedImages.has(item.id) && !failedImages.has(item.id))) && {opacity: 0},
+                    ]}
+                    resizeMode="contain"
+                    onLoadStart={() => {
+                      // Don't set loading state for base64 images - they load instantly
+                      if (!item.base64_image) {
+                        // Always set loading state when starting to load
                         setLoadingImages((prev) => new Set(prev).add(item.id));
-                        // Set timeout to show loading indicator if image takes too long
-                        setTimeout(() => {
-                          setLoadingImages((prev) => {
-                            const newSet = new Set(prev);
-                            if (newSet.has(item.id)) {
-                              // Still loading after 1 second, keep showing loader
-                            }
-                            return newSet;
-                          });
-                        }, 1000);
-                      }}
-                      onLoad={(e) => {
+                        // Clear failed and loaded states when starting to load
+                        setFailedImages((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(item.id);
+                          return newSet;
+                        });
+                        setLoadedImages((prev) => {
+                          const newSet = new Set(prev);
+                          newSet.delete(item.id);
+                          return newSet;
+                        });
+                      } else {
+                        // For base64, mark as loaded immediately since they don't need network
+                        setLoadedImages((prev) => new Set(prev).add(item.id));
                         setLoadingImages((prev) => {
                           const newSet = new Set(prev);
                           newSet.delete(item.id);
                           return newSet;
                         });
-                        // Store actual image dimensions for adaptive sizing
-                        const {width, height} = e.nativeEvent.source;
-                        if (width && height) {
-                          setImageDimensions((prev) => ({
-                            ...prev,
-                            [item.id.toString()]: {width, height},
-                          }));
-                        }
-                      }}
-                      onError={() => {
-                        setLoadingImages((prev) => {
-                          const newSet = new Set(prev);
-                          newSet.delete(item.id);
-                          return newSet;
-                        });
-                        // Only track as failed if base64 is not available
-                        if (!item.base64_image) {
-                          setFailedImages((prev) => new Set(prev).add(item.id));
-                        }
-                      }}
-                    />
-                  </View>
-                )}
+                      }
+                    }}
+                    onLoad={(e) => {
+                      // Image loaded successfully
+                      setLoadingImages((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.delete(item.id);
+                        return newSet;
+                      });
+                      setFailedImages((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.delete(item.id);
+                        return newSet;
+                      });
+                      setLoadedImages((prev) => new Set(prev).add(item.id));
+                      // Store actual image dimensions for adaptive sizing
+                      const {width, height} = e.nativeEvent.source;
+                      if (width && height) {
+                        setImageDimensions((prev) => ({
+                          ...prev,
+                          [item.id.toString()]: {width, height},
+                        }));
+                      }
+                    }}
+                    onError={() => {
+                      // Image failed to load - only mark as failed if no base64 backup
+                      setLoadingImages((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.delete(item.id);
+                        return newSet;
+                      });
+                      setLoadedImages((prev) => {
+                        const newSet = new Set(prev);
+                        newSet.delete(item.id);
+                        return newSet;
+                      });
+                      // Only track as failed if base64 is not available
+                      if (!item.base64_image) {
+                        setFailedImages((prev) => new Set(prev).add(item.id));
+                      }
+                    }}
+                  />
+                </View>
                 {isVideo && !failedImages.has(item.id) && (
                   <View style={styles.videoPlayOverlay}>
                     <MaterialIcons name="play-circle-filled" size={48} color="#FFFFFF" />
@@ -1459,63 +1681,63 @@ const ChatScreen = () => {
                     }
                   }}
                   activeOpacity={0.7}>
-                  <MaterialIcons name="insert-drive-file" size={24} color={isOwn ? '#FFFFFF' : colors.primary} />
-                  <View style={styles.messageFileContent}>
+                  <View style={styles.messageFileIconContainer}>
+                    <MaterialIcons name="insert-drive-file" size={24} color={isOwn ? '#FFFFFF' : colors.primary} />
+                    {fileExtension ? (
                       <Text
                         style={[
-                          styles.messageFileName,
-                          {color: isOwn ? '#FFFFFF' : colors.text},
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail">
-                      {displayFileName}
-                      </Text>
-                    {formattedFileSize ? (
-                      <Text
-                        style={[
-                          styles.messageFileSize,
-                          {color: isOwn ? 'rgba(255, 255, 255, 0.8)' : colors.text, opacity: 0.7},
+                          styles.messageFileTypeText,
+                          {color: isOwn ? 'rgba(255, 255, 255, 0.9)' : colors.text},
                         ]}>
-                        {formattedFileSize}
+                        {fileExtension.toUpperCase()}
                       </Text>
                     ) : null}
                   </View>
-                  <View style={styles.messageFileAction}>
-                    {isFileLoading ? (
-                    <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
-                  ) : needsDownload ? (
-                    <TouchableOpacity
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleDownloadFile(item);
-                      }}
-                      disabled={isDownloading}
-                      activeOpacity={0.7}>
-                      {isDownloading ? (
-                        <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
-                      ) : (
-                        <MaterialIcons name="download" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
-                      )}
-                    </TouchableOpacity>
-                  ) : (
-                    <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
-                  )}
-                  </View>
-                  {fileExtension ? (
-                    <View
-                      style={[
-                        styles.messageFileTypeBadge,
-                        {backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.08)'},
-                      ]}>
+                  <View style={styles.messageFileInfo}>
+                    <View style={styles.messageFileDetails}>
                       <Text
                         style={[
-                          styles.messageFileTypeBadgeText,
-                          {color: isOwn ? '#FFFFFF' : colors.text},
-                        ]}>
-                        {fileExtension}
+                          styles.messageFileName,
+                          {
+                            color: isOwn ? '#FFFFFF' : colors.text,
+                          },
+                        ]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail">
+                        {displayFileName || item.file_name || 'Document'}
                       </Text>
+                      {item.file_size && item.file_size > 0 ? (
+                        <Text
+                          style={[
+                            styles.messageFileSize,
+                            {color: isOwn ? 'rgba(255, 255, 255, 0.75)' : colors.text, opacity: 0.8},
+                          ]}>
+                          {formattedFileSize}
+                        </Text>
+                      ) : null}
                     </View>
-                  ) : null}
+                    <View style={styles.messageFileAction}>
+                      {isFileLoading ? (
+                        <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                      ) : needsDownload ? (
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDownloadFile(item);
+                          }}
+                          disabled={isDownloading}
+                          activeOpacity={0.7}>
+                          {isDownloading ? (
+                            <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                          ) : (
+                            <MaterialIcons name="download" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
+                      )}
+                    </View>
+                  </View>
                 </TouchableOpacity>
               </View>
             )}
@@ -1802,14 +2024,26 @@ const ChatScreen = () => {
         visible={previewModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setPreviewModalVisible(false)}>
+        onRequestClose={closePreviewModal}>
         <View style={styles.previewModalOverlay}>
-          <TouchableOpacity
-            style={styles.previewModalClose}
-            onPress={() => setPreviewModalVisible(false)}
-            activeOpacity={0.7}>
-            <MaterialIcons name="close" size={28} color="#FFFFFF" />
-          </TouchableOpacity>
+          <View style={styles.previewModalHeader}>
+            {previewExternalMeta ? (
+              <TouchableOpacity
+                style={styles.previewModalAction}
+                onPress={handleOpenPreviewExternally}
+                activeOpacity={0.7}>
+                <MaterialIcons name="open-in-new" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.previewModalActionPlaceholder} />
+            )}
+            <TouchableOpacity
+              style={styles.previewModalAction}
+              onPress={closePreviewModal}
+              activeOpacity={0.7}>
+              <MaterialIcons name="close" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
           {previewType === 'image' && previewUri && (
             <Image
               source={{uri: previewUri}}
@@ -1828,7 +2062,7 @@ const ChatScreen = () => {
           {previewType === 'file' && previewUri && (
             <TouchableOpacity
               style={styles.previewFileContainer}
-              onPress={() => Linking.openURL(`file://${previewUri}`)}
+              onPress={() => openFileUri(previewUri, previewExternalMeta?.mimeType || '*/*')}
               activeOpacity={0.7}>
               <MaterialIcons name="insert-drive-file" size={64} color={colors.primary} />
               <Text style={[styles.previewFileText, {color: colors.text}]}>
@@ -2210,39 +2444,58 @@ const styles = StyleSheet.create({
   },
   messageFile: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 12,
     borderRadius: 8,
-    gap: 12,
+    gap: 8,
+    width: '100%',
     maxWidth: '100%',
     flexShrink: 1,
     position: 'relative',
   },
-  messageFileContent: {
+  messageFileIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+  },
+  messageFileInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minWidth: 0,
+  },
+  messageFileDetails: {
     flex: 1,
     minWidth: 0,
+  },
+  messageFileTypeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    opacity: 0.8,
   },
   messageFileAction: {
-    paddingLeft: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   messageFileName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    flexShrink: 1,
-    flex: 1,
-    minWidth: 0,
-    marginRight: 4,
+    marginBottom: 2,
+    color: '#FFFFFF', // Default white, overridden inline when needed
+    includeFontPadding: false,
   },
   messageFileSize: {
     fontSize: 12,
+    opacity: 0.8,
   },
   messageFileTypeBadge: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 2,
+    marginHorizontal: 8,
   },
   messageFileTypeBadgeText: {
     fontSize: 11,
@@ -2334,15 +2587,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
-  previewModalClose: {
+  previewModalHeader: {
     position: 'absolute',
-    top: 50,
+    top: 40,
     right: 20,
-    zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 3,
+  },
+  previewModalAction: {
     padding: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  previewModalActionPlaceholder: {
+    width: 36,
+    height: 36,
   },
   previewImage: {
     width: Dimensions.get('window').width,

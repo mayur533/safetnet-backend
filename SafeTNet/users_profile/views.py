@@ -1333,12 +1333,38 @@ class ChatMessageListView(APIView):
                     # Priority: request.data (FormData) > file object name > default
                     image_name = None
                     if 'file_name' in request.data:
-                        image_name = request.data.get('file_name')
+                        image_name = str(request.data.get('file_name')).strip()
                     elif hasattr(image, 'name') and image.name:
                         image_name = image.name
+                    elif serializer.validated_data.get('file_name'):
+                        image_name = serializer.validated_data.get('file_name')
                     
-                    if image_name:
-                        message_data['file_name'] = image_name
+                    # Ensure we have a file name (extract from image object if needed)
+                    if not image_name and hasattr(image, 'name'):
+                        image_name = image.name
+                    if not image_name:
+                        image_name = 'image'  # Default fallback
+                    
+                    # Always set file_name for images
+                    message_data['file_name'] = image_name
+                    
+                    # Extract file size for images - always try to get it
+                    image_size = None
+                    if 'file_size' in request.data:
+                        try:
+                            image_size = int(request.data.get('file_size'))
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Fallback to file size from uploaded image object (always use if available)
+                    if not image_size:
+                        if hasattr(image, 'size') and image.size:
+                            image_size = image.size
+                        elif serializer.validated_data.get('file_size'):
+                            image_size = serializer.validated_data.get('file_size')
+                    
+                    # Always save file_size if we have it, otherwise save 0
+                    message_data['file_size'] = image_size if image_size else 0
                 
                 if 'file' in request.FILES:
                     file = request.FILES['file']
@@ -1362,7 +1388,7 @@ class ChatMessageListView(APIView):
                     
                     message_data['file_name'] = file_name
                     
-                    # Extract file size
+                    # Extract file size - always try to get it
                     file_size = None
                     if 'file_size' in request.data:
                         try:
@@ -1370,15 +1396,15 @@ class ChatMessageListView(APIView):
                         except (ValueError, TypeError):
                             pass
                     
-                    # Fallback to file size from uploaded file object
+                    # Fallback to file size from uploaded file object (always use if available)
                     if not file_size:
                         if hasattr(file, 'size') and file.size:
                             file_size = file.size
                         elif serializer.validated_data.get('file_size'):
                             file_size = serializer.validated_data.get('file_size')
                     
-                    if file_size:
-                        message_data['file_size'] = file_size
+                    # Always save file_size if we have it, otherwise save 0
+                    message_data['file_size'] = file_size if file_size else 0
                 
                 message = ChatMessage.objects.create(**message_data)
                 # Update group's updated_at timestamp

@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {useTheme} from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -144,6 +146,11 @@ const BillingScreen = () => {
   // Show validate button when there's text but no validation result yet
   const showValidateButton = promoCode.trim().length >= 3 && promoCodeValidation.isValid === null && !promoCodeValidation.isLoading;
 
+  const keyboardOffset = useMemo(
+    () => insets.top + (showPromoInput ? 220 : 90),
+    [insets.top, showPromoInput]
+  );
+
   const handleCancelSubscription = () => {
     Alert.alert(
       'Cancel Subscription',
@@ -173,8 +180,14 @@ const BillingScreen = () => {
   };
 
   return (
-    <View style={[styles.container, {backgroundColor: tokens.background, paddingTop: insets.top + 16}]}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView
+      style={{flex: 1}}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={keyboardOffset}>
+      <View style={[styles.container, {backgroundColor: tokens.background, paddingTop: insets.top + 16}]}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled">
         <View style={[styles.heroCard, {backgroundColor: tokens.card, borderColor: tokens.border}]}>
           <View style={[styles.heroIcon, {backgroundColor: tokens.accent}]}>
             <MaterialIcons name="workspace-premium" size={32} color="#FFFFFF" />
@@ -432,8 +445,9 @@ const BillingScreen = () => {
             <Text style={[styles.secondaryButtonText, {color: tokens.accent}]}>Restore purchases</Text>
           </TouchableOpacity>
         )}
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 

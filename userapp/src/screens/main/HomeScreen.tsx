@@ -168,6 +168,7 @@ const HomeScreen = ({navigation}: any) => {
   const [actionCard, setActionCard] = useState<CategoryCard | null>(null);
   const familyContacts = useContactStore((state) => state.contacts);
   const contactsInitialized = useContactStore((state) => state.initialized);
+  const [isSendingCommunityMessage, setIsSendingCommunityMessage] = useState(false);
   const loadContacts = useContactStore((state) => state.loadContacts);
   const [customFamilyMessage, setCustomFamilyMessage] = useState('');
   const [selectedCommunityContact, setSelectedCommunityContact] = useState<any>(null);
@@ -527,6 +528,7 @@ const HomeScreen = ({navigation}: any) => {
     setActionCard(null);
     setFamilyActionMode('single');
     setSelectedFamilyContactId(familyContacts[0]?.id?.toString() ?? null);
+    setIsSendingCommunityMessage(false);
   };
 
   const handleCall = async (phone?: string) => {
@@ -567,38 +569,106 @@ const HomeScreen = ({navigation}: any) => {
     closeActionModal();
   };
 
-  const handleSendCommunityMessage = () => {
+  const handleSendCommunityMessage = async () => {
     const message = customCommunityMessage.trim() || selectedQuickMessage;
-    const availableContacts =
-      actionCard && actionCard.contacts && actionCard.contacts.length > 0
-        ? actionCard.contacts
-        : communityContacts;
-
-    if (selectedCommunityContact) {
-      if (!selectedCommunityContact.phone) {
-        setAlertState({
-          visible: true,
-          title: 'No number available',
-          message: 'This community does not have a phone number.',
-          type: 'warning',
-        });
-        return;
-      }
-      handleSendSMS(selectedCommunityContact.phone, message);
-      return;
-    }
-
-    const numbers = availableContacts.map((contact: any) => contact.phone).filter(Boolean);
-    if (!numbers.length) {
+    
+    if (!message) {
       setAlertState({
         visible: true,
-        title: 'No contacts available',
-        message: 'Add community contacts with phone numbers to send alerts.',
+        title: 'Message Required',
+        message: 'Please enter a message to send.',
         type: 'warning',
       });
       return;
     }
-    handleSendSMS(numbers, message);
+
+    if (!user?.id) {
+      setAlertState({
+        visible: true,
+        title: 'Error',
+        message: 'User not found. Please login again.',
+        type: 'error',
+      });
+      return;
+    }
+
+    // Get available chat groups (community contacts are already chat groups)
+    const availableGroups =
+      actionCard && actionCard.contacts && actionCard.contacts.length > 0
+        ? actionCard.contacts
+        : communityContacts;
+
+    if (!availableGroups.length) {
+      setAlertState({
+        visible: true,
+        title: 'No Groups Available',
+        message: 'Create a community group first to send messages.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    setIsSendingCommunityMessage(true);
+
+    try {
+      // If "All Groups" is selected (selectedCommunityContact is null), send to all groups
+      if (!selectedCommunityContact) {
+        if (availableGroups.length === 0) {
+          setAlertState({
+            visible: true,
+            title: 'No Groups Available',
+            message: 'Create a community group first to send messages.',
+            type: 'warning',
+          });
+          setIsSendingCommunityMessage(false);
+          return;
+        }
+
+        // Send to all groups
+        const sendPromises = availableGroups.map(async (group: any) => {
+          if (group?.id) {
+            const groupId = parseInt(group.id);
+            return apiService.sendChatMessage(Number(user.id), groupId, message);
+          }
+          return Promise.resolve();
+        });
+
+        await Promise.all(sendPromises);
+        
+        setAlertState({
+          visible: true,
+          title: 'Messages Sent',
+          message: `Message sent to all ${availableGroups.length} group(s)`,
+          type: 'success',
+        });
+        closeActionModal();
+        return;
+      }
+
+      // If a specific group is selected, send to that group only
+      if (selectedCommunityContact && selectedCommunityContact.id) {
+        const groupId = parseInt(selectedCommunityContact.id);
+        await apiService.sendChatMessage(Number(user.id), groupId, message);
+        setAlertState({
+          visible: true,
+          title: 'Message Sent',
+          message: `Message sent to ${selectedCommunityContact.label}`,
+          type: 'success',
+        });
+        closeActionModal();
+        return;
+      }
+    } catch (error: any) {
+      console.error('Error sending community message:', error);
+      setAlertState({
+        visible: true,
+        title: 'Error',
+        message: error.message || 'Failed to send message. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setIsSendingCommunityMessage(false);
+    }
   };
 
   const selectedFamilyContact = familyContacts.find(
@@ -944,7 +1014,7 @@ const HomeScreen = ({navigation}: any) => {
             <MaterialIcons name={actionCard.icon} size={32} color={actionCard.iconColor} />
             <Text style={[styles.actionTitle, {color: colors.text}]}>{actionCard.title}</Text>
           </View>
-          <Text style={[styles.actionDescription, {color: mutedTextColor}]}>Choose a circle to alert.</Text>
+          <Text style={[styles.actionDescription, {color: mutedTextColor}]}>Choose a community group to send your message.</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -956,7 +1026,7 @@ const HomeScreen = ({navigation}: any) => {
                 <TouchableOpacity
                   style={[
                     styles.communityChip,
-                    {borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1)},
+                    {borderColor: '#D1D5DB'},
                     !selectedCommunityContact && styles.communityChipActive,
                   ]}
                   onPress={() => setSelectedCommunityContact(null)}
@@ -966,7 +1036,7 @@ const HomeScreen = ({navigation}: any) => {
                       styles.communityChipText,
                       !selectedCommunityContact && styles.communityChipTextActive,
                     ]}>
-                    All Circles
+                    All Groups
                   </Text>
                 </TouchableOpacity>
                 {communityOptions.map((contact) => {
@@ -976,7 +1046,7 @@ const HomeScreen = ({navigation}: any) => {
                       key={contact.id}
                       style={[
                         styles.communityChip,
-                        {borderColor: withAlpha(colors.border, isDarkMode ? 0.7 : 1)},
+                        {borderColor: '#D1D5DB'},
                         isActive && styles.communityChipActive,
                       ]}
                       onPress={() => {
@@ -996,7 +1066,7 @@ const HomeScreen = ({navigation}: any) => {
               </>
             ) : (
               <Text style={[styles.emptyContactsText, {color: mutedTextColor}]}>
-                No community contacts available
+                No community groups available. Create a group first.
               </Text>
             )}
           </ScrollView>
@@ -1066,12 +1136,21 @@ const HomeScreen = ({navigation}: any) => {
               <Text style={[styles.communityButtonText, {color: colors.text}]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.communityButton, styles.communityPrimaryButton]}
+              style={[
+                styles.communityButton,
+                styles.communityPrimaryButton,
+                isSendingCommunityMessage && styles.communityButtonDisabled,
+              ]}
               onPress={handleSendCommunityMessage}
-              activeOpacity={0.85}>
-              <MaterialIcons name="sms" size={20} color="#FFFFFF" />
+              activeOpacity={0.85}
+              disabled={isSendingCommunityMessage}>
+              {isSendingCommunityMessage ? (
+                <ActivityIndicator size="small" color="#FFFFFF" style={{marginRight: 8}} />
+              ) : (
+                <MaterialIcons name="send" size={20} color="#FFFFFF" />
+              )}
               <Text style={[styles.communityButtonText, styles.communityButtonTextPrimary]}>
-                Send
+                {isSendingCommunityMessage ? 'Sending...' : 'Send'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1649,11 +1728,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   communityChip: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 8,
+    backgroundColor: '#F3F4F6',
   },
   communityChipActive: {
     backgroundColor: '#2563EB',
@@ -1662,7 +1742,7 @@ const styles = StyleSheet.create({
   communityChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4B5563',
+    color: '#374151',
   },
   communityChipTextActive: {
     color: '#FFFFFF',
@@ -1712,6 +1792,9 @@ const styles = StyleSheet.create({
   communityPrimaryButton: {
     backgroundColor: '#2563EB',
     borderColor: '#2563EB',
+  },
+  communityButtonDisabled: {
+    opacity: 0.6,
   },
   communityButtonText: {
     fontSize: 15,
