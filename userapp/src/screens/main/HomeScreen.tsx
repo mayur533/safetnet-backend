@@ -42,6 +42,8 @@ import {
   stopGeofenceMonitoring,
   refreshGeofences,
 } from '../../services/geofenceMonitoringService';
+import {requestDirectCall} from '../../services/callService';
+import {sendSmsDirect} from '../../services/smsService';
 
 const COMMUNITY_MESSAGES = [
   'Suspicious activity near my location.',
@@ -640,23 +642,30 @@ const HomeScreen = ({navigation}: any) => {
       return;
     }
 
-    // System will handle permission automatically if not granted
+    // Use direct calling (no dialer opens) if available, otherwise fallback to dialer
     try {
-      await Linking.openURL(`tel:${phone}`);
+      await requestDirectCall(phone);
+      console.log(`✅ Direct call initiated to: ${phone}`);
     } catch (error) {
-      console.warn('Failed to initiate call:', error);
-      setAlertState({
-        visible: true,
-        title: 'Call Failed',
-        message: 'Unable to place the call. Please try again from your dialer.',
-        type: 'error',
-      });
+      console.warn('Direct call failed, trying fallback:', error);
+      // Fallback: open dialer
+      try {
+        await Linking.openURL(`tel:${phone}`);
+      } catch (fallbackError) {
+        console.warn('Failed to initiate call:', fallbackError);
+        setAlertState({
+          visible: true,
+          title: 'Call Failed',
+          message: 'Unable to place the call. Please try again from your dialer.',
+          type: 'error',
+        });
+      }
     } finally {
       closeActionModal();
     }
   };
 
-  const handleSendSMS = (phone?: string | string[], message?: string) => {
+  const handleSendSMS = async (phone?: string | string[], message?: string) => {
     const targets = Array.isArray(phone)
       ? phone.filter((item) => !!item)
       : phone
@@ -666,9 +675,29 @@ const HomeScreen = ({navigation}: any) => {
       closeActionModal();
       return;
     }
-    const recipients = targets.join(',');
-    const body = message ? `?body=${encodeURIComponent(message)}` : '';
-    Linking.openURL(`sms:${recipients}${body}`).catch(() => {});
+    
+    const messageBody = message || '';
+    
+    // Use direct SMS sending (no app opens) if available, otherwise fallback to SMS app
+    try {
+      const success = await sendSmsDirect(targets, messageBody);
+      if (success) {
+        console.log(`✅ Direct SMS sent to ${targets.length} recipient(s) without opening app`);
+        setAlertState({
+          visible: true,
+          title: 'Message Sent',
+          message: `Message sent to ${targets.length} contact(s)`,
+          type: 'success',
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to send direct SMS:', error);
+      // Fallback: open SMS app
+      const recipients = targets.join(',');
+      const body = messageBody ? `?body=${encodeURIComponent(messageBody)}` : '';
+      Linking.openURL(`sms:${recipients}${body}`).catch(() => {});
+    }
+    
     closeActionModal();
   };
 
