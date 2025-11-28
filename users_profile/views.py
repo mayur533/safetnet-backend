@@ -417,6 +417,7 @@ class SOSTriggerView(APIView):
             longitude = serializer.validated_data.get('longitude')
             latitude = serializer.validated_data.get('latitude')
             notes = serializer.validated_data.get('notes', '')
+            live_share_payload = None
             
             # Create SOS event
             location_data = None
@@ -428,6 +429,35 @@ class SOSTriggerView(APIView):
                 notes=notes,
                 location=location_data
             )
+
+            # Automatically start live location sharing for this SOS
+            if location_data:
+                try:
+                    live_share_duration = 1440 if is_premium else FREE_TIER_LIMITS.get('MAX_LIVE_SHARE_MINUTES', 30)
+                    expires_at = timezone.now() + timedelta(minutes=live_share_duration)
+                    live_share = LiveLocationShare.objects.create(
+                        user=user,
+                        expires_at=expires_at,
+                        current_location={
+                            'latitude': latitude,
+                            'longitude': longitude
+                        },
+                        last_broadcast_at=timezone.now(),
+                        plan_type='premium' if is_premium else 'free',
+                        stop_reason='',
+                    )
+                    live_share.track_points.create(latitude=latitude, longitude=longitude)
+                    base_url = getattr(settings, 'LIVE_SHARE_BASE_URL', 'https://safetnet-backend.onrender.com/live-share/')
+                    if not base_url.endswith('/'):
+                        base_url = f"{base_url}/"
+                    live_share_url = f"{base_url}{live_share.share_token}/"
+                    live_share_payload = {
+                        'session': LiveLocationShareSerializer(live_share).data,
+                        'share_url': live_share_url,
+                    }
+                    logger.info(f"Live share session created for SOS: {user.email} -> {live_share_url}")
+                except Exception as exc:
+                    logger.error(f"Failed to start live sharing for SOS: {exc}")
             
             # Send SMS to family contacts (both free and premium)
             try:
@@ -466,7 +496,8 @@ class SOSTriggerView(APIView):
             return Response({
                 'message': 'SOS event triggered successfully',
                 'sos_event': SOSEventSerializer(sos_event).data,
-                'is_premium': is_premium
+                'is_premium': is_premium,
+                'live_share': live_share_payload,
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -915,7 +946,7 @@ class GeofenceListView(APIView):
             # Get polygon coordinates
             polygon_coords = admin_geo.get_polygon_coordinates()
             center_point = admin_geo.get_center_point()
-            
+        
             if not polygon_coords or not center_point:
                 continue  # Skip invalid geofences
             
@@ -946,8 +977,8 @@ class GeofenceListView(APIView):
                 'organization_name': admin_geo.organization.name if admin_geo.organization else '',
                 'created_at': admin_geo.created_at.isoformat() if admin_geo.created_at else None,
             })
-        
-        return Response({
+            
+            return Response({
             'geofences': geofences_data
         })
     
@@ -1444,7 +1475,7 @@ class ChatMessageListView(APIView):
                         image_name = 'image'  # Default fallback
                     
                     # Always set file_name for images
-                    message_data['file_name'] = image_name
+                        message_data['file_name'] = image_name
                     
                     # Extract file size for images - always try to get it
                     image_size = None

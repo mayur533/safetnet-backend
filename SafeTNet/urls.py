@@ -23,6 +23,7 @@ from core import views as core_views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("live-share/<uuid:share_token>/", core_views.live_share_view, name="live-share"),
+    path("live-share/<uuid:share_token>", core_views.live_share_view),
     path("api/auth/", include("users.urls")),
     path("api/security/", include("security_app.urls")),
     path("api/user/", include("users_profile.urls")),
