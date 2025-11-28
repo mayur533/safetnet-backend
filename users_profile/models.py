@@ -276,8 +276,8 @@ class LiveLocationShare(models.Model):
     
     def __str__(self):
         if self.user:
-        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
-        return f"Live Share - {user_email}"
+            user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+            return f"Live Share - {user_email}"
         elif self.security_officer:
             return f"Live Share - {self.security_officer.name}"
         return "Live Share - Unknown"
