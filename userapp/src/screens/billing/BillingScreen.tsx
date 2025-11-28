@@ -201,7 +201,7 @@ const BillingScreen = () => {
       style={{flex: 1}}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 16 : 0}>
-      <View style={[styles.container, {backgroundColor: tokens.background, paddingTop: insets.top + 16}]}>
+    <View style={[styles.container, {backgroundColor: tokens.background, paddingTop: insets.top + 16}]}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={[
@@ -481,8 +481,8 @@ const BillingScreen = () => {
             <Text style={[styles.secondaryButtonText, {color: tokens.accent}]}>Restore purchases</Text>
           </TouchableOpacity>
         )}
-        </ScrollView>
-      </View>
+      </ScrollView>
+    </View>
     </KeyboardAvoidingView>
   );
 };

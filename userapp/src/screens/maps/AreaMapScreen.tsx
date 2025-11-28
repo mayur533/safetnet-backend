@@ -296,18 +296,18 @@ const AreaMapScreen = () => {
                   getCurrentLocation('enhanced').catch(() => getCurrentLocation('legacy'));
                 }
               });
-            } else {
+        } else {
               Geolocation.requestAuthorization().then((authStatus) => {
                 if (authStatus === 'granted' || authStatus === 'restricted') {
                   setLocationPermissionGranted(true);
                   getCurrentLocation('legacy').catch(() => getCurrentLocation('enhanced'));
                 }
               });
-            }
+      }
           }},
         ],
         type: 'error',
-      });
+    });
     },
   [showPermissionAlert]);
 
@@ -532,7 +532,7 @@ const AreaMapScreen = () => {
             } : {
               lat: 20.5937,
               lng: 78.9629,
-            }}
+          }}
             initialZoom={userLocation ? 15 : 13}
             markers={markers} // Markers array includes user location + officers (as they load)
             circles={circles}
@@ -555,8 +555,8 @@ const AreaMapScreen = () => {
         </View>
 
         {/* Officer panel - always show, with loading state inside */}
-        <View style={[styles.officerPanel, {backgroundColor: colors.card}]}>
-          <View style={styles.officerPanelHeader}>
+          <View style={[styles.officerPanel, {backgroundColor: colors.card}]}>
+            <View style={styles.officerPanelHeader}>
             <Text style={[styles.officerPanelTitle, {color: colors.text}]}>
               Nearby Security Officers
             </Text>
@@ -597,8 +597,8 @@ const AreaMapScreen = () => {
                         <Text style={{color: '#10B981', fontWeight: '600'}}>● Live</Text>
                       ) : (
                         <>
-                          {officer.distance_km ? `${officer.distance_km} km` : 'On call'} •{' '}
-                          {formatRelativeTime(officer.last_seen_at)}
+                      {officer.distance_km ? `${officer.distance_km} km` : 'On call'} •{' '}
+                      {formatRelativeTime(officer.last_seen_at)}
                         </>
                       )}
                     </Text>
@@ -609,9 +609,9 @@ const AreaMapScreen = () => {
           ) : (
             <View style={styles.officerEmptyContainer}>
               <Text style={[styles.officerEmptyText, {color: colors.text}]}>No officers nearby</Text>
-            </View>
-          )}
-        </View>
+          </View>
+        )}
+          </View>
       </View>
     </>
   );

@@ -2,15 +2,23 @@ import Geolocation from '@react-native-community/geolocation';
 import {Alert} from 'react-native';
 import {apiService} from './apiService';
 
-interface LiveShareSession {
+export interface LiveShareSession {
   userId: number;
   sessionId: number;
+  shareUrl?: string | null;
+  shareToken?: string | null;
+  planType?: string | null;
+  expiresAt?: string | null;
 }
 
 type LiveShareEndReason = 'expired' | 'error';
 
 interface LiveShareUpdateOptions {
   onSessionEnded?: (payload: {reason: LiveShareEndReason; message?: string}) => void;
+  shareUrl?: string | null;
+  shareToken?: string | null;
+  planType?: string | null;
+  expiresAt?: string | null;
 }
 
 let watchId: number | null = null;
@@ -31,7 +39,14 @@ export const startLiveLocationShareUpdates = async (
   initialLocation?: {latitude: number; longitude: number},
   options?: LiveShareUpdateOptions,
 ) => {
-  activeSession = {userId, sessionId};
+  activeSession = {
+    userId,
+    sessionId,
+    shareUrl: options?.shareUrl ?? null,
+    shareToken: options?.shareToken ?? null,
+    planType: options?.planType ?? null,
+    expiresAt: options?.expiresAt ?? null,
+  };
 
   if (initialLocation) {
     try {

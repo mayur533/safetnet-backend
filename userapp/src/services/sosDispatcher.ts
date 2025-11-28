@@ -8,7 +8,7 @@ import {useSettingsStore, DEFAULT_SOS_TEMPLATE, DEFAULT_SOS_MESSAGES} from '../s
 import {useOfflineSosStore} from '../stores/offlineSosStore';
 import {useAuthStore} from '../stores/authStore';
 import {apiService} from './apiService';
-import {startLiveLocationShareUpdates, getActiveLiveShareSession} from './liveLocationShareService';
+import {startLiveLocationShareUpdates, getActiveLiveShareSession, type LiveShareSession} from './liveLocationShareService';
 
 // Import push notifications - use dynamic import to avoid bundling issues
 let PushNotification: any = null;
@@ -272,6 +272,8 @@ const sendSOSNotification = async () => {
 type DispatchResult = {
   smsInitiated: boolean;
   callInitiated: boolean;
+  liveShareUrl?: string | null;
+  liveShareSession?: LiveShareSession | null;
 };
 
 /**
@@ -303,10 +305,10 @@ const getCurrentLocation = (): Promise<{latitude: number; longitude: number} | n
  * Get live share base URL
  */
 const getLiveShareBaseUrl = (): string => {
-  if (__DEV__) {
-    return 'http://192.168.0.125:8000/live-share';
-  }
-  return 'https://safetnet-backend.onrender.com/live-share';
+  const base = __DEV__
+    ? 'http://192.168.0.125:8000/live-share'
+    : 'https://safetnet-backend.onrender.com/live-share';
+  return base.endsWith('/') ? base.slice(0, -1) : base;
 };
 
 /**
@@ -337,6 +339,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   let smsInitiated = false;
   let callInitiated = false;
   let liveShareUrl: string | null = null;
+  let liveShareSession: LiveShareSession | null = null;
 
   // Get current location
   let location = null;
@@ -351,47 +354,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     console.error('Error getting location:', error);
   }
 
-  // Start live location sharing if user is authenticated
-  if (user?.id && location) {
-    try {
-      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
-      const durationMinutes = isPremium ? 1440 : 30; // Premium: 24 hours, Free: 30 minutes (backend limit)
-      
-      console.log('Starting live location sharing for SOS...');
-      const response = await apiService.startLiveLocationShare(userId, durationMinutes);
-      const session = response?.session;
-      const sessionId = session?.id;
-      
-      if (sessionId) {
-        // Start location updates
-        await startLiveLocationShareUpdates(userId, sessionId, location, {
-          onSessionEnded: (payload) => {
-            console.log('SOS live share session ended:', payload);
-          },
-        });
-        
-        // Build share URL
-        const shareToken = session?.share_token || session?.shareToken;
-        const liveShareBaseUrl = getLiveShareBaseUrl();
-        const normalizedBase = liveShareBaseUrl.endsWith('/')
-          ? liveShareBaseUrl.slice(0, -1)
-          : liveShareBaseUrl;
-        liveShareUrl = shareToken
-          ? `${normalizedBase}/${shareToken}`
-          : buildGoogleMapsUrl(location.latitude, location.longitude);
-        
-        console.log('✅ Live location sharing started for SOS:', liveShareUrl);
-      }
-    } catch (error: any) {
-      console.error('Error starting live location sharing for SOS:', error);
-      // Continue with SOS even if live share fails
-      if (location) {
-        liveShareUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
-      }
-    }
-  }
-
-  // Send SOS to backend API
+  // Send SOS to backend API (backend starts live share and returns link)
   if (user?.id) {
     try {
       const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
@@ -406,14 +369,78 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       sosData.notes = message || template;
       
       console.log('Sending SOS to backend:', sosData);
-      await apiService.triggerSOS(userId, sosData);
+      const sosResponse = await apiService.triggerSOS(userId, sosData);
       console.log('✅ SOS sent to backend successfully');
+
+      const liveSharePayload = sosResponse?.live_share;
+      if (liveSharePayload?.share_url) {
+        liveShareUrl = liveSharePayload.share_url;
+      }
+
+      const backendSession = liveSharePayload?.session;
+      if (backendSession?.id) {
+        try {
+          await startLiveLocationShareUpdates(userId, backendSession.id, location || undefined, {
+            onSessionEnded: (payload) => {
+              console.log('SOS live share session ended:', payload);
+            },
+            shareUrl: liveShareUrl ?? null,
+            shareToken: backendSession.share_token || backendSession.shareToken || null,
+            planType: backendSession.plan_type || backendSession.planType || null,
+            expiresAt: backendSession.expires_at || backendSession.expiresAt || null,
+          });
+          liveShareSession = getActiveLiveShareSession();
+          if (!liveShareUrl && backendSession.share_token) {
+            const liveShareBaseUrl = getLiveShareBaseUrl();
+            liveShareUrl = `${liveShareBaseUrl}/${backendSession.share_token}/`;
+          }
+        } catch (error) {
+          console.error('Failed to start live share updates from backend session:', error);
+        }
+      }
     } catch (error: any) {
       console.error('Error sending SOS to backend:', error);
       // Continue with SMS/call even if backend fails
     }
   } else {
     console.warn('User not authenticated, skipping backend SOS');
+  }
+
+  // Fallback: start live share locally if backend did not create one
+  if (!liveShareSession && user?.id && location) {
+    try {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      const durationMinutes = isPremium ? 1440 : 30;
+      console.log('Starting fallback live location sharing for SOS...');
+      const response = await apiService.startLiveLocationShare(userId, durationMinutes);
+      const session = response?.session;
+      const sessionId = session?.id;
+
+      if (sessionId) {
+        const shareToken = session?.share_token || session?.shareToken;
+        const liveShareBaseUrl = getLiveShareBaseUrl();
+        liveShareUrl = shareToken
+          ? `${liveShareBaseUrl}/${shareToken}/`
+          : buildGoogleMapsUrl(location.latitude, location.longitude);
+
+        await startLiveLocationShareUpdates(userId, sessionId, location, {
+          onSessionEnded: (payload) => {
+            console.log('SOS live share session ended (fallback):', payload);
+          },
+          shareUrl: liveShareUrl,
+          shareToken,
+          planType: session?.plan_type || session?.planType || null,
+          expiresAt: session?.expires_at || session?.expiresAt || null,
+        });
+        liveShareSession = getActiveLiveShareSession();
+        console.log('✅ Fallback live location sharing started for SOS:', liveShareUrl);
+      }
+    } catch (error) {
+      console.error('Error starting fallback live location sharing for SOS:', error);
+      if (location) {
+        liveShareUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
+      }
+    }
   }
 
   const settingsState = useSettingsStore.getState();
@@ -492,5 +519,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   return {
     smsInitiated,
     callInitiated,
+    liveShareUrl,
+    liveShareSession,
   };
 };

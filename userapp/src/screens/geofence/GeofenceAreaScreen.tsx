@@ -60,7 +60,7 @@ const GeofenceAreaScreen = () => {
       setGeofences([]);
       return;
     }
-
+    
     try {
       setLoading(true);
       setErrorMessage(null);
@@ -97,7 +97,7 @@ const GeofenceAreaScreen = () => {
             lat: 0,
             lng: 0,
           },
-          isActive: geo.is_active !== false,
+            isActive: geo.is_active !== false,
           color: geo.color || GEOFENCE_COLORS[idx % GEOFENCE_COLORS.length],
           description: geo.description || '',
         }));
@@ -211,7 +211,7 @@ const GeofenceAreaScreen = () => {
         description: geo.description || '',
       }));
 
-    return (
+  return (
       <>
         <LeafletMap
           ref={mapRef}
@@ -256,7 +256,7 @@ const GeofenceAreaScreen = () => {
                 disabled={loading}
               >
                 <MaterialIcons name="refresh" size={20} color="#E2E8F0" />
-              </TouchableOpacity>
+            </TouchableOpacity>
             </View>
           </View>
           {isLegendExpanded ? (
@@ -295,7 +295,7 @@ const GeofenceAreaScreen = () => {
                           <MaterialIcons name="gps-fixed" size={14} color="#6366f1" style={styles.legendItemIcon} />
                         )}
                       </View>
-                    </View>
+            </View>
                   </TouchableOpacity>
                 ))
               )}
@@ -331,7 +331,7 @@ const GeofenceAreaScreen = () => {
                           geo.isActive ? styles.legendItemStatusActive : styles.legendItemStatusInactive,
                         ]}>
                           {geo.isActive ? 'Active' : 'Inactive'}
-                        </Text>
+              </Text>
                         {selectedGeofence === geo.id && (
                           <MaterialIcons name="gps-fixed" size={14} color="#6366f1" style={styles.legendItemIcon} />
                         )}
@@ -343,7 +343,7 @@ const GeofenceAreaScreen = () => {
               {geofences.length > 2 && (
                 <Text style={styles.legendMoreText}>
                   +{geofences.length - 2} more (tap ↑ to expand)
-                </Text>
+              </Text>
               )}
             </View>
           )}

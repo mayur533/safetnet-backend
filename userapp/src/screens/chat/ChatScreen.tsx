@@ -91,18 +91,18 @@ const resolveFileName = (message: Message): string => {
   // If no file_name, try to extract from URL
   if (!fileName || fileName.trim() === '') {
     if (message.file_url) {
-      const urlParts = message.file_url.split('/');
-      fileName = urlParts[urlParts.length - 1];
-      if (fileName) {
+    const urlParts = message.file_url.split('/');
+    fileName = urlParts[urlParts.length - 1];
+    if (fileName) {
         // Remove query parameters and hash
         fileName = fileName.split('?')[0].split('#')[0];
-      }
     }
+  }
 
     if ((!fileName || fileName.trim() === '') && message.image_url) {
-      const urlParts = message.image_url.split('/');
-      fileName = urlParts[urlParts.length - 1];
-      if (fileName) {
+    const urlParts = message.image_url.split('/');
+    fileName = urlParts[urlParts.length - 1];
+    if (fileName) {
         // Remove query parameters and hash
         fileName = fileName.split('?')[0].split('#')[0];
       }
@@ -820,8 +820,8 @@ const ChatScreen = () => {
     const messageId = message.id;
     
     if (!silent) {
-      setDownloadingFiles((prev) => new Set(prev).add(messageId));
-      setLoadingFiles((prev) => new Set(prev).add(messageId));
+    setDownloadingFiles((prev) => new Set(prev).add(messageId));
+    setLoadingFiles((prev) => new Set(prev).add(messageId));
     }
     
     try {
@@ -862,27 +862,27 @@ const ChatScreen = () => {
       );
       
       if (!silent) {
-        showToast('File downloaded');
+      showToast('File downloaded');
       }
       return localPath;
     } catch (error: any) {
       console.error('Error downloading file:', error);
       if (!silent) {
-        showToast('Failed to download file', ToastAndroid.SHORT);
+      showToast('Failed to download file', ToastAndroid.SHORT);
       }
       return null;
     } finally {
       if (!silent) {
-        setDownloadingFiles((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
-        setLoadingFiles((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
+      setDownloadingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
+      setLoadingFiles((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
       }
     }
   };
@@ -891,7 +891,7 @@ const ChatScreen = () => {
     const messageId = message.id;
     setLoadingFiles((prev) => new Set(prev).add(messageId));
 
-    try {
+      try {
       const localPath = await ensureLocalFilePath(message, true);
 
       if (!localPath) {
@@ -901,28 +901,28 @@ const ChatScreen = () => {
 
       const fileUri = localPath.startsWith('file://') ? localPath : `file://${localPath}`;
 
-      const fileName = message.file_name || message.image_url?.split('/').pop() || '';
-      const hasImageUrl = !!message.image_url;
-      const isImage = hasImageUrl || isImageFile(fileName);
-      const isVideo = isVideoFile(fileName);
-      
+        const fileName = message.file_name || message.image_url?.split('/').pop() || '';
+        const hasImageUrl = !!message.image_url;
+        const isImage = hasImageUrl || isImageFile(fileName);
+        const isVideo = isVideoFile(fileName);
+        
       let mimeType: string | null = getMimeType(fileName);
-      if (isImage) mimeType = 'image/*';
-      else if (isVideo) mimeType = 'video/*';
+        if (isImage) mimeType = 'image/*';
+        else if (isVideo) mimeType = 'video/*';
 
       if (isImage || isVideo) {
-        setPreviewUri(fileUri);
-        setPreviewType(isImage ? 'image' : 'video');
-        setPreviewModalVisible(true);
-      } else {
+              setPreviewUri(fileUri);
+              setPreviewType(isImage ? 'image' : 'video');
+              setPreviewModalVisible(true);
+        } else {
         const opened = await openFileUri(fileUri, mimeType || '*/*');
         if (!opened) {
-          showToast('No app available to open this file', ToastAndroid.SHORT);
+            showToast('No app available to open this file', ToastAndroid.SHORT);
+          }
         }
-      }
-    } catch (error) {
-      console.error('Error opening file:', error);
-      showToast('Failed to open file', ToastAndroid.SHORT);
+      } catch (error) {
+        console.error('Error opening file:', error);
+        showToast('Failed to open file', ToastAndroid.SHORT);
     } finally {
       setLoadingFiles((prev) => {
         const newSet = new Set(prev);
@@ -1642,47 +1642,47 @@ const ChatScreen = () => {
                   </View>
                   <View style={styles.messageFileInfo}>
                     <View style={styles.messageFileDetails}>
-                      <Text
-                        style={[
-                          styles.messageFileName,
+                  <Text
+                    style={[
+                      styles.messageFileName,
                           {
                             color: isOwn ? '#FFFFFF' : colors.text,
                           },
-                        ]}
-                        numberOfLines={1}
-                        ellipsizeMode="tail">
+                    ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail">
                         {displayFileName || item.file_name || 'Document'}
-                      </Text>
-                      {item.file_size && item.file_size > 0 ? (
-                        <Text
-                          style={[
-                            styles.messageFileSize,
+                  </Text>
+                  {item.file_size && item.file_size > 0 ? (
+                    <Text
+                      style={[
+                        styles.messageFileSize,
                             {color: isOwn ? 'rgba(255, 255, 255, 0.75)' : colors.text, opacity: 0.8},
-                          ]}>
-                          {formattedFileSize}
-                        </Text>
-                      ) : null}
+                      ]}>
+                      {formattedFileSize}
+                    </Text>
+                  ) : null}
                     </View>
-                    <View style={styles.messageFileAction}>
-                      {isFileLoading ? (
+                  <View style={styles.messageFileAction}>
+                    {isFileLoading ? (
+                    <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
+                  ) : needsDownload ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleDownloadFile(item);
+                      }}
+                      disabled={isDownloading}
+                      activeOpacity={0.7}>
+                      {isDownloading ? (
                         <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
-                      ) : needsDownload ? (
-                        <TouchableOpacity
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(item);
-                          }}
-                          disabled={isDownloading}
-                          activeOpacity={0.7}>
-                          {isDownloading ? (
-                            <ActivityIndicator size="small" color={isOwn ? '#FFFFFF' : colors.primary} />
-                          ) : (
-                            <MaterialIcons name="download" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
-                          )}
-                        </TouchableOpacity>
                       ) : (
-                        <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
+                        <MaterialIcons name="download" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
                       )}
+                    </TouchableOpacity>
+                  ) : (
+                    <MaterialIcons name="open-in-new" size={20} color={isOwn ? '#FFFFFF' : colors.primary} />
+                  )}
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -1968,12 +1968,12 @@ const ChatScreen = () => {
         onRequestClose={closePreviewModal}>
         <View style={styles.previewModalOverlay}>
           <View style={styles.previewModalHeader}>
-            <TouchableOpacity
+          <TouchableOpacity
               style={styles.previewModalAction}
               onPress={closePreviewModal}
-              activeOpacity={0.7}>
-              <MaterialIcons name="close" size={28} color="#FFFFFF" />
-            </TouchableOpacity>
+            activeOpacity={0.7}>
+            <MaterialIcons name="close" size={28} color="#FFFFFF" />
+          </TouchableOpacity>
           </View>
           {previewType === 'image' && previewUri && (
             <Image

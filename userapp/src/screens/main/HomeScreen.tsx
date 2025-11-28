@@ -148,12 +148,10 @@ const {width} = Dimensions.get('window');
 
 // Live share base URL with fallback
 const getLiveShareBaseUrl = (): string => {
-  if (__DEV__) {
-    // In dev mode, try local first
-    return 'http://192.168.0.125:8000/live-share';
-  }
-  // In production, use live server
-  return 'https://safetnet-backend.onrender.com/live-share';
+  const base = __DEV__
+    ? 'http://192.168.0.125:8000/live-share'
+    : 'https://safetnet-backend.onrender.com/live-share';
+  return base.endsWith('/') ? base.slice(0, -1) : base;
 };
 
 const HomeScreen = ({navigation}: any) => {
@@ -215,7 +213,7 @@ const HomeScreen = ({navigation}: any) => {
   const alertTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownAnim = useRef(new Animated.Value(1)).current;
-  
+
   const cardRows: CategoryCard[][] = [];
   for (let i = 0; i < categoryCards.length; i += 2) {
     cardRows.push(categoryCards.slice(i, i + 2));
@@ -434,6 +432,7 @@ const HomeScreen = ({navigation}: any) => {
       try {
         const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
         await dispatchSOSAlert(sosMessage);
+        setActiveLiveShare(getActiveLiveShareSession());
         console.log('SOS alert sent from shake detection');
         // Notification and vibration already handled by shakeDetectionService
       } catch (error) {
@@ -452,7 +451,7 @@ const HomeScreen = ({navigation}: any) => {
     try {
       const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
       await dispatchSOSAlert(sosMessage);
-      
+      setActiveLiveShare(getActiveLiveShareSession());
       
       // Show success screen after alert is sent
     setShowSuccess(true);
@@ -831,18 +830,22 @@ const HomeScreen = ({navigation}: any) => {
           ? 'premium'
           : 'free';
       setLastLiveSharePlan(sessionPlanType);
-      await startLiveLocationShareUpdates(user.id, sessionId, coords, {
-        onSessionEnded: handleAutoLiveShareEnd,
-      });
-      setActiveLiveShare(getActiveLiveShareSession());
       const shareToken = session?.share_token || session?.shareToken;
       const liveShareBaseUrl = getLiveShareBaseUrl();
       const normalizedBase = liveShareBaseUrl.endsWith('/')
         ? liveShareBaseUrl.slice(0, -1)
         : liveShareBaseUrl;
       const shareLink = shareToken
-        ? `${normalizedBase}/${shareToken}`
+        ? `${normalizedBase}/${shareToken}/`
         : buildGoogleMapsUrl(coords.latitude, coords.longitude);
+      await startLiveLocationShareUpdates(user.id, sessionId, coords, {
+        onSessionEnded: handleAutoLiveShareEnd,
+        shareUrl: shareLink,
+        shareToken,
+        planType: sessionPlanType,
+        expiresAt: session?.expires_at || session?.expiresAt || null,
+      });
+      setActiveLiveShare(getActiveLiveShareSession());
       const message = isPremium
         ? `I'm sharing my live location. Track me here until I stop sharing:\n${shareLink}`
         : `I'm sharing my live location for the next 15 minutes. Track me here:\n${shareLink}`;
@@ -2011,7 +2014,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-    actionOverlay: {
+  actionOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
