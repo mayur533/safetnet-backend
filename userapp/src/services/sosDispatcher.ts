@@ -371,15 +371,29 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       console.log('Sending SOS to backend:', sosData);
       const sosResponse = await apiService.triggerSOS(userId, sosData);
       console.log('✅ SOS sent to backend successfully');
+      console.log('SOS Response:', JSON.stringify(sosResponse, null, 2));
 
       const liveSharePayload = sosResponse?.live_share;
+      console.log('Live share payload from backend:', liveSharePayload);
+      
       if (liveSharePayload?.share_url) {
         liveShareUrl = liveSharePayload.share_url;
+        console.log('✅ Live share URL from backend:', liveShareUrl);
       }
 
       const backendSession = liveSharePayload?.session;
       if (backendSession?.id) {
         try {
+          // Build URL if not provided
+          if (!liveShareUrl && backendSession.share_token) {
+            const liveShareBaseUrl = getLiveShareBaseUrl();
+            const normalizedBase = liveShareBaseUrl.endsWith('/')
+              ? liveShareBaseUrl.slice(0, -1)
+              : liveShareBaseUrl;
+            liveShareUrl = `${normalizedBase}/${backendSession.share_token}/`;
+            console.log('✅ Built live share URL from token:', liveShareUrl);
+          }
+          
           await startLiveLocationShareUpdates(userId, backendSession.id, location || undefined, {
             onSessionEnded: (payload) => {
               console.log('SOS live share session ended:', payload);
@@ -390,13 +404,12 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
             expiresAt: backendSession.expires_at || backendSession.expiresAt || null,
           });
           liveShareSession = getActiveLiveShareSession();
-          if (!liveShareUrl && backendSession.share_token) {
-            const liveShareBaseUrl = getLiveShareBaseUrl();
-            liveShareUrl = `${liveShareBaseUrl}/${backendSession.share_token}/`;
-          }
+          console.log('✅ Live share session started:', liveShareSession);
         } catch (error) {
           console.error('Failed to start live share updates from backend session:', error);
         }
+      } else {
+        console.warn('No backend session found in response');
       }
     } catch (error: any) {
       console.error('Error sending SOS to backend:', error);
@@ -449,10 +462,14 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   let securityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
 
   // Append live share URL to messages if available (not to police)
+  console.log('Before appending URL - liveShareUrl:', liveShareUrl);
   if (liveShareUrl) {
     const locationText = '\n\n📍 Track my live location: ' + liveShareUrl;
     familyMessage += locationText;
     securityMessage += locationText;
+    console.log('✅ Added live share URL to messages:', liveShareUrl);
+    console.log('Family message:', familyMessage);
+    console.log('Security message:', securityMessage);
     // Don't include live share URL in police message
   } else if (location) {
     // Fallback to static location if live share failed (not to police)
@@ -460,7 +477,10 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     const locationText = '\n\n📍 My location: ' + staticLocationUrl;
     familyMessage += locationText;
     securityMessage += locationText;
+    console.log('⚠️ Using fallback static location URL:', staticLocationUrl);
     // Don't include location URL in police message
+  } else {
+    console.warn('⚠️ No location or live share URL available for messages');
   }
 
   const sendSmsGroup = async (label: string, recipients: string[], body: string) => {

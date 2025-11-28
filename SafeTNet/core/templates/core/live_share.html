@@ -181,7 +181,8 @@
     <script>
       (function () {
         const shareToken = "{{ share_token }}";
-        const sessionEndpoint = `/api/user/public/live_location/${shareToken}/`;
+        const apiBaseUrl = "{{ api_base_url }}";
+        const sessionEndpoint = `${apiBaseUrl}/api/user/public/live_location/${shareToken}/`;
 
         let mapInstance = null;
         let userMarker = null;

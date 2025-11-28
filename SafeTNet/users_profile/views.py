@@ -448,6 +448,7 @@ class SOSTriggerView(APIView):
                     )
                     live_share.track_points.create(latitude=latitude, longitude=longitude)
                     base_url = getattr(settings, 'LIVE_SHARE_BASE_URL', 'https://safetnet-backend.onrender.com/live-share/')
+                    # Ensure base_url ends with / for consistency
                     if not base_url.endswith('/'):
                         base_url = f"{base_url}/"
                     live_share_url = f"{base_url}{live_share.share_token}/"
@@ -456,8 +457,10 @@ class SOSTriggerView(APIView):
                         'share_url': live_share_url,
                     }
                     logger.info(f"Live share session created for SOS: {user.email} -> {live_share_url}")
+                    logger.info(f"Live share payload: {live_share_payload}")
                 except Exception as exc:
-                    logger.error(f"Failed to start live sharing for SOS: {exc}")
+                    logger.error(f"Failed to start live sharing for SOS: {exc}", exc_info=True)
+                    live_share_payload = None
             
             # Send SMS to family contacts (both free and premium)
             try:
