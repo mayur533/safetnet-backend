@@ -42,16 +42,8 @@ SECRET_KEY = config('SECRET_KEY', default="django-insecure-5xl4(8z1!y&+nsci$=!@n
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
-EXTRA_HOSTS = [
-    '0.0.0.0',
-    '127.0.0.1',
-    '192.168.0.125',  # local LAN IP for physical devices
-    'safetnet.onrender.com',
-    'safetnet-backend.onrender.com',
-]
-for host in EXTRA_HOSTS:
-    if host not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(host)
+ALLOWED_HOSTS.append('safetnet.onrender.com')
+ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
 # Application definition
 
 INSTALLED_APPS = [
@@ -384,7 +376,6 @@ AUTH_USER_MODEL = 'users.User'
 
 # Google Maps API Configuration
 GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY', default=None)
-LIVE_SHARE_BASE_URL = config('LIVE_SHARE_BASE_URL', default='https://safetnet.onrender.com/live-share')
 
 # Firebase Cloud Messaging Configuration
 FCM_SERVER_KEY = config('FCM_SERVER_KEY', default=None)
