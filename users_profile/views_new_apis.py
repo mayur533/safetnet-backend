@@ -157,7 +157,7 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
                     'longitude': center[1],
                 }
                 if not source:
-                source = 'geofence_center'
+                    source = 'geofence_center'
 
         if location is None:
             continue
