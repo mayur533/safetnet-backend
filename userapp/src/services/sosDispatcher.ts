@@ -8,6 +8,7 @@ import {useSettingsStore, DEFAULT_SOS_TEMPLATE, DEFAULT_SOS_MESSAGES} from '../s
 import {useOfflineSosStore} from '../stores/offlineSosStore';
 import {useAuthStore} from '../stores/authStore';
 import {apiService} from './apiService';
+import {startLiveLocationShareUpdates, getActiveLiveShareSession} from './liveLocationShareService';
 
 // Import push notifications - use dynamic import to avoid bundling issues
 let PushNotification: any = null;
@@ -298,11 +299,30 @@ const getCurrentLocation = (): Promise<{latitude: number; longitude: number} | n
   });
 };
 
+/**
+ * Get live share base URL
+ */
+const getLiveShareBaseUrl = (): string => {
+  if (__DEV__) {
+    return 'http://192.168.0.125:8000/live-share';
+  }
+  return 'https://safetnet-backend.onrender.com/live-share';
+};
+
+/**
+ * Build Google Maps URL as fallback
+ */
+const buildGoogleMapsUrl = (latitude: number, longitude: number): string => {
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+};
+
 export const dispatchSOSAlert = async (message: string): Promise<DispatchResult> => {
   console.log('=== SOS Alert Dispatch ===');
   
   const user = useAuthStore.getState().user;
   const {contacts, primaryContactId} = useContactStore.getState();
+  const userPlan = user?.plan || 'free';
+  const isPremium = userPlan === 'premium';
   const sanitizedContacts = contacts
     .filter(contact => contact.phone)
     .map(contact => ({
@@ -316,6 +336,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
 
   let smsInitiated = false;
   let callInitiated = false;
+  let liveShareUrl: string | null = null;
 
   // Get current location
   let location = null;
@@ -328,6 +349,46 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     }
   } catch (error) {
     console.error('Error getting location:', error);
+  }
+
+  // Start live location sharing if user is authenticated
+  if (user?.id && location) {
+    try {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      const durationMinutes = isPremium ? 1440 : 30; // Premium: 24 hours, Free: 30 minutes (backend limit)
+      
+      console.log('Starting live location sharing for SOS...');
+      const response = await apiService.startLiveLocationShare(userId, durationMinutes);
+      const session = response?.session;
+      const sessionId = session?.id;
+      
+      if (sessionId) {
+        // Start location updates
+        await startLiveLocationShareUpdates(userId, sessionId, location, {
+          onSessionEnded: (payload) => {
+            console.log('SOS live share session ended:', payload);
+          },
+        });
+        
+        // Build share URL
+        const shareToken = session?.share_token || session?.shareToken;
+        const liveShareBaseUrl = getLiveShareBaseUrl();
+        const normalizedBase = liveShareBaseUrl.endsWith('/')
+          ? liveShareBaseUrl.slice(0, -1)
+          : liveShareBaseUrl;
+        liveShareUrl = shareToken
+          ? `${normalizedBase}/${shareToken}`
+          : buildGoogleMapsUrl(location.latitude, location.longitude);
+        
+        console.log('✅ Live location sharing started for SOS:', liveShareUrl);
+      }
+    } catch (error: any) {
+      console.error('Error starting live location sharing for SOS:', error);
+      // Continue with SOS even if live share fails
+      if (location) {
+        liveShareUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
+      }
+    }
   }
 
   // Send SOS to backend API
@@ -357,9 +418,23 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
 
   const settingsState = useSettingsStore.getState();
   const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
-  const familyMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
-  const policeMessage = messageTemplates.police || DEFAULT_SOS_MESSAGES.police;
-  const securityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
+  let familyMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
+  let securityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
+
+  // Append live share URL to messages if available (not to police)
+  if (liveShareUrl) {
+    const locationText = '\n\n📍 Track my live location: ' + liveShareUrl;
+    familyMessage += locationText;
+    securityMessage += locationText;
+    // Don't include live share URL in police message
+  } else if (location) {
+    // Fallback to static location if live share failed (not to police)
+    const staticLocationUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
+    const locationText = '\n\n📍 My location: ' + staticLocationUrl;
+    familyMessage += locationText;
+    securityMessage += locationText;
+    // Don't include location URL in police message
+  }
 
   const sendSmsGroup = async (label: string, recipients: string[], body: string) => {
     if (!recipients.length) {
@@ -396,9 +471,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   const securitySuccess = await sendSmsGroup('security officers', securityPhones, securityMessage);
   smsInitiated = smsInitiated || securitySuccess;
 
-  const policeSmsSuccess = await sendSmsGroup('police hotline', [POLICE_CONTACT.phone], policeMessage);
-  smsInitiated = smsInitiated || policeSmsSuccess;
-
+  // Only call police, don't send SMS
   try {
     await requestDirectCall(POLICE_CONTACT.phone);
     callInitiated = true;
