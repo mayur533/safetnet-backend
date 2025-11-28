@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SafeTNet Live Share</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background-color: #020617;
+        color: #f8fafc;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, rgba(59, 130, 246, 0.2), transparent 55%),
+          #020617;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 16px;
+      }
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 0 16px;
+      }
+      .card {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 24px;
+        padding: 24px;
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 20px 45px rgba(2, 6, 23, 0.8);
+      }
+      h1 {
+        font-size: 1.75rem;
+        margin: 0 0 0.5rem;
+      }
+      .token {
+        font-family: "JetBrains Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        color: #94a3b8;
+        word-break: break-all;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.9rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        background: rgba(16, 185, 129, 0.1);
+        color: #34d399;
+      }
+      .status.inactive {
+        background: rgba(148, 163, 184, 0.15);
+        color: #cbd5f5;
+      }
+      #map {
+        height: 480px;
+        border-radius: 24px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        overflow: hidden;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+      .status-note {
+        display: none;
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        color: #f97316;
+      }
+      .status-note.warning {
+        color: #fbbf24;
+      }
+      .status-note.info {
+        color: #cbd5f5;
+      }
+      .session-ended {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        border-radius: 24px;
+        border: 1px dashed rgba(148, 163, 184, 0.4);
+        background: rgba(15, 23, 42, 0.75);
+        color: #cbd5f5;
+        font-size: 1rem;
+        text-align: center;
+        padding: 24px;
+      }
+      .metric {
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        background: rgba(15, 23, 42, 0.9);
+        padding: 16px;
+      }
+      .metric label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #94a3b8;
+      }
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 1rem;
+        color: #e2e8f0;
+      }
+      #error-banner {
+        display: none;
+      }
+      @media (max-width: 640px) {
+        body {
+          padding: 16px 12px;
+        }
+        .card {
+          padding: 20px;
+        }
+        #map {
+          height: 360px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+          <div>
+            <h1>SafeTNet Live Tracking</h1>
+            <p class="token" id="share-token">{{ share_token }}</p>
+          </div>
+          <div id="session-status" class="status">
+            <span style="width:10px;height:10px;border-radius:999px;background:#34d399;"></span>
+            Live
+          </div>
+        </div>
+        <p id="status-note" class="status-note"></p>
+        <div class="grid" style="margin-top:1.25rem;">
+          <div class="metric">
+            <label>Started</label>
+            <strong id="started-at">—</strong>
+          </div>
+          <div class="metric">
+            <label>Expires</label>
+            <strong id="expires-at">—</strong>
+          </div>
+          <div class="metric">
+            <label>Last GPS ping</label>
+            <strong id="last-ping">—</strong>
+          </div>
+          <div class="metric">
+            <label>Coordinates</label>
+            <strong id="coordinates">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <div id="map"></div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      crossorigin=""
+    ></script>
+    <script>
+      (function () {
+        const shareToken = "{{ share_token }}";
+        const sessionEndpoint = `/api/user/public/live_location/${shareToken}/`;
+
+        let mapInstance = null;
+        let userMarker = null;
+        let pathLine = null;
+        let pollingActive = true;
+        let sessionEnded = false;
+        const statusNote = document.getElementById("status-note");
+
+        const statusEl = document.getElementById("session-status");
+        const startedEl = document.getElementById("started-at");
+        const expiresEl = document.getElementById("expires-at");
+        const lastPingEl = document.getElementById("last-ping");
+        const coordsEl = document.getElementById("coordinates");
+
+        const formatDateTime = (value) => {
+          if (!value) return "—";
+          try {
+            return new Date(value).toLocaleString();
+          } catch (err) {
+            return value;
+          }
+        };
+
+        const setStatus = (isActive, reason) => {
+          if (isActive) {
+            statusEl.classList.remove("inactive");
+            statusEl.innerHTML =
+              '<span style="width:10px;height:10px;border-radius:999px;background:#34d399;"></span> Live';
+            if (statusNote) {
+              statusNote.style.display = 'none';
+            }
+          } else {
+            statusEl.classList.add("inactive");
+            statusEl.innerHTML =
+              '<span style="width:10px;height:10px;border-radius:999px;background:#94a3b8;"></span> Ended';
+            if (statusNote) {
+              statusNote.style.display = 'block';
+              const isLimit = reason === 'limit';
+              statusNote.className = `status-note ${isLimit ? 'warning' : 'info'}`;
+              statusNote.textContent = isLimit
+                ? 'Live sharing automatically stopped: free plan limit reached.'
+                : 'Live sharing stopped by the user.';
+            }
+          }
+        };
+
+        const ensureMap = (lat, lng) => {
+          if (!mapInstance) {
+            mapInstance = L.map("map", { zoomControl: false }).setView([lat, lng], 15);
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+              attribution: "&copy; OpenStreetMap contributors",
+            }).addTo(mapInstance);
+            L.control
+              .zoom({
+                position: "bottomright",
+              })
+              .addTo(mapInstance);
+          } else {
+            mapInstance.setView([lat, lng], mapInstance.getZoom());
+          }
+
+          if (!userMarker) {
+            userMarker = L.circleMarker([lat, lng], {
+              radius: 10,
+              color: "#2563EB",
+              fillColor: "#60A5FA",
+              fillOpacity: 0.9,
+              weight: 5,
+            }).addTo(mapInstance);
+          } else {
+            userMarker.setLatLng([lat, lng]);
+          }
+        };
+
+        const showSessionEndedState = (message) => {
+          const mapContainer = document.getElementById("map");
+          if (mapInstance) {
+            mapInstance.remove();
+            mapInstance = null;
+          }
+          if (mapContainer && !sessionEnded) {
+            mapContainer.innerHTML = `<div class="session-ended">${message}</div>`;
+          }
+          sessionEnded = true;
+          pollingActive = false;
+        };
+
+        const showErrorMessage = (message) => {
+          const mapContainer = document.getElementById("map");
+          if (mapInstance) {
+            mapInstance.remove();
+            mapInstance = null;
+          }
+          if (mapContainer) {
+            mapContainer.innerHTML = `<div class="session-ended" style="color:#fecaca;">${message}</div>`;
+          }
+        };
+
+        const updateMapOverlays = (data) => {
+          if (!mapInstance || !data.current_location) return;
+
+          const { latitude, longitude } = data.current_location;
+
+          L.circle([latitude, longitude], {
+            radius: 75,
+            color: "rgba(37, 99, 235, 0.65)",
+            fillColor: "rgba(37,99,235,0.15)",
+            fillOpacity: 0.3,
+            weight: 1,
+          }).addTo(mapInstance);
+
+          if (pathLine) {
+            mapInstance.removeLayer(pathLine);
+            pathLine = null;
+          }
+          if (data.path_points && data.path_points.length) {
+            const coords = data.path_points
+              .filter((point) => typeof point.latitude === "number" && typeof point.longitude === "number")
+              .map((point) => [point.latitude, point.longitude]);
+            if (coords.length) {
+              pathLine = L.polyline(coords, {
+                color: "#F97316",
+                weight: 4,
+                opacity: 0.7,
+              }).addTo(mapInstance);
+            }
+          }
+
+        };
+
+        const updateUI = (data) => {
+          setStatus(data.is_active, data.stop_reason);
+          startedEl.textContent = formatDateTime(data.started_at);
+          expiresEl.textContent = formatDateTime(data.expires_at);
+          lastPingEl.textContent = formatDateTime(data.last_broadcast_at);
+          if (data.current_location && data.is_active) {
+            coordsEl.textContent = `${data.current_location.latitude.toFixed(5)}, ${
+              data.current_location.longitude.toFixed(5)
+            }`;
+            ensureMap(data.current_location.latitude, data.current_location.longitude);
+            updateMapOverlays(data);
+          } else if (!data.is_active) {
+            coordsEl.textContent = "—";
+            const reason =
+              data.stop_reason === 'limit'
+                ? 'Live sharing automatically stopped: free plan limit reached.'
+                : data.stop_reason === 'user'
+                ? 'Live sharing stopped by the user.'
+                : 'Live sharing session ended.';
+            showSessionEndedState(reason);
+          } else {
+            coordsEl.textContent = "No GPS lock yet";
+          }
+        };
+
+        const fetchSession = async () => {
+          try {
+            const response = await fetch(sessionEndpoint, { cache: "no-store" });
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(text || "Unable to load live location session. The share may have expired.");
+            }
+            const data = await response.json();
+            updateUI(data);
+            if (pollingActive) {
+              setTimeout(fetchSession, 2000);
+            }
+          } catch (error) {
+            console.error(error);
+            let message = "Unable to load live location session. The share may have expired.";
+            try {
+              if (error?.message) {
+                const parsed = JSON.parse(error.message);
+                message = parsed.error || parsed.detail || message;
+              }
+            } catch (parseError) {
+              message = error?.message || message;
+            }
+            showErrorMessage(message);
+            setTimeout(fetchSession, 3000);
+          }
+        };
+
+        fetchSession();
+      })();
+    </script>
+  </body>
+</html>
+

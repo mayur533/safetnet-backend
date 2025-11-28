@@ -15,8 +15,21 @@ from decouple import config
 import os
 import dj_database_url
 
+# Try to load dotenv, but don't fail if it's not installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ModuleNotFoundError:
+    # dotenv is optional - environment variables can be set directly
+    def load_dotenv(*_args, **_kwargs):
+        pass
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Check DATABASE_URL after load_dotenv() (it might be set in .env file)
+database_url = os.environ.get('DATABASE_URL', '').strip()
+is_render_service = os.environ.get('RENDER') == 'true'  # Render sets this automatically
 
 
 # Quick-start development settings - unsuitable for production
@@ -110,22 +123,24 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Render production: DATABASE_URL is automatically set when database is linked
 #   If not set, falls back to the hardcoded Render database URL below
 
-# Check if we're using a local or Render internal database (no SSL)
-database_url = os.environ.get('DATABASE_URL', '')
-is_local_db = database_url and ('localhost' in database_url or '127.0.0.1' in database_url)
-is_render_internal = database_url and ('.internal' in database_url)
+# Database configuration
+# Use the new database URL provided
+# External URL for connections from outside Render network
+# external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
+# # Internal URL for connections from within Render network
+# internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
+
 
 DATABASES = {
     "default": dj_database_url.config(
-        # This default is only used if DATABASE_URL env var is not set
-        # On Render, DATABASE_URL should always be set when database is linked
-        # Using internal URL for Render-to-Render connections
-        default="postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com:5432/safetnet",
+        default="postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg",
         conn_max_age=600,
-        # Require SSL for external DBs; disable for localhost or Render internal connections
-        ssl_require=not (is_local_db or is_render_internal) if database_url else True,
+        ssl_require=True,
     )
 }
+
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
 

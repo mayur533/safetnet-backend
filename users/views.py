@@ -27,7 +27,7 @@ from .serializers import (
     UserReplySerializer, UserDetailsSerializer
 )
 from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
-from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin
+from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -74,8 +74,8 @@ def logout(request):
 @api_view(['GET', 'PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def user_profile(request):
-    # Use select_related to optimize organization query
-    user = User.objects.select_related('organization').get(pk=request.user.pk)
+    # Use select_related and prefetch_related to optimize queries
+    user = User.objects.select_related('organization').prefetch_related('geofences', 'geofences__organization').get(pk=request.user.pk)
     
     if request.method == 'GET':
         serializer = UserSerializer(user)
@@ -414,15 +414,15 @@ class UserListViewSet(OrganizationIsolationMixin, ModelViewSet):
 
 class AlertViewSet(ModelViewSet):
     """
-    ViewSet for managing Alerts with organization isolation.
-    SUPER_ADMIN can see all alerts, SUB_ADMIN only sees alerts from their organization.
+    ViewSet for managing Alerts with geofence-based access.
+    All users (SUPER_ADMIN, SUB_ADMIN, security_officer, USER) can see alerts for their associated geofences.
     """
-    queryset = Alert.objects.select_related('geofence', 'user', 'resolved_by').all()
-    permission_classes = [IsAuthenticated, IsSuperAdminOrSubAdmin]
+    queryset = Alert.objects.select_related('geofence', 'user', 'resolved_by').prefetch_related('geofences', 'geofences__associated_users').all()
+    permission_classes = [IsAuthenticated, IsAuthenticatedOrReadOnlyForOwnGeofences]
     pagination_class = SubAdminPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['alert_type', 'severity', 'is_resolved', 'geofence']
-    search_fields = ['title', 'description', 'user__username', 'geofence__name']
+    search_fields = ['title', 'description', 'user__username', 'geofence__name', 'geofences__name']
     ordering_fields = ['created_at', 'severity', 'title']
     ordering = ['-created_at']
     
@@ -439,15 +439,55 @@ class AlertViewSet(ModelViewSet):
         if user.role == 'SUPER_ADMIN':
             return queryset
         
-        # SUB_ADMIN can only see alerts from their organization's geofences
-        if user.role == 'SUB_ADMIN' and user.organization:
-            return queryset.filter(geofence__organization=user.organization)
+        # Get all geofences the user has access to
+        user_geofences = set()
         
-        # Regular users see no data
+        # Add geofences from user's geofences field
+        user_geofences.update(user.geofences.all())
+        
+        # For SUB_ADMIN, also include all geofences from their organization
+        if user.role == 'SUB_ADMIN' and user.organization:
+            org_geofences = Geofence.objects.filter(organization=user.organization)
+            user_geofences.update(org_geofences)
+        
+        # For security officers, add their assigned geofence
+        if user.role == 'security_officer':
+            try:
+                from .models import SecurityOfficer
+                officer = SecurityOfficer.objects.filter(
+                    username=user.username
+                ).first()
+                if officer and officer.assigned_geofence:
+                    user_geofences.add(officer.assigned_geofence)
+            except:
+                pass
+        
+        # If user has geofences, filter alerts that have any of those geofences
+        if user_geofences:
+            # Filter alerts where geofences ManyToMany contains any of user's geofences
+            # OR legacy geofence field matches
+            geofence_ids = [g.id for g in user_geofences]
+            return queryset.filter(
+                Q(geofences__in=geofence_ids) | 
+                Q(geofence__in=geofence_ids)
+            ).distinct()
+        
         return queryset.none()
     
+    def get_permissions(self):
+        """
+        Override to allow all authenticated users to read alerts for their geofences.
+        """
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsSuperAdminOrSubAdmin()]
+    
     def perform_create(self, serializer):
-        serializer.save()
+        # Automatically set user if not provided
+        if not serializer.validated_data.get('user'):
+            serializer.save(user=self.request.user)
+        else:
+            serializer.save()
 
 
 class GlobalReportViewSet(ModelViewSet):
@@ -834,6 +874,13 @@ def send_notification(request):
     if serializer.is_valid():
         data = serializer.validated_data
         
+        # Handle multiple geofences
+        geofence_ids = []
+        if data.get('target_geofence_ids'):
+            geofence_ids = data['target_geofence_ids']
+        elif data.get('target_geofence_id'):
+            geofence_ids = [data['target_geofence_id']]
+        
         # Create notification
         notification = Notification.objects.create(
             notification_type=data['notification_type'],
@@ -841,6 +888,7 @@ def send_notification(request):
             message=data['message'],
             target_type=data['target_type'],
             target_geofence_id=data.get('target_geofence_id'),
+            target_geofences=geofence_ids,  # Store list of geofence IDs
             organization=request.user.organization,
             created_by=request.user
         )
@@ -853,9 +901,10 @@ def send_notification(request):
             )
             notification.target_officers.set(officers)
         
-        elif data['target_type'] == 'GEOFENCE_OFFICERS' and data.get('target_geofence_id'):
+        elif data['target_type'] == 'GEOFENCE_OFFICERS' and geofence_ids:
+            # Get officers from all selected geofences
             officers = SecurityOfficer.objects.filter(
-                assigned_geofence_id=data['target_geofence_id'],
+                assigned_geofence_id__in=geofence_ids,
                 organization=request.user.organization,
                 is_active=True
             )

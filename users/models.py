@@ -27,6 +27,7 @@ class User(AbstractUser):
         ('SUPER_ADMIN', 'Super Admin'),
         ('SUB_ADMIN', 'Sub Admin'),
         ('USER', 'User'),
+        ('security_officer', 'Security Officer'),
     ]
     
     role = models.CharField(
@@ -40,6 +41,12 @@ class User(AbstractUser):
         null=True,
         blank=True,
         related_name='users'
+    )
+    geofences = models.ManyToManyField(
+        'Geofence',
+        blank=True,
+        related_name='associated_users',
+        help_text='Geofences associated with this user for alert notifications'
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -133,9 +140,16 @@ class Alert(models.Model):
     geofence = models.ForeignKey(
         Geofence,
         on_delete=models.CASCADE,
-        related_name='alerts',
+        related_name='legacy_alerts',
         null=True,
-        blank=True
+        blank=True,
+        help_text='Legacy single geofence field (deprecated, use geofences instead)'
+    )
+    geofences = models.ManyToManyField(
+        Geofence,
+        blank=True,
+        related_name='alerts',
+        help_text='Geofences associated with this alert. All users, subadmins, and security officers associated with these geofences will see this alert.'
     )
     user = models.ForeignKey(
         User,
@@ -338,6 +352,11 @@ class Notification(models.Model):
         null=True,
         blank=True,
         related_name='notifications'
+    )
+    target_geofences = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='List of geofence IDs for multi-geofence notifications'
     )
     target_officers = models.ManyToManyField(
         SecurityOfficer,

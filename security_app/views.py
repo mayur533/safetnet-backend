@@ -6,10 +6,14 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
-
+from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 from users.models import SecurityOfficer
+from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
+from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
 
 from .permissions import IsSecurityOfficer
 from .serializers import (
@@ -21,6 +25,7 @@ from .serializers import (
     IncidentSerializer,
     NotificationSerializer,
     NotificationAcknowledgeSerializer,
+    OfficerLoginSerializer,
 )
 
 
@@ -43,14 +48,28 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Only alerts assigned to this officer; default to organization fallback if no assignment
-        try:
-            officer = SecurityOfficer.objects.get(email=user.email)
-            return SOSAlert.objects.filter(is_deleted=False, assigned_officer=officer, status__in=['pending', 'accepted'])
-        except SecurityOfficer.DoesNotExist:
-            if getattr(user, 'organization_id', None):
-                return SOSAlert.objects.filter(is_deleted=False, user__organization_id=user.organization_id, status__in=['pending', 'accepted'])
-            return SOSAlert.objects.none()
+
+        # For Security Officers → show SOS alerts assigned to them or their geofence
+        if hasattr(user, 'securityofficerprofile'):
+            officer = user.securityofficerprofile
+            return SOSAlert.objects.filter(
+                Q(is_deleted=False),
+                Q(assigned_officer=officer) | Q(geofence=officer.geofence)
+            )
+
+        # For Sub-Admins → show SOS alerts within their managed geofence
+        elif hasattr(user, 'subadminprofile'):
+            return SOSAlert.objects.filter(
+                is_deleted=False,
+                geofence=user.subadminprofile.geofence
+            )
+
+        # For Main Admins → see all active alerts
+        elif user.is_superuser:
+            return SOSAlert.objects.filter(is_deleted=False)
+
+        # For normal users → show only their own alerts
+        return SOSAlert.objects.filter(is_deleted=False, user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -67,31 +86,17 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         instance.is_deleted = True
         instance.save(update_fields=['is_deleted'])
 
+    # ✅ Allow officers to update any SOS (their own or others)
     def update(self, request, *args, **kwargs):
-        # Only assigned officer can update
-        alert = self.get_object()
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
-        if alert.assigned_officer_id and alert.assigned_officer_id != officer.id:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
         return super().update(request, *args, **kwargs)
 
+    # ✅ Same for partial updates (PATCH)
     def partial_update(self, request, *args, **kwargs):
-        # Enforce same rule on PATCH
-        alert = self.get_object()
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
-        if alert.assigned_officer_id and alert.assigned_officer_id != officer.id:
-            return Response({'detail': 'Only the assigned officer may update this alert.'}, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
     def active(self, request):
-        qs = self.get_queryset().filter(status='active')
+        qs = self.get_queryset().filter(status__in=['pending', 'accepted'])
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 
@@ -100,6 +105,7 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         qs = self.get_queryset().filter(status='resolved')
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
+
 
 
 class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
@@ -147,27 +153,57 @@ class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         updated_case = serializer.save()
         
         return Response(CaseSerializer(updated_case).data)
+    
+    @action(detail=True, methods=['post'])
+    def accept(self, request, pk=None):
+        """Officer accepts a case."""
+        case = self.get_object()
+        case.status = 'accepted'
+        case.save(update_fields=['status'])
+        return Response({'detail': 'Case accepted successfully.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Officer rejects a case."""
+        case = self.get_object()
+        case.status = 'open'  # or 'rejected' if you add that option in STATUS_CHOICES
+        case.save(update_fields=['status'])
+        return Response({'detail': 'Case rejected successfully.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def resolve(self, request, pk=None):
+        """Mark a case as resolved and also update the linked SOS alert."""
+        case = self.get_object()
+        case.status = 'resolved'
+        case.save(update_fields=['status'])
+
+        # Also mark the linked SOS alert as resolved
+        if case.sos_alert:
+            case.sos_alert.status = 'resolved'
+            case.sos_alert.save(update_fields=['status'])
+
+        return Response({'detail': 'Case resolved successfully.'}, status=status.HTTP_200_OK)
+
 
 
 class NavigationView(OfficerOnlyMixin, APIView):
-    def post(self, request):
+    def get(self, request):
         """
-        Calculate route from officer location to target coordinates
-        Expected input: {"from_lat": 18.5204, "from_lng": 73.8567, "to_lat": 18.5310, "to_lng": 73.8440}
+        Calculate route from officer location to target coordinates using GET parameters.
+        Example: /api/navigation/?from_lat=18.5204&from_lng=73.8567&to_lat=18.5310&to_lng=73.8440
         """
         try:
-            from_lat = float(request.data.get('from_lat'))
-            from_lng = float(request.data.get('from_lng'))
-            to_lat = float(request.data.get('to_lat'))
-            to_lng = float(request.data.get('to_lng'))
-        except (TypeError, ValueError, KeyError):
+            from_lat = float(request.query_params.get('from_lat'))
+            from_lng = float(request.query_params.get('from_lng'))
+            to_lat = float(request.query_params.get('to_lat'))
+            to_lng = float(request.query_params.get('to_lng'))
+        except (TypeError, ValueError):
             return Response({
                 'error': 'Invalid or missing coordinates. Expected: from_lat, from_lng, to_lat, to_lng'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get route information from Google Maps API
         route_data = self._get_route_from_google_maps(from_lat, from_lng, to_lat, to_lng)
-        
+
         if route_data.get('error'):
             return Response(route_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -178,15 +214,11 @@ class NavigationView(OfficerOnlyMixin, APIView):
         })
 
     def _get_route_from_google_maps(self, from_lat, from_lng, to_lat, to_lng):
-        """
-        Get route information from Google Maps Directions API
-        """
         import requests
         from django.conf import settings
-        
+
         api_key = getattr(settings, 'GOOGLE_MAPS_API_KEY', None)
         if not api_key:
-            # Fallback to haversine calculation if no API key
             return self._get_fallback_route(from_lat, from_lng, to_lat, to_lng)
 
         url = "https://maps.googleapis.com/maps/api/directions/json"
@@ -194,7 +226,7 @@ class NavigationView(OfficerOnlyMixin, APIView):
             'origin': f"{from_lat},{from_lng}",
             'destination': f"{to_lat},{to_lng}",
             'key': api_key,
-            'mode': 'driving',  # Can be changed to 'walking', 'bicycling', 'transit'
+            'mode': 'driving',
             'units': 'metric'
         }
 
@@ -208,15 +240,11 @@ class NavigationView(OfficerOnlyMixin, APIView):
 
             route = data['routes'][0]
             leg = route['legs'][0]
-            
-            # Extract polyline
+
             polyline = route['overview_polyline']['points']
-            
-            # Extract distance and duration
-            distance_km = leg['distance']['value'] / 1000  # Convert meters to km
-            duration_minutes = leg['duration']['value'] / 60  # Convert seconds to minutes
-            
-            # Extract step-by-step directions
+            distance_km = leg['distance']['value'] / 1000
+            duration_minutes = leg['duration']['value'] / 60
+
             steps = []
             for step in leg['steps']:
                 steps.append({
@@ -240,17 +268,15 @@ class NavigationView(OfficerOnlyMixin, APIView):
 
     def _get_fallback_route(self, from_lat, from_lng, to_lat, to_lng):
         """
-        Fallback route calculation using haversine distance when Google Maps API is not available
+        Fallback route calculation using haversine distance if Google Maps API is unavailable.
         """
-        distance_km = haversine_distance_km(from_lat, from_lng, to_lat, to_lng)
-        
-        # Estimate ETA based on average driving speed (40 km/h)
+        distance_km = self.haversine_distance_km(from_lat, from_lng, to_lat, to_lng)
         eta_minutes = round((distance_km / 40.0) * 60) if distance_km else 0
-        
+
         return {
             'distance_km': round(distance_km, 2),
             'duration_minutes': eta_minutes,
-            'polyline': None,  # No polyline available without API
+            'polyline': None,
             'steps': [
                 'Head towards target using best available route',
                 'Follow primary roads',
@@ -260,6 +286,17 @@ class NavigationView(OfficerOnlyMixin, APIView):
             'note': 'Route calculated using straight-line distance. For detailed directions, configure Google Maps API key.'
         }
 
+    @staticmethod
+    def haversine_distance_km(lat1, lon1, lat2, lon2):
+        import math
+        R = 6371  # Earth radius in km
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
 
 class IncidentsView(OfficerOnlyMixin, APIView, PageNumberPagination):
     page_size_query_param = 'page_size'
@@ -327,91 +364,99 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         from .serializers import OfficerProfileSerializer
         serializer = OfficerProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        instance = serializer.save()
+
+        if 'last_latitude' in serializer.validated_data and 'last_longitude' in serializer.validated_data:
+            instance.last_seen_at = timezone.now()
+            instance.save(update_fields=['last_seen_at', 'updated_at'])
+
+        return Response(OfficerProfileSerializer(instance).data)
 
 
 class OfficerLoginView(APIView):
+    """
+    API endpoint for security officer login.
+    
+    Accepts POST request with username and password.
+    Returns JWT access and refresh tokens along with user information.
+    
+    User must have role="security_officer" to login.
+    
+    Example request:
+    {
+        "username": "officer1@example.com",
+        "password": "OfficerPassword123!"
+    }
+    
+    Example response:
+    {
+        "access": "eyJhbGci...",
+        "refresh": "eyJhbGci...",
+        "user": {
+            "id": 12,
+            "username": "officer1@example.com",
+            "email": "officer1@example.com",
+            "role": "security_officer"
+        }
+    }
+    """
     authentication_classes = []
     permission_classes = []
 
+    def get(self, request):
+        """Return API documentation for login endpoint"""
+        return Response({
+            'endpoint': '/api/security/login/',
+            'method': 'POST',
+            'description': 'Security Officer Login API',
+            'requirements': {
+                'user_role': 'security_officer',
+                'user_status': 'is_active=True'
+            },
+            'request_body': {
+                'username': 'string (required)',
+                'password': 'string (required)'
+            },
+            'example_request': {
+                'username': 'test_officer',
+                'password': 'TestOfficer123!'
+            },
+            'response': {
+                'access': 'JWT access token (string)',
+                'refresh': 'JWT refresh token (string)',
+                'user': {
+                    'id': 'integer',
+                    'username': 'string',
+                    'email': 'string',
+                    'role': 'security_officer'
+                }
+            },
+            'curl_example': 'curl -X POST "https://your-domain.com/api/security/login/" -H "Content-Type: application/json" -d \'{"username": "test_officer", "password": "TestOfficer123!"}\''
+        }, status=status.HTTP_200_OK)
+
     def post(self, request):
-        from django.contrib.auth import get_user_model
         from rest_framework_simplejwt.tokens import RefreshToken
 
-        username = request.data.get('username')
-        email = request.data.get('email')  # Allow email as alternative identifier
-        password = request.data.get('password')
+        # Validate input and authenticate using serializer
+        serializer = OfficerLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         
-        if not password:
-            return Response({'detail': 'Password is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Get authenticated user from serializer
+        user = serializer.validated_data['user']
         
-        if not username and not email:
-            return Response({'detail': 'Username or email is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Authenticate against SecurityOfficer directly
-        try:
-            if username:
-                officer = SecurityOfficer.objects.get(username=username, is_active=True)
-            elif email:
-                officer = SecurityOfficer.objects.get(email=email, is_active=True)
-            else:
-                return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Check password
-        if not officer.password or not officer.check_password(password):
-            return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Get or create User object for this officer (needed for JWT tokens)
-        # Use username if available, otherwise generate one from email or name
-        User = get_user_model()
-        user_username = officer.username
-        if not user_username:
-            # Generate username from email or name
-            if officer.email:
-                user_username = officer.email.split('@')[0]
-            else:
-                user_username = f'officer_{officer.id}'
-            # Ensure uniqueness
-            counter = 1
-            original_username = user_username
-            while User.objects.filter(username=user_username).exists():
-                user_username = f'{original_username}_{counter}'
-                counter += 1
-        
-        user, created = User.objects.get_or_create(
-            username=user_username,
-            defaults={
-                'email': officer.email or f'{user_username}@safetnet.com',
-                'first_name': officer.name.split()[0] if officer.name.split() else '',
-                'last_name': ' '.join(officer.name.split()[1:]) if len(officer.name.split()) > 1 else '',
-                'role': 'USER',  # Security officers use USER role
-                'organization': officer.organization,
-                'is_active': True,
-            }
-        )
-        
-        # Update user email if it changed
-        if officer.email and user.email != officer.email:
-            user.email = officer.email
-            user.save()
-
-        # Determine final username to return (officer's username or generated one)
-        final_username = officer.username or user_username
-        
+        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
+        
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'officer': {
-                'id': officer.id,
-                'name': officer.name,
-                'username': final_username,
-                'email': officer.email,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'role': user.role,
             }
-        })
+        }, status=status.HTTP_200_OK)
 
 
 class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):
@@ -517,4 +562,149 @@ class DashboardView(OfficerOnlyMixin, APIView):
             },
             'last_updated': now.isoformat()
         })
+
+
+class OfficerLiveLocationShareView(OfficerOnlyMixin, APIView):
+    """
+    Security officer live location sharing endpoints.
+    POST /api/security/live_location/start/ - Start live location sharing
+    GET /api/security/live_location/ - Get active sessions
+    """
+    
+    def post(self, request):
+        """Start live location sharing for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Stop any existing active sessions
+        LiveLocationShare.objects.filter(
+            security_officer=officer,
+            is_active=True
+        ).update(is_active=False, stop_reason='user')
+        
+        serializer = LiveLocationShareCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            duration_minutes = serializer.validated_data.get('duration_minutes', 1440)  # Default 24 hours for officers
+            
+            # Create live location share session
+            expires_at = timezone.now() + timedelta(minutes=duration_minutes)
+            live_share = LiveLocationShare.objects.create(
+                security_officer=officer,
+                expires_at=expires_at,
+                last_broadcast_at=timezone.now(),
+                plan_type='premium',  # Officers always get premium
+            )
+            
+            # Create initial track point if provided
+            initial_latitude = serializer.validated_data.get('initial_latitude')
+            initial_longitude = serializer.validated_data.get('initial_longitude')
+            if initial_latitude is not None and initial_longitude is not None:
+                LiveLocationTrackPoint.objects.create(
+                    share=live_share,
+                    latitude=initial_latitude,
+                    longitude=initial_longitude
+                )
+            
+            return Response({
+                'message': 'Live location sharing started',
+                'session': LiveLocationShareSerializer(live_share).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Get active live location sharing sessions for officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        sessions = LiveLocationShare.objects.filter(
+            security_officer=officer,
+            is_active=True,
+            expires_at__gt=timezone.now()
+        ).order_by('-started_at')
+        
+        serializer = LiveLocationShareSerializer(sessions, many=True)
+        return Response({'sessions': serializer.data})
+
+
+class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
+    """
+    Security officer live location sharing detail endpoints.
+    PATCH /api/security/live_location/<session_id>/ - Update location
+    DELETE /api/security/live_location/<session_id>/ - Stop sharing
+    """
+    
+    def patch(self, request, session_id):
+        """Update live location for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            live_share = LiveLocationShare.objects.get(
+                id=session_id,
+                security_officer=officer
+            )
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not live_share.is_active or live_share.expires_at <= timezone.now():
+            live_share.is_active = False
+            live_share.stop_reason = 'expired'
+            live_share.save(update_fields=['is_active', 'stop_reason'])
+            return Response({'error': 'Live location session has ended'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        
+        if latitude is None or longitude is None:
+            return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            lat = float(latitude)
+            lng = float(longitude)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid latitude/longitude values'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        live_share.current_location = {'latitude': lat, 'longitude': lng}
+        live_share.last_broadcast_at = timezone.now()
+        live_share.save(update_fields=['current_location', 'last_broadcast_at'])
+
+        # Log track point once per minute
+        last_track_point = live_share.track_points.order_by('-recorded_at').first()
+        if not last_track_point or (timezone.now() - last_track_point.recorded_at) >= timedelta(minutes=1):
+            LiveLocationTrackPoint.objects.create(
+                share=live_share,
+                latitude=lat,
+                longitude=lng
+            )
+        
+        return Response({'status': 'updated'}, status=status.HTTP_200_OK)
+    
+    def delete(self, request, session_id):
+        """Stop live location sharing for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            live_share = LiveLocationShare.objects.get(
+                id=session_id,
+                security_officer=officer
+            )
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        live_share.is_active = False
+        live_share.expires_at = timezone.now()
+        live_share.current_location = None
+        live_share.stop_reason = 'user'
+        live_share.save(update_fields=['is_active', 'expires_at', 'current_location', 'stop_reason'])
+        return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
 

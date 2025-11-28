@@ -67,14 +67,43 @@ class UserLoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    geofences = serializers.SerializerMethodField()
+    geofence_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Geofence.objects.all(),
+        source='geofences',
+        write_only=True,
+        required=False
+    )
+    
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'date_joined')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'date_joined', 'geofences', 'geofence_ids')
         read_only_fields = ('id', 'date_joined')
         extra_kwargs = {
             'username': {'required': False},
             'email': {'required': False},
         }
+    
+    def get_geofences(self, obj):
+        """Return geofence details for the user"""
+        # Import here to avoid circular import
+        geofences = obj.geofences.all()
+        if not geofences.exists():
+            return []
+        
+        # Return simplified geofence data to avoid circular imports
+        return [
+            {
+                'id': g.id,
+                'name': g.name,
+                'description': g.description,
+                'organization_name': g.organization.name if g.organization else None,
+                'active': g.active,
+                'center_point': g.get_center_point(),
+            }
+            for g in geofences
+        ]
 
 
 ## Removed SubAdminProfile serializers as the model is deleted
@@ -142,28 +171,98 @@ class UserListSerializer(serializers.ModelSerializer):
 
 
 class AlertSerializer(serializers.ModelSerializer):
-    geofence_name = serializers.CharField(source='geofence.name', read_only=True)
-    user_username = serializers.CharField(source='user.username', read_only=True)
-    resolved_by_username = serializers.CharField(source='resolved_by.username', read_only=True)
+    geofence_name = serializers.CharField(source='geofence.name', read_only=True, allow_null=True)
+    geofence_details = serializers.SerializerMethodField()
+    geofences = serializers.SerializerMethodField()
+    geofence_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Geofence.objects.all(),
+        source='geofences',
+        write_only=True,
+        required=False
+    )
+    user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
+    resolved_by_username = serializers.CharField(source='resolved_by.username', read_only=True, allow_null=True)
     
     class Meta:
         model = Alert
         fields = (
-            'id', 'geofence', 'geofence_name', 'user', 'user_username',
-            'alert_type', 'severity', 'title', 'description', 'metadata',
+            'id', 'geofence', 'geofence_name', 'geofence_details', 'geofences', 'geofence_ids',
+            'user', 'user_username', 'alert_type', 'severity', 'title', 'description', 'metadata',
             'is_resolved', 'resolved_at', 'resolved_by_username',
             'created_at', 'updated_at'
         )
         read_only_fields = ('id', 'created_at', 'updated_at', 'resolved_at')
+    
+    def get_geofence_details(self, obj):
+        """Return full geofence details if legacy geofence exists"""
+        if obj.geofence:
+            return {
+                'id': obj.geofence.id,
+                'name': obj.geofence.name,
+                'description': obj.geofence.description,
+                'organization_name': obj.geofence.organization.name if obj.geofence.organization else None,
+                'active': obj.geofence.active,
+                'center_point': obj.geofence.get_center_point(),
+                'polygon_json': obj.geofence.polygon_json
+            }
+        return None
+    
+    def get_geofences(self, obj):
+        """Return geofence details for all associated geofences"""
+        geofences = obj.geofences.all()
+        if not geofences.exists() and obj.geofence:
+            # Fallback to legacy geofence if no geofences set
+            geofences = [obj.geofence]
+        
+        return [
+            {
+                'id': g.id,
+                'name': g.name,
+                'description': g.description,
+                'organization_name': g.organization.name if g.organization else None,
+                'active': g.active,
+                'center_point': g.get_center_point(),
+            }
+            for g in geofences
+        ]
 
 
 class AlertCreateSerializer(serializers.ModelSerializer):
+    geofence_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Geofence.objects.all(),
+        source='geofences',
+        required=False,
+        help_text='List of geofence IDs to associate with this alert'
+    )
+    
     class Meta:
         model = Alert
         fields = (
-            'geofence', 'user', 'alert_type', 'severity', 'title', 
+            'geofence', 'geofence_ids', 'user', 'alert_type', 'severity', 'title', 
             'description', 'metadata'
         )
+        extra_kwargs = {
+            'geofence': {'required': False, 'allow_null': True},
+        }
+    
+    def create(self, validated_data):
+        # Handle geofences
+        geofences = validated_data.pop('geofences', [])
+        
+        # If geofence_ids not provided but legacy geofence is, add it to geofences
+        if not geofences and validated_data.get('geofence'):
+            geofences = [validated_data['geofence']]
+        
+        # Create alert
+        alert = Alert.objects.create(**validated_data)
+        
+        # Add geofences
+        if geofences:
+            alert.geofences.set(geofences)
+        
+        return alert
 
 
 class GlobalReportSerializer(serializers.ModelSerializer):
@@ -259,6 +358,7 @@ class IncidentCreateSerializer(serializers.ModelSerializer):
 
 class NotificationSerializer(serializers.ModelSerializer):
     target_geofence_name = serializers.CharField(source='target_geofence.name', read_only=True)
+    target_geofences_names = serializers.SerializerMethodField()
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True)
     target_officers_names = serializers.StringRelatedField(source='target_officers', many=True, read_only=True)
@@ -269,8 +369,8 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = (
             'id', 'notification_type', 'title', 'message', 'target_type',
-            'target_geofence', 'target_geofence_name', 'target_officers',
-            'target_officers_names', 'organization', 'organization_name',
+            'target_geofence', 'target_geofence_name', 'target_geofences', 'target_geofences_names',
+            'target_officers', 'target_officers_names', 'organization', 'organization_name',
             'is_sent', 'sent_at', 'created_by_username', 'created_at', 'updated_at',
             'read_users', 'is_read'
         )
@@ -282,6 +382,14 @@ class NotificationSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user') and request.user.is_authenticated:
             return obj.read_users.filter(id=request.user.id).exists()
         return False
+    
+    def get_target_geofences_names(self, obj):
+        """Get names of target geofences from the JSONField"""
+        if obj.target_geofences:
+            from .models import Geofence
+            geofences = Geofence.objects.filter(id__in=obj.target_geofences)
+            return [{'id': g.id, 'name': g.name} for g in geofences]
+        return []
 
 
 class NotificationCreateSerializer(serializers.ModelSerializer):
@@ -305,6 +413,11 @@ class NotificationSendSerializer(serializers.Serializer):
     message = serializers.CharField()
     target_type = serializers.ChoiceField(choices=Notification.TARGET_TYPES)
     target_geofence_id = serializers.IntegerField(required=False, allow_null=True)
+    target_geofence_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        allow_empty=True
+    )
     target_officer_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False,
@@ -320,6 +433,17 @@ class NotificationSendSerializer(serializers.Serializer):
                     raise serializers.ValidationError("Geofence does not belong to your organization.")
             except Geofence.DoesNotExist:
                 raise serializers.ValidationError("Geofence not found.")
+        return value
+    
+    def validate_target_geofence_ids(self, value):
+        if value:
+            geofences = Geofence.objects.filter(id__in=value)
+            if len(geofences) != len(value):
+                raise serializers.ValidationError("Some geofences not found.")
+            # Ensure all geofences belong to the user's organization
+            org = self.context['request'].user.organization
+            if org and not all(g.organization == org for g in geofences):
+                raise serializers.ValidationError("Some geofences do not belong to your organization.")
         return value
     
     def validate_target_officer_ids(self, value):

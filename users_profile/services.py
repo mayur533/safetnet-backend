@@ -4,6 +4,7 @@ Use this file if you're having trouble with GDAL installation.
 """
 import logging
 from django.conf import settings
+from django.db.models import Q
 import requests
 import json
 
@@ -17,17 +18,20 @@ class SMSService:
     
     def __init__(self):
         self.twilio_client = None
-        self.exotel_sid = settings.EXOTEL_SID
-        self.exotel_token = settings.EXOTEL_TOKEN
-        self.exotel_app_id = settings.EXOTEL_APP_ID
+        self.exotel_sid = getattr(settings, 'EXOTEL_SID', None)
+        self.exotel_token = getattr(settings, 'EXOTEL_TOKEN', None)
+        self.exotel_app_id = getattr(settings, 'EXOTEL_APP_ID', None)
+        self.twilio_phone_number = getattr(settings, 'TWILIO_PHONE_NUMBER', None)
         
         # Initialize Twilio client if credentials are available
-        if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
+        twilio_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None)
+        twilio_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None)
+        if twilio_sid and twilio_token:
             try:
                 from twilio.rest import Client as TwilioClient
                 self.twilio_client = TwilioClient(
-                    settings.TWILIO_ACCOUNT_SID,
-                    settings.TWILIO_AUTH_TOKEN
+                    twilio_sid,
+                    twilio_token
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio client: {str(e)}")
@@ -73,7 +77,7 @@ class SMSService:
         try:
             message_obj = self.twilio_client.messages.create(
                 body=message,
-                from_=settings.TWILIO_PHONE_NUMBER,
+                from_=self.twilio_phone_number or '+1234567890',  # Fallback if not set
                 to=to_phone
             )
             logger.info(f"SMS sent via Twilio to {to_phone}: {message_obj.sid}")
@@ -88,7 +92,7 @@ class SMSService:
             url = f"https://api.exotel.com/v1/Accounts/{self.exotel_sid}/Sms/send.json"
             
             data = {
-                'From': settings.TWILIO_PHONE_NUMBER,  # Use configured phone number
+                'From': self.twilio_phone_number or '+1234567890',  # Use configured phone number or fallback
                 'To': to_phone,
                 'Body': message
             }
@@ -187,28 +191,156 @@ class EmergencyService:
         Coordinate emergency response for SOS event.
         """
         try:
-            # Send SMS to family contacts
-            family_contacts = user.family_contacts.all()
-            for contact in family_contacts:
-                try:
-                    self.sms_service.send_sos_alert(
-                        to_phone=contact.phone,
-                        user_name=user.name,
-                        user_phone=user.phone,
-                        location=sos_event.location
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send emergency SMS to {contact.phone}: {str(e)}")
+            if not user or not sos_event:
+                logger.warning("Emergency response called with None user or sos_event")
+                return False
             
-            # In a real implementation, you would also:
-            # 1. Call emergency services API
-            # 2. Send alerts to nearby community members
-            # 3. Notify security officers
-            # 4. Log the emergency event
+            # Send SMS to family contacts (if relationship exists)
+            try:
+                if hasattr(user, 'family_contacts'):
+                    family_contacts = user.family_contacts.all()
+                    for contact in family_contacts:
+                        try:
+                            if hasattr(contact, 'phone') and contact.phone:
+                                self.sms_service.send_sos_alert(
+                                    to_phone=contact.phone,
+                                    user_name=getattr(user, 'name', 'User'),
+                                    user_phone=getattr(user, 'phone', ''),
+                                    location=getattr(sos_event, 'location', None)
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to send emergency SMS to {getattr(contact, 'phone', 'unknown')}: {str(e)}")
+                else:
+                    logger.warning(f"User {getattr(user, 'email', 'unknown')} has no family_contacts relationship")
+            except Exception as e:
+                logger.error(f"Error accessing family contacts: {str(e)}")
             
-            logger.info(f"Emergency response triggered for user: {user.email}")
-            return True
+            security_payload = self._notify_security_officers(user, sos_event)
+            
+            logger.info(
+                "Emergency response triggered for user %s (security payload: %s)",
+                getattr(user, 'email', 'unknown'),
+                security_payload or 'no security officers available'
+            )
+            return security_payload or True
             
         except Exception as e:
-            logger.error(f"Emergency response failed for user {user.email}: {str(e)}")
+            logger.error(f"Emergency response failed for user {getattr(user, 'email', 'unknown') if user else 'None'}: {str(e)}")
             return False
+
+    def _notify_security_officers(self, user, sos_event):
+        """
+        Create SOS alerts for security officers and push in-app notifications.
+        """
+        try:
+            from security_app.models import SOSAlert as SecuritySOSAlert, Notification as OfficerNotification
+            from users.models import SecurityOfficer
+        except Exception as import_error:
+            logger.warning("Security app dependencies missing: %s", import_error)
+            return None
+
+        location = getattr(sos_event, 'location', None)
+        latitude, longitude = self._extract_coordinates(location)
+        primary_geofence = self._get_primary_geofence(user)
+
+        if (latitude is None or longitude is None) and primary_geofence:
+            center_point = primary_geofence.get_center_point()
+            if center_point and len(center_point) == 2:
+                latitude = latitude if latitude is not None else center_point[0]
+                longitude = longitude if longitude is not None else center_point[1]
+
+        latitude = latitude if latitude is not None else 0.0
+        longitude = longitude if longitude is not None else 0.0
+
+        try:
+            security_alert = SecuritySOSAlert.objects.create(
+                user=user,
+                geofence=primary_geofence,
+                location_lat=latitude,
+                location_long=longitude,
+                priority='high' if self._is_premium_user(user) else 'medium'
+            )
+        except Exception as create_error:
+            logger.error("Failed to create security SOS alert: %s", create_error)
+            return None
+
+        officers_qs = SecurityOfficer.objects.filter(is_active=True)
+        if user.organization:
+            officers_qs = officers_qs.filter(organization=user.organization)
+        if primary_geofence:
+            officers_qs = officers_qs.filter(Q(assigned_geofence=primary_geofence) | Q(assigned_geofence__isnull=True))
+
+        notified = 0
+        message = self._build_officer_message(user, latitude, longitude, primary_geofence)
+        for officer in officers_qs:
+            try:
+                OfficerNotification.objects.create(
+                    officer=officer,
+                    title="Emergency SOS alert",
+                    message=message,
+                    notification_type='sos_alert',
+                    sos_alert=security_alert,
+                )
+                notified += 1
+            except Exception as notification_error:
+                logger.error("Failed to notify officer %s: %s", officer.id, notification_error)
+
+        logger.info(
+            "Security SOS alert #%s created for %s (officers notified: %s)",
+            security_alert.id,
+            getattr(user, 'email', 'unknown'),
+            notified
+        )
+
+        return {
+            'security_alert_id': security_alert.id,
+            'officers_notified': notified,
+            'geofence_id': primary_geofence.id if primary_geofence else None,
+        }
+
+    @staticmethod
+    def _extract_coordinates(location):
+        if not location:
+            return None, None
+        latitude = None
+        longitude = None
+
+        try:
+            if isinstance(location, dict):
+                latitude = location.get('latitude') or location.get('lat')
+                longitude = location.get('longitude') or location.get('lng')
+            else:
+                longitude = getattr(location, 'x', None)
+                latitude = getattr(location, 'y', None)
+        except Exception as coord_error:
+            logger.warning("Could not extract coordinates from %s: %s", location, coord_error)
+
+        return latitude, longitude
+
+    @staticmethod
+    def _get_primary_geofence(user):
+        try:
+            if hasattr(user, 'geofences'):
+                return user.geofences.first()
+        except Exception as geo_error:
+            logger.warning("Failed to fetch primary geofence for %s: %s", getattr(user, 'email', 'unknown'), geo_error)
+        return None
+
+    @staticmethod
+    def _is_premium_user(user):
+        if hasattr(user, 'is_paid_user') and user.is_paid_user:
+            return True
+        if hasattr(user, 'is_premium') and user.is_premium:
+            return True
+        plan = getattr(user, 'plantype', '') or ''
+        return plan.lower() == 'premium'
+
+    @staticmethod
+    def _build_officer_message(user, latitude, longitude, geofence):
+        parts = [
+            f"{getattr(user, 'name', user.username)} triggered an SOS.",
+            f"Coords: {latitude:.5f}, {longitude:.5f}",
+        ]
+        if geofence:
+            parts.append(f"Geofence: {geofence.name}")
+        return " ".join(parts)

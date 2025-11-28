@@ -2,24 +2,30 @@
 Serializers for User models.
 """
 from rest_framework import serializers
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import User, FamilyContact, CommunityMembership, SOSEvent
+from .models import User, FamilyContact, CommunityMembership, SOSEvent, LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
     Serializer for user registration.
+    Maps app fields to User model fields.
     """
+    name = serializers.CharField(write_only=True)
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    plantype = serializers.CharField(required=False, allow_blank=True, allow_null=True, default='free')
     
     class Meta:
         model = User
-        fields = ('name', 'email', 'phone', 'password', 'password_confirm', 'plantype')
+        fields = ('name', 'email', 'phone', 'password', 'password_confirm', 'plantype', 'username')
         extra_kwargs = {
-            'plantype': {'default': 'free'}
+            'username': {'required': False},
+            'email': {'required': True}
         }
     
     def validate(self, attrs):
@@ -30,10 +36,32 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Create a new user."""
-        validated_data.pop('password_confirm')
+        password_confirm = validated_data.pop('password_confirm')
         password = validated_data.pop('password')
-        user = User.objects.create_user(**validated_data)
-        user.set_password(password)
+        name = validated_data.pop('name', '')
+        phone = validated_data.pop('phone', None)
+        plantype = validated_data.pop('plantype', 'free')
+        
+        # Split name into first_name and last_name
+        name_parts = name.split(' ', 1) if name else []
+        first_name = name_parts[0] if name_parts else ''
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+        
+        # Use email as username if username not provided
+        email = validated_data.get('email')
+        username = validated_data.pop('username', None) or email.split('@')[0]
+        
+        # Create user with actual model fields
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            password=password
+        )
+        
+        # Store phone and plantype in a way that can be accessed later if needed
+        # For now, we'll just save the user as-is since these fields don't exist on the model
         user.save()
         return user
 
@@ -51,13 +79,25 @@ class UserLoginSerializer(serializers.Serializer):
         password = attrs.get('password')
         
         if email and password:
-            user = authenticate(email=email, password=password)
-            if not user:
+            # Find user by email first, then authenticate with username
+            try:
+                user = User.objects.get(email=email)
+                # Try authenticating with username first, then email if username is None
+                authenticated_user = None
+                if user.username:
+                    authenticated_user = authenticate(username=user.username, password=password)
+                if not authenticated_user:
+                    # Try with email as username
+                    authenticated_user = authenticate(username=email, password=password)
+                
+                if not authenticated_user:
+                    raise serializers.ValidationError('Invalid email or password.')
+                if not authenticated_user.is_active:
+                    raise serializers.ValidationError('User account is disabled.')
+                attrs['user'] = authenticated_user
+                return attrs
+            except User.DoesNotExist:
                 raise serializers.ValidationError('Invalid email or password.')
-            if not user.is_active:
-                raise serializers.ValidationError('User account is disabled.')
-            attrs['user'] = user
-            return attrs
         else:
             raise serializers.ValidationError('Must include email and password.')
 
@@ -65,34 +105,214 @@ class UserLoginSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     """
     Serializer for user profile (read and update).
+    Maps User model fields to app-expected format.
     """
+    name = serializers.SerializerMethodField()
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    plantype = serializers.SerializerMethodField()
+    planexpiry = serializers.SerializerMethodField()
+    plan_details = serializers.SerializerMethodField()
     location = serializers.SerializerMethodField()
-    is_premium = serializers.ReadOnlyField()
+    is_premium = serializers.SerializerMethodField()
+    is_paid_user = serializers.SerializerMethodField()
+    geofences = serializers.SerializerMethodField()
+    geofence_ids = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = (
             'id', 'name', 'email', 'phone', 'plantype', 
-            'planexpiry', 'location', 'is_premium', 
-            'date_joined', 'last_login'
+            'planexpiry', 'plan_details', 'location', 'is_premium', 'is_paid_user',
+            'date_joined', 'last_login', 'first_name', 'last_name', 'username',
+            'geofences', 'geofence_ids'
         )
-        read_only_fields = ('id', 'email', 'date_joined', 'last_login')
+        read_only_fields = ('id', 'email', 'date_joined', 'last_login', 'username')
+    
+    def get_geofence_ids(self, obj):
+        """Return list of geofence IDs for writing"""
+        return [g.id for g in obj.geofences.all()]
+    
+    def get_geofences(self, obj):
+        """Return geofence details for the user"""
+        geofences = obj.geofences.all()
+        if not geofences.exists():
+            return []
+        
+        return [
+            {
+                'id': g.id,
+                'name': g.name,
+                'description': g.description,
+                'organization_name': g.organization.name if g.organization else None,
+                'active': g.active,
+                'center_point': g.get_center_point(),
+            }
+            for g in geofences
+        ]
+    
+    def get_name(self, obj):
+        """Get user's full name."""
+        if obj.first_name or obj.last_name:
+            return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+        return obj.username or obj.email.split('@')[0]
     
     def get_location(self, obj):
         """Get location as a dictionary."""
-        return obj.get_location_dict()
+        # Check if user has location attribute/method
+        if hasattr(obj, 'get_location_dict'):
+            return obj.get_location_dict()
+        # Return empty if no location method
+        return None
+    
+    def get_is_paid_user(self, obj):
+        """Check if user is a paid user."""
+        # Check UserDetails model for plan information
+        try:
+            from users.models import UserDetails
+            user_details = UserDetails.objects.filter(username=obj.username).first()
+            if user_details and user_details.price > 0:
+                return True
+        except:
+            pass
+        # Check if user has is_paid_user attribute
+        if hasattr(obj, 'is_paid_user'):
+            return obj.is_paid_user is True or obj.is_paid_user == 'true' or obj.is_paid_user == 1
+        # Fallback: Check email or username for premium indicator
+        email = getattr(obj, 'email', '').lower()
+        username = getattr(obj, 'username', '').lower()
+        if 'premium' in email or 'premium' in username:
+            return True
+        return False
+    
+    def get_is_premium(self, obj):
+        """Check if user has premium plan."""
+        # Check UserDetails model for plan information
+        try:
+            from users.models import UserDetails
+            user_details = UserDetails.objects.filter(username=obj.username).first()
+            if user_details and user_details.price > 0:
+                return True
+        except:
+            pass
+        # Check is_paid_user first (highest priority)
+        is_paid = self.get_is_paid_user(obj)
+        if is_paid:
+            return True
+        # Check if user has premium-related attributes
+        if hasattr(obj, 'is_premium'):
+            try:
+                if obj.is_premium:
+                    return True
+            except:
+                pass
+        if hasattr(obj, 'plantype'):
+            if obj.plantype and obj.plantype.lower() == 'premium':
+                return True
+        if hasattr(obj, 'plan_type'):
+            if obj.plan_type and obj.plan_type.upper() == 'PREMIUM':
+                return True
+        # Fallback: Check email or username for premium indicator
+        email = getattr(obj, 'email', '').lower()
+        username = getattr(obj, 'username', '').lower()
+        if 'premium' in email or 'premium' in username:
+            return True
+        # Check role - if role indicates premium
+        role = getattr(obj, 'role', '').upper()
+        if role in ['PREMIUM', 'PREMIUM_USER']:
+            return True
+        return False
+    
+    def get_plantype(self, obj):
+        """Get user's plan type from UserDetails."""
+        try:
+            from users.models import UserDetails
+            user_details = UserDetails.objects.filter(username=obj.username).first()
+            if user_details:
+                if user_details.price > 0:
+                    return 'premium'
+                return 'free'
+        except:
+            pass
+        # Fallback
+        if hasattr(obj, 'plantype'):
+            return obj.plantype
+        email = getattr(obj, 'email', '').lower()
+        username = getattr(obj, 'username', '').lower()
+        if 'premium' in email or 'premium' in username:
+            return 'premium'
+        return 'free'
+    
+    def get_planexpiry(self, obj):
+        """Get user's plan expiry date."""
+        try:
+            from users.models import UserDetails
+            user_details = UserDetails.objects.filter(username=obj.username).first()
+            if user_details and user_details.price > 0:
+                # For premium users, calculate expiry (30 days from now for monthly)
+                from datetime import date, timedelta
+                return date.today() + timedelta(days=30)
+        except:
+            pass
+        if hasattr(obj, 'planexpiry'):
+            return obj.planexpiry
+        return None
+    
+    def get_plan_details(self, obj):
+        """Get detailed plan information."""
+        try:
+            from users.models import UserDetails
+            user_details = UserDetails.objects.filter(username=obj.username).first()
+            if user_details:
+                plan_type = 'premium' if user_details.price > 0 else 'free'
+                return {
+                    'type': plan_type,
+                    'price': float(user_details.price),
+                    'status': user_details.status,
+                    'currency': 'USD',
+                    'billing_cycle': 'monthly' if user_details.price > 0 else None
+                }
+        except:
+            pass
+        return {
+            'type': 'free',
+            'price': 0.0,
+            'status': 'active',
+            'currency': 'USD',
+            'billing_cycle': None
+        }
     
     def update(self, instance, validated_data):
         """Update user profile."""
+        # Handle geofence_ids if provided
+        geofence_ids = self.initial_data.get('geofence_ids', None)
+        if geofence_ids is not None:  # Allow empty list to clear geofences
+            from users.models import Geofence
+            geofences = Geofence.objects.filter(id__in=geofence_ids)
+            instance.geofences.set(geofences)
+        
+        # Update first_name and last_name from name field if provided
+        name = self.initial_data.get('name')
+        if name:
+            name_parts = name.split(' ', 1)
+            instance.first_name = name_parts[0]
+            if len(name_parts) > 1:
+                instance.last_name = name_parts[1]
+        
         # Handle location update if provided
         location_data = self.initial_data.get('location')
-        if location_data:
+        if location_data and hasattr(instance, 'set_location'):
             try:
                 longitude = float(location_data.get('longitude'))
                 latitude = float(location_data.get('latitude'))
                 instance.set_location(longitude, latitude)
             except (ValueError, TypeError):
                 raise serializers.ValidationError('Invalid location data.')
+        
+        # Remove fields that don't exist on the model
+        validated_data.pop('name', None)
+        validated_data.pop('phone', None)
+        validated_data.pop('plantype', None)
+        validated_data.pop('planexpiry', None)
         
         return super().update(instance, validated_data)
 
@@ -140,15 +360,12 @@ class FamilyContactCreateSerializer(serializers.ModelSerializer):
         """Validate family contact creation."""
         user = self.context['request'].user
         
-        # Check maximum contacts limit
-        if FamilyContact.objects.filter(user=user).count() >= 3:
-            raise serializers.ValidationError(
-                'Maximum 3 family contacts allowed per user.'
-            )
-        
         # Check if phone number already exists
         phone = attrs.get('phone')
-        if FamilyContact.objects.filter(user=user, phone=phone).exists():
+        existing_contact = FamilyContact.objects.filter(user=user, phone=phone)
+        if self.instance:
+            existing_contact = existing_contact.exclude(id=self.instance.id)
+        if existing_contact.exists():
             raise serializers.ValidationError(
                 {'phone': 'A contact with this phone number already exists.'}
             )
@@ -194,24 +411,31 @@ class CommunityMembershipCreateSerializer(serializers.Serializer):
 class SOSEventSerializer(serializers.ModelSerializer):
     """
     Serializer for SOS events.
+    Only includes fields that exist in the database.
     """
     location = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(source='triggered_at', read_only=True)
     
     class Meta:
         model = SOSEvent
         fields = (
-            'id', 'location', 'status', 'triggered_at', 
+            'id', 'location', 'status', 'triggered_at', 'created_at',
             'resolved_at', 'notes'
         )
-        read_only_fields = ('id', 'triggered_at', 'resolved_at')
+        read_only_fields = ('id', 'triggered_at', 'created_at', 'resolved_at')
     
     def get_location(self, obj):
         """Get location as a dictionary."""
         if obj.location:
-            return {
-                'longitude': obj.location.x,
-                'latitude': obj.location.y
-            }
+            # Handle JSONField format
+            if isinstance(obj.location, dict):
+                return obj.location
+            # Handle Point format (if using geospatial)
+            if hasattr(obj.location, 'x') and hasattr(obj.location, 'y'):
+                return {
+                    'longitude': obj.location.x,
+                    'latitude': obj.location.y
+                }
         return None
 
 
@@ -265,3 +489,270 @@ class UserLocationUpdateSerializer(serializers.Serializer):
             )
         
         return attrs
+
+
+class SubscriptionSerializer(serializers.Serializer):
+    """
+    Serializer for subscription requests.
+    """
+    plan_type = serializers.ChoiceField(
+        choices=['premium-monthly', 'premium-annual'],
+        help_text="Subscription plan type"
+    )
+    promo_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Optional promo code"
+    )
+
+
+class LiveLocationShareSerializer(serializers.ModelSerializer):
+    """
+    Serializer for live location sharing.
+    """
+    share_url = serializers.SerializerMethodField()
+    path_points = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LiveLocationShare
+        fields = (
+            'id',
+            'share_token',
+            'share_url',
+            'started_at',
+            'expires_at',
+            'is_active',
+            'current_location',
+            'last_broadcast_at',
+            'path_points',
+            'plan_type',
+            'stop_reason',
+        )
+        read_only_fields = (
+            'id',
+            'share_token',
+            'share_url',
+            'started_at',
+            'expires_at',
+            'is_active',
+            'last_broadcast_at',
+            'path_points',
+            'plan_type',
+            'stop_reason',
+        )
+
+    def get_share_url(self, obj):
+        base_url = getattr(settings, 'LIVE_SHARE_BASE_URL', '').strip()
+        if not base_url:
+            return None
+        normalized_base = base_url[:-1] if base_url.endswith('/') else base_url
+        return f"{normalized_base}/{obj.share_token}"
+
+    def get_path_points(self, obj):
+        qs = obj.track_points.order_by('recorded_at')
+        return [
+            {
+                'latitude': point.latitude,
+                'longitude': point.longitude,
+                'recorded_at': point.recorded_at.isoformat(),
+            }
+            for point in qs
+        ]
+
+
+class LiveLocationShareCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating live location share.
+    """
+    duration_minutes = serializers.IntegerField(
+        min_value=1,
+        max_value=1440,  # 24 hours max
+        help_text="Duration of live sharing in minutes"
+    )
+    shared_with_user_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of user IDs to share location with"
+    )
+
+
+class GeofenceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for geofences (Premium only).
+    """
+    class Meta:
+        model = Geofence
+        fields = (
+            'id', 'name', 'center_location', 'radius_meters',
+            'alert_on_entry', 'alert_on_exit', 'is_active', 'created_at'
+        )
+        read_only_fields = ('id', 'created_at')
+
+
+class GeofenceCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating geofences.
+    """
+    name = serializers.CharField(max_length=200)
+    center_location = serializers.DictField(
+        child=serializers.FloatField(),
+        help_text="Center location as {longitude: float, latitude: float}"
+    )
+    radius_meters = serializers.IntegerField(min_value=10, max_value=10000)
+    alert_on_entry = serializers.BooleanField(default=True)
+    alert_on_exit = serializers.BooleanField(default=True)
+
+
+class CommunityAlertSerializer(serializers.ModelSerializer):
+    """
+    Serializer for community alerts.
+    """
+    class Meta:
+        model = CommunityAlert
+        fields = ('id', 'message', 'location', 'radius_meters', 'sent_at', 'is_premium_alert')
+        read_only_fields = ('id', 'sent_at', 'is_premium_alert')
+
+
+class CommunityAlertCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating community alerts.
+    """
+    message = serializers.CharField(max_length=500)
+    location = serializers.DictField(
+        child=serializers.FloatField(),
+        help_text="Location as {longitude: float, latitude: float}"
+    )
+    radius_meters = serializers.IntegerField(
+        required=False,
+        default=500,
+        help_text="Alert radius in meters (max 500 for free users)"
+    )
+
+
+class ChatGroupSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat groups.
+    """
+    member_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    admin_id = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ChatGroup
+        fields = ('id', 'name', 'description', 'members', 'member_count', 'admin_id', 'created_by', 'created_by_name', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'created_by', 'created_at', 'updated_at')
+    
+    def get_member_count(self, obj):
+        return obj.members.count()
+    
+    def get_members(self, obj):
+        admin_id = obj.admin.id if obj.admin else obj.created_by.id
+        return [
+            {
+                'id': member.id,
+                'name': member.name if hasattr(member, 'name') else (member.first_name + ' ' + member.last_name).strip() or member.email,
+                'email': member.email,
+                'first_name': getattr(member, 'first_name', ''),
+                'last_name': getattr(member, 'last_name', ''),
+                'is_admin': (obj.admin and obj.admin.id == member.id) or (not obj.admin and obj.created_by.id == member.id),
+            }
+            for member in obj.members.all()
+        ]
+    
+    def get_admin_id(self, obj):
+        return obj.admin.id if obj.admin else obj.created_by.id
+    
+    def get_created_by_name(self, obj):
+        if hasattr(obj.created_by, 'name') and obj.created_by.name:
+            return obj.created_by.name
+        first_name = getattr(obj.created_by, 'first_name', '')
+        last_name = getattr(obj.created_by, 'last_name', '')
+        return (first_name + ' ' + last_name).strip() or obj.created_by.email
+
+
+class ChatGroupCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating chat groups.
+    """
+    name = serializers.CharField(max_length=200)
+    description = serializers.CharField(required=False, allow_blank=True)
+    member_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text="List of user IDs to add as members"
+    )
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    """
+    Serializer for chat messages.
+    """
+    sender_name = serializers.SerializerMethodField()
+    sender_first_name = serializers.SerializerMethodField()
+    sender_last_name = serializers.SerializerMethodField()
+    sender_id = serializers.IntegerField(source='sender.id', read_only=True)
+    image_url = serializers.SerializerMethodField()
+    file_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ChatMessage
+        fields = ('id', 'group', 'sender', 'sender_id', 'sender_name', 'sender_first_name', 'sender_last_name', 'text', 'image', 'image_url', 'file', 'file_url', 'file_name', 'file_size', 'created_at')
+        read_only_fields = ('id', 'sender', 'created_at', 'image_url', 'file_url')
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
+    def get_file_url(self, obj):
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+    
+    def get_sender_name(self, obj):
+        if hasattr(obj.sender, 'name') and obj.sender.name:
+            return obj.sender.name
+        first_name = getattr(obj.sender, 'first_name', '')
+        last_name = getattr(obj.sender, 'last_name', '')
+        return (first_name + ' ' + last_name).strip() or obj.sender.email
+    
+    def get_sender_first_name(self, obj):
+        return getattr(obj.sender, 'first_name', '')
+    
+    def get_sender_last_name(self, obj):
+        return getattr(obj.sender, 'last_name', '')
+
+
+class ChatMessageCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating and updating chat messages.
+    """
+    text = serializers.CharField(required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    file = serializers.FileField(required=False, allow_null=True)
+    file_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    file_size = serializers.IntegerField(required=False, allow_null=True)
+    
+    def validate(self, attrs):
+        """Validate that either text, image, or file is provided."""
+        if not attrs.get('text') and not attrs.get('image') and not attrs.get('file'):
+            raise serializers.ValidationError("Either text, image, or file must be provided.")
+        return attrs
+    
+    def update(self, instance, validated_data):
+        """Update the message."""
+        instance.text = validated_data.get('text', instance.text)
+        if 'image' in validated_data:
+            instance.image = validated_data['image']
+        if 'file' in validated_data:
+            instance.file = validated_data['file']
+            instance.file_name = validated_data.get('file_name', instance.file_name)
+            instance.file_size = validated_data.get('file_size', instance.file_size)
+        instance.save()
+        return instance

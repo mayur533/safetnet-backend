@@ -1,5 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
 from users.models import Geofence, SecurityOfficer
 
 
@@ -95,10 +97,28 @@ class OfficerProfile(models.Model):
         related_name='profile'
     )
     on_duty = models.BooleanField(default=True)
+    last_latitude = models.FloatField(null=True, blank=True)
+    last_longitude = models.FloatField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    battery_level = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)]
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Profile({self.officer.name}) on_duty={self.on_duty}"
+
+    def update_location(self, latitude=None, longitude=None, battery_level=None):
+        """Convenience helper for officer apps to update runtime telemetry."""
+        if latitude is not None and longitude is not None:
+            self.last_latitude = latitude
+            self.last_longitude = longitude
+            self.last_seen_at = timezone.now()
+        if battery_level is not None:
+            self.battery_level = max(0, min(100, int(battery_level)))
+        self.save(update_fields=['last_latitude', 'last_longitude', 'last_seen_at', 'battery_level', 'updated_at'])
 
 
 class Incident(models.Model):

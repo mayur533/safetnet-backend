@@ -83,6 +83,30 @@ class IsSuperAdminOrSubAdminReadOnly(permissions.BasePermission):
         return False
 
 
+class IsAuthenticatedOrReadOnlyForOwnGeofences(permissions.BasePermission):
+    """
+    Custom permission to allow:
+    - SUPER_ADMIN: Full access
+    - SUB_ADMIN: Full access
+    - Regular users: Read-only access to alerts for their associated geofences
+    """
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # SUPER_ADMIN and SUB_ADMIN have full access
+        if request.user.role in ['SUPER_ADMIN', 'SUB_ADMIN']:
+            return True
+        
+        # Regular users can only read alerts for their geofences
+        if request.user.role == 'USER':
+            if request.method in permissions.SAFE_METHODS:
+                return True
+        
+        return False
+
+
 class OrganizationIsolationMixin:
     """
     Mixin to enforce organization-based data isolation for Sub-Admins.
