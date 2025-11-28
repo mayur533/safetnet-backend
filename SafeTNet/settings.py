@@ -390,3 +390,9 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='SafeTNet Admin <noreply@safetnet.com>')
 SERVER_EMAIL = config('SERVER_EMAIL', default='SafeTNet Admin <noreply@safetnet.com>')
+
+# Live share configuration (used for public tracking links)
+if DEBUG:
+    LIVE_SHARE_BASE_URL = config('LIVE_SHARE_BASE_URL', default='http://127.0.0.1:8000/live-share')
+else:
+    LIVE_SHARE_BASE_URL = config('LIVE_SHARE_BASE_URL', default='https://safetnet-backend.onrender.com/live-share')
