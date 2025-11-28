@@ -37,6 +37,11 @@ import {
   stopLiveLocationShareUpdates,
 } from '../../services/liveLocationShareService';
 import {sendLiveShareNotification} from '../../services/notificationService';
+import {
+  startGeofenceMonitoring,
+  stopGeofenceMonitoring,
+  refreshGeofences,
+} from '../../services/geofenceMonitoringService';
 
 const COMMUNITY_MESSAGES = [
   'Suspicious activity near my location.',
@@ -141,9 +146,15 @@ type CategoryCard = typeof categoryCards[number];
 
 const {width} = Dimensions.get('window');
 
-const LIVE_SHARE_BASE_URL = __DEV__
-  ? 'http://192.168.0.125:8000/live-share'
-  : 'https://safetnet.onrender.com/live-share';
+// Live share base URL with fallback
+const getLiveShareBaseUrl = (): string => {
+  if (__DEV__) {
+    // In dev mode, try local first
+    return 'http://192.168.0.125:8000/live-share';
+  }
+  // In production, use live server
+  return 'https://safetnet-backend.onrender.com/live-share';
+};
 
 const HomeScreen = ({navigation}: any) => {
   const route = useRoute();
@@ -198,6 +209,12 @@ const HomeScreen = ({navigation}: any) => {
   const [isStartingLiveShare, setIsStartingLiveShare] = useState(false);
   const [activeLiveShare, setActiveLiveShare] = useState(getActiveLiveShareSession());
   const [lastLiveSharePlan, setLastLiveSharePlan] = useState<'free' | 'premium'>(isPremium ? 'premium' : 'free');
+  
+  // All refs must be declared before any useEffect hooks (Rules of Hooks)
+  const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownAnim = useRef(new Animated.Value(1)).current;
   
   const cardRows: CategoryCard[][] = [];
   for (let i = 0; i < categoryCards.length; i += 2) {
@@ -254,10 +271,47 @@ const HomeScreen = ({navigation}: any) => {
       isMounted = false;
     };
   }, [user?.id]);
-  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const alertTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const hapticIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownAnim = useRef(new Animated.Value(1)).current;
+
+  // Geofence monitoring - start/stop based on authentication and premium status
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id || !isPremium) {
+      // Stop monitoring if user is not authenticated, no user ID, or not premium
+      stopGeofenceMonitoring();
+      return;
+    }
+
+    // Start geofence monitoring for premium users
+    const userId = parseInt(user.id, 10);
+    if (!isNaN(userId)) {
+      startGeofenceMonitoring(userId).catch((error) => {
+        console.error('Failed to start geofence monitoring:', error);
+      });
+    }
+
+    // Cleanup on unmount or when conditions change
+    return () => {
+      stopGeofenceMonitoring();
+    };
+  }, [isAuthenticated, user?.id, isPremium]);
+
+  // Handle app state changes to refresh geofences when app comes to foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active' && isAuthenticated && user?.id && isPremium) {
+        // Refresh geofences when app comes to foreground
+        const userId = parseInt(user.id, 10);
+        if (!isNaN(userId)) {
+          refreshGeofences(userId).catch((error) => {
+            console.error('Failed to refresh geofences:', error);
+          });
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated, user?.id, isPremium]);
 
   // Permissions are now handled automatically by the system on app start
 
@@ -782,9 +836,10 @@ const HomeScreen = ({navigation}: any) => {
       });
       setActiveLiveShare(getActiveLiveShareSession());
       const shareToken = session?.share_token || session?.shareToken;
-      const normalizedBase = LIVE_SHARE_BASE_URL.endsWith('/')
-        ? LIVE_SHARE_BASE_URL.slice(0, -1)
-        : LIVE_SHARE_BASE_URL;
+      const liveShareBaseUrl = getLiveShareBaseUrl();
+      const normalizedBase = liveShareBaseUrl.endsWith('/')
+        ? liveShareBaseUrl.slice(0, -1)
+        : liveShareBaseUrl;
       const shareLink = shareToken
         ? `${normalizedBase}/${shareToken}`
         : buildGoogleMapsUrl(coords.latitude, coords.longitude);

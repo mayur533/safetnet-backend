@@ -1,7 +1,8 @@
 import React from 'react';
-import {View, Text, ActivityIndicator, StyleSheet} from 'react-native';
+import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {UrlTile} from './mapComponents';
+import NetInfo from '@react-native-community/netinfo';
 
 interface MapTileLayerProps {
   children?: React.ReactNode;
@@ -16,6 +17,16 @@ const MapTileLayer: React.FC<MapTileLayerProps> = ({
 }) => {
   const [tileProviderIndex, setTileProviderIndex] = React.useState(0);
   const [tileError, setTileError] = React.useState(false);
+  const [isConnected, setIsConnected] = React.useState(true);
+
+  // Check network connectivity
+  React.useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? true);
+    });
+    
+    return unsubscribe;
+  }, []);
 
   // Multiple tile providers for redundancy
   const tileProviders = [
@@ -48,12 +59,30 @@ const MapTileLayer: React.FC<MapTileLayerProps> = ({
     }
   };
 
+  const retryLoading = () => {
+    setTileProviderIndex(0);
+    setTileError(false);
+  };
+
+  if (!isConnected) {
+    return (
+      <View style={styles.fallbackContainer}>
+        <MaterialIcons name="wifi-off" size={48} color="#6B7280" />
+        <Text style={styles.fallbackText}>No Internet Connection</Text>
+        <Text style={styles.fallbackSubtext}>Map tiles require internet access</Text>
+      </View>
+    );
+  }
+
   if (tileError) {
     return (
       <View style={styles.fallbackContainer}>
         <MaterialIcons name="map" size={48} color="#6B7280" />
         <Text style={styles.fallbackText}>Map tiles unavailable</Text>
-        <Text style={styles.fallbackSubtext}>Using basic map view</Text>
+        <Text style={styles.fallbackSubtext}>All tile providers failed</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={retryLoading}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -94,6 +123,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     color: '#9CA3AF',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#2563EB',
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 

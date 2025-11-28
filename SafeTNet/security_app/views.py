@@ -8,9 +8,12 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 from django.utils import timezone
+from datetime import timedelta
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 from users.models import SecurityOfficer
+from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
+from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
 
 from .permissions import IsSecurityOfficer
 from .serializers import (
@@ -559,4 +562,149 @@ class DashboardView(OfficerOnlyMixin, APIView):
             },
             'last_updated': now.isoformat()
         })
+
+
+class OfficerLiveLocationShareView(OfficerOnlyMixin, APIView):
+    """
+    Security officer live location sharing endpoints.
+    POST /api/security/live_location/start/ - Start live location sharing
+    GET /api/security/live_location/ - Get active sessions
+    """
+    
+    def post(self, request):
+        """Start live location sharing for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Stop any existing active sessions
+        LiveLocationShare.objects.filter(
+            security_officer=officer,
+            is_active=True
+        ).update(is_active=False, stop_reason='user')
+        
+        serializer = LiveLocationShareCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            duration_minutes = serializer.validated_data.get('duration_minutes', 1440)  # Default 24 hours for officers
+            
+            # Create live location share session
+            expires_at = timezone.now() + timedelta(minutes=duration_minutes)
+            live_share = LiveLocationShare.objects.create(
+                security_officer=officer,
+                expires_at=expires_at,
+                last_broadcast_at=timezone.now(),
+                plan_type='premium',  # Officers always get premium
+            )
+            
+            # Create initial track point if provided
+            initial_latitude = serializer.validated_data.get('initial_latitude')
+            initial_longitude = serializer.validated_data.get('initial_longitude')
+            if initial_latitude is not None and initial_longitude is not None:
+                LiveLocationTrackPoint.objects.create(
+                    share=live_share,
+                    latitude=initial_latitude,
+                    longitude=initial_longitude
+                )
+            
+            return Response({
+                'message': 'Live location sharing started',
+                'session': LiveLocationShareSerializer(live_share).data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """Get active live location sharing sessions for officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        sessions = LiveLocationShare.objects.filter(
+            security_officer=officer,
+            is_active=True,
+            expires_at__gt=timezone.now()
+        ).order_by('-started_at')
+        
+        serializer = LiveLocationShareSerializer(sessions, many=True)
+        return Response({'sessions': serializer.data})
+
+
+class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
+    """
+    Security officer live location sharing detail endpoints.
+    PATCH /api/security/live_location/<session_id>/ - Update location
+    DELETE /api/security/live_location/<session_id>/ - Stop sharing
+    """
+    
+    def patch(self, request, session_id):
+        """Update live location for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            live_share = LiveLocationShare.objects.get(
+                id=session_id,
+                security_officer=officer
+            )
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not live_share.is_active or live_share.expires_at <= timezone.now():
+            live_share.is_active = False
+            live_share.stop_reason = 'expired'
+            live_share.save(update_fields=['is_active', 'stop_reason'])
+            return Response({'error': 'Live location session has ended'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        
+        if latitude is None or longitude is None:
+            return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            lat = float(latitude)
+            lng = float(longitude)
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid latitude/longitude values'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        live_share.current_location = {'latitude': lat, 'longitude': lng}
+        live_share.last_broadcast_at = timezone.now()
+        live_share.save(update_fields=['current_location', 'last_broadcast_at'])
+
+        # Log track point once per minute
+        last_track_point = live_share.track_points.order_by('-recorded_at').first()
+        if not last_track_point or (timezone.now() - last_track_point.recorded_at) >= timedelta(minutes=1):
+            LiveLocationTrackPoint.objects.create(
+                share=live_share,
+                latitude=lat,
+                longitude=lng
+            )
+        
+        return Response({'status': 'updated'}, status=status.HTTP_200_OK)
+    
+    def delete(self, request, session_id):
+        """Stop live location sharing for security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            live_share = LiveLocationShare.objects.get(
+                id=session_id,
+                security_officer=officer
+            )
+        except LiveLocationShare.DoesNotExist:
+            return Response({'error': 'Live location session not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        live_share.is_active = False
+        live_share.expires_at = timezone.now()
+        live_share.current_location = None
+        live_share.stop_reason = 'user'
+        live_share.save(update_fields=['is_active', 'expires_at', 'current_location', 'stop_reason'])
+        return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
 

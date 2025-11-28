@@ -11,6 +11,7 @@ from .views import _is_user_premium
 from .models import LiveLocationShare
 from users.models import SecurityOfficer
 from security_app.models import OfficerProfile
+from django.utils import timezone
 
 # Nearby Help Map API
 def _build_nearby_help_payload(latitude, longitude):
@@ -101,6 +102,15 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
     profiles = OfficerProfile.objects.filter(officer__in=officers).select_related('officer')
     profile_lookup = {profile.officer_id: profile for profile in profiles}
 
+    # Get active live location shares for these officers
+    officer_ids = [o.id for o in officers]
+    active_live_shares = LiveLocationShare.objects.filter(
+        security_officer_id__in=officer_ids,
+        is_active=True,
+        expires_at__gt=timezone.now()
+    ).select_related('security_officer')
+    live_share_lookup = {share.security_officer_id: share for share in active_live_shares}
+
     payload = []
     for officer in officers:
         profile = profile_lookup.get(officer.id)
@@ -109,18 +119,36 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
         last_seen = None
         battery = None
         on_duty = True
+        is_live_sharing = False
+        live_location = None
 
-        if profile:
+        # Check for active live location share
+        live_share = live_share_lookup.get(officer.id)
+        if live_share and live_share.current_location:
+            live_location = live_share.current_location
+            is_live_sharing = True
+            source = 'live_share'
+            last_seen = live_share.last_broadcast_at
+            location = {
+                'latitude': live_location.get('latitude') or live_location.get('lat'),
+                'longitude': live_location.get('longitude') or live_location.get('lng'),
+            }
+
+        # Fall back to profile location if no live share
+        if not location and profile:
             on_duty = profile.on_duty
             if profile.last_latitude is not None and profile.last_longitude is not None:
                 location = {
                     'latitude': profile.last_latitude,
                     'longitude': profile.last_longitude,
                 }
-                source = 'live'
-                last_seen = profile.last_seen_at
+                if not source:
+                    source = 'last_known'
+                if not last_seen:
+                    last_seen = profile.last_seen_at
                 battery = profile.battery_level
 
+        # Fall back to geofence center if still no location
         if location is None and officer.assigned_geofence:
             center = officer.assigned_geofence.get_center_point()
             if center:
@@ -128,7 +156,8 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
                     'latitude': center[0],
                     'longitude': center[1],
                 }
-                source = 'geofence_center'
+                if not source:
+                    source = 'geofence_center'
 
         if location is None:
             continue
@@ -153,6 +182,7 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
             'battery_level': battery,
             'distance_km': distance_km,
             'is_on_duty': on_duty,
+            'is_live_sharing': is_live_sharing,  # New field to indicate live sharing status
         })
     return payload
 

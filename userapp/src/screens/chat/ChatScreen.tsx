@@ -32,7 +32,6 @@ import {
   MediaType,
   ImageLibraryOptions,
 } from 'react-native-image-picker';
-import DocumentPicker, {types} from 'react-native-document-picker';
 import {ThemedAlert} from '../../components/common/ThemedAlert';
 import {getInitials, getAvatarColor} from '../../utils/avatarColors';
 import {
@@ -220,7 +219,6 @@ const ChatScreen = () => {
     base64?: string; // Base64 encoded image
   }>>([]);
   const [previewComment, setPreviewComment] = useState('');
-  const [previewExternalMeta, setPreviewExternalMeta] = useState<{uri: string; mimeType?: string} | null>(null);
   
   // Track failed image loads
   const [failedImages, setFailedImages] = useState<Set<string | number>>(new Set());
@@ -915,7 +913,6 @@ const ChatScreen = () => {
       if (isImage || isVideo) {
         setPreviewUri(fileUri);
         setPreviewType(isImage ? 'image' : 'video');
-        setPreviewExternalMeta({uri: fileUri, mimeType: mimeType || undefined});
         setPreviewModalVisible(true);
       } else {
         const opened = await openFileUri(fileUri, mimeType || '*/*');
@@ -942,21 +939,9 @@ const ChatScreen = () => {
   const closePreviewModal = () => {
     setPreviewModalVisible(false);
     setPreviewUri(null);
-    setPreviewExternalMeta(null);
     setPreviewType('image');
   };
 
-  const handleOpenPreviewExternally = async () => {
-    if (!previewExternalMeta) {
-      showToast('File not available', ToastAndroid.SHORT);
-      return;
-    }
-
-    const opened = await openFileUri(previewExternalMeta.uri, previewExternalMeta.mimeType || '*/*');
-    if (!opened) {
-      showToast('No app available to open this file', ToastAndroid.SHORT);
-    }
-  };
 
   const handleEditMessage = () => {
     if (!selectedMessage) return;
@@ -1260,44 +1245,6 @@ const ChatScreen = () => {
     }
   };
 
-  const handleFilePicker = async () => {
-    try {
-      if (!DocumentPicker || !DocumentPicker.pick) {
-        setAlertState({
-          visible: true,
-          title: 'Error',
-          message: 'File picker is not available. Please reinstall the app.',
-          type: 'error',
-        });
-        return;
-      }
-
-      const result = await DocumentPicker.pick({
-        type: [types.allFiles],
-        allowMultiSelection: true, // Enable multi-select
-        copyTo: 'cachesDirectory',
-      });
-
-      if (result && Array.isArray(result) && result.length > 0) {
-        // Handle multiple files
-        for (const file of result) {
-          handleFileSelected('file', file.uri || '', file.name || 'file', file.size || 0);
-        }
-      } else if (result && !Array.isArray(result)) {
-        const file = result as any;
-        handleFileSelected('file', file.uri || '', file.name || 'file', file.size || 0);
-      }
-    } catch (err: any) {
-      if (DocumentPicker && DocumentPicker.isCancel && DocumentPicker.isCancel(err)) {
-        return;
-      }
-      if (err.code === 'DOCUMENT_PICKER_CANCELED' || err.message?.includes('cancel')) {
-        return;
-      }
-      console.error('File picker error:', err);
-      showToast(err?.message || 'Failed to pick file. Reinstall app if issue persists.', ToastAndroid.LONG);
-    }
-  };
 
   const getMimeType = (fileName: string): string => {
     const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
@@ -1970,12 +1917,6 @@ const ChatScreen = () => {
           <View style={styles.inputRow}>
             <TouchableOpacity
               style={styles.attachButton}
-              onPress={handleFilePicker}
-              activeOpacity={0.7}>
-              <MaterialIcons name="attach-file" size={24} color={colors.text} style={{opacity: 0.7}} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.attachButton}
               onPress={handleImagePicker}
               activeOpacity={0.7}>
               <MaterialIcons name="image" size={24} color={colors.text} style={{opacity: 0.7}} />
@@ -2027,16 +1968,6 @@ const ChatScreen = () => {
         onRequestClose={closePreviewModal}>
         <View style={styles.previewModalOverlay}>
           <View style={styles.previewModalHeader}>
-            {previewExternalMeta ? (
-              <TouchableOpacity
-                style={styles.previewModalAction}
-                onPress={handleOpenPreviewExternally}
-                activeOpacity={0.7}>
-                <MaterialIcons name="open-in-new" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.previewModalActionPlaceholder} />
-            )}
             <TouchableOpacity
               style={styles.previewModalAction}
               onPress={closePreviewModal}
@@ -2060,15 +1991,12 @@ const ChatScreen = () => {
             />
           )}
           {previewType === 'file' && previewUri && (
-            <TouchableOpacity
-              style={styles.previewFileContainer}
-              onPress={() => openFileUri(previewUri, previewExternalMeta?.mimeType || '*/*')}
-              activeOpacity={0.7}>
+            <View style={styles.previewFileContainer}>
               <MaterialIcons name="insert-drive-file" size={64} color={colors.primary} />
               <Text style={[styles.previewFileText, {color: colors.text}]}>
-                Tap to open file
+                File preview
               </Text>
-            </TouchableOpacity>
+            </View>
           )}
         </View>
       </Modal>

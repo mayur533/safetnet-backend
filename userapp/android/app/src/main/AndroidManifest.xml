@@ -102,8 +102,15 @@
       </receiver>
       -->
 
+      <!-- Google Maps API key (optional - using OpenStreetMap tiles) -->
+      <!-- If you want to use Google Maps instead, replace "your_google_maps_api_key_here" in gradle.properties -->
       <meta-data
         android:name="com.google.android.geo.API_KEY"
         android:value="${MAPS_API_KEY}" />
+        
+      <!-- OpenStreetMap configuration -->
+      <meta-data
+        android:name="com.google.android.gms.version"
+        android:value="@integer/google_play_services_version" />
     </application>
 </manifest>

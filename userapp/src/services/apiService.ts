@@ -18,11 +18,75 @@ getAsyncStorage().then((storage) => {
   console.error('Failed to initialize AsyncStorage in apiService:', error);
 });
 
-// Use LAN IP so physical devices can reach the backend directly
-// Update this IP if your development machine changes networks
-const API_BASE_URL = __DEV__
-  ? 'http://192.168.0.125:8000/api/user'
-  : 'http://192.168.0.125:8000/api/user';
+// API Base URL configuration with fallback
+// Try localhost/IP first, then fallback to live server
+const LOCAL_API_URLS = [
+  'http://192.168.0.125:8000/api/user',
+  'http://localhost:8000/api/user',
+  'http://127.0.0.1:8000/api/user',
+];
+
+const LIVE_API_URL = 'https://safetnet-backend.onrender.com/api/user';
+
+// Test connectivity to a URL
+const testUrlConnectivity = async (url: string, timeoutMs: number = 2000): Promise<boolean> => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    const response = await fetch(`${url}/login/`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}), // Empty body to test connectivity
+    });
+    
+    clearTimeout(timeoutId);
+    // Any response (even 400/401) means backend is reachable
+    return response.status !== undefined;
+  } catch (error) {
+    return false;
+  }
+};
+
+// Get the working API base URL with fallback
+let cachedApiBaseUrl: string | null = null;
+
+const getApiBaseUrl = async (): Promise<string> => {
+  // Return cached URL if available and not in dev mode (to allow testing)
+  if (cachedApiBaseUrl && !__DEV__) {
+    return cachedApiBaseUrl;
+  }
+
+  // Try local URLs first (in dev mode or if explicitly testing)
+  if (__DEV__) {
+    for (const localUrl of LOCAL_API_URLS) {
+      const isReachable = await testUrlConnectivity(localUrl, 2000);
+      if (isReachable) {
+        console.log(`[API] Using local URL: ${localUrl}`);
+        cachedApiBaseUrl = localUrl;
+        return localUrl;
+      }
+    }
+  }
+
+  // Fallback to live server
+  const isLiveReachable = await testUrlConnectivity(LIVE_API_URL, 3000);
+  if (isLiveReachable) {
+    console.log(`[API] Using live server: ${LIVE_API_URL}`);
+    cachedApiBaseUrl = LIVE_API_URL;
+    return LIVE_API_URL;
+  }
+
+  // If nothing works, default to first local URL in dev, or live in production
+  const defaultUrl = __DEV__ ? LOCAL_API_URLS[0] : LIVE_API_URL;
+  console.warn(`[API] Could not test connectivity, using default: ${defaultUrl}`);
+  cachedApiBaseUrl = defaultUrl;
+  return defaultUrl;
+};
+
+// Initialize API base URL (will be set on first API call)
+let API_BASE_URL = __DEV__ ? LOCAL_API_URLS[0] : LIVE_API_URL;
 
 interface LoginResponse {
   message: string;
@@ -81,7 +145,8 @@ class ApiService {
   async checkBackendHealth(): Promise<{isHealthy: boolean; message: string; details?: any}> {
     // Use the login endpoint itself as a simple connectivity test
     // We'll just try to reach it (without actually logging in)
-    const healthCheckUrl = `${API_BASE_URL}/login/`;
+    const baseUrl = await getApiBaseUrl();
+    const healthCheckUrl = `${baseUrl}/login/`;
     const timeoutMs = 3000; // 3 second timeout for quick check
     
     try {
@@ -130,10 +195,11 @@ class ApiService {
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
       const errorName = error?.name || '';
       
+      const baseUrl = await getApiBaseUrl();
       if (error.name === 'AbortError' || errorMessage.includes('timeout')) {
         return {
           isHealthy: false,
-          message: `Backend timeout: Server at ${API_BASE_URL} did not respond within ${timeoutMs}ms. Is the backend running?`,
+          message: `Backend timeout: Server at ${baseUrl} did not respond within ${timeoutMs}ms. Is the backend running?`,
           details: {url: healthCheckUrl, timeout: timeoutMs},
         };
       }
@@ -145,7 +211,7 @@ class ApiService {
       ) {
         return {
           isHealthy: false,
-          message: `Cannot connect to backend at ${API_BASE_URL}. Please check: 1) Backend server is running, 2) IP address is correct (current: 192.168.0.125), 3) Device is on the same network`,
+          message: `Cannot connect to backend at ${baseUrl}. Please check: 1) Backend server is running, 2) Network connection is active, 3) Device is on the same network (for local development)`,
           details: {url: healthCheckUrl, error: errorMessage},
         };
       }
@@ -338,7 +404,8 @@ class ApiService {
       ) {
         console.error('[API Request Error] Request timeout');
         useNetworkToastStore.getState().show();
-        throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${API_BASE_URL} took too long to respond. Please check if the backend is running.`);
+        const baseUrl = await getApiBaseUrl();
+        throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${baseUrl} took too long to respond. Please check if the backend is running.`);
       }
       
       // Network request failed - common in React Native
@@ -349,7 +416,8 @@ class ApiService {
       ) {
         console.error('[API Request Error] Network request failed - backend may be unreachable');
         useNetworkToastStore.getState().show();
-        throw new Error(`Cannot connect to backend at ${API_BASE_URL}. Please check: 1) Backend server is running on port 8000, 2) IP address is correct (current: 192.168.0.125), 3) Device is on the same network.`);
+        const baseUrl = await getApiBaseUrl();
+        throw new Error(`Cannot connect to backend at ${baseUrl}. Please check: 1) Backend server is running, 2) Network connection is active, 3) Device is on the same network (for local development).`);
       } 
       // Failed to fetch - common in web browsers
       else if (
@@ -359,7 +427,8 @@ class ApiService {
       ) {
         console.error('[API Request Error] Failed to fetch - connection error');
         useNetworkToastStore.getState().show();
-        throw new Error(`Failed to connect to server at ${API_BASE_URL}. Please check if the backend is running and the IP address is correct.`);
+        const baseUrl = await getApiBaseUrl();
+        throw new Error(`Failed to connect to server at ${baseUrl}. Please check if the backend is running.`);
       } 
       // Connection refused
       else if (
@@ -369,13 +438,15 @@ class ApiService {
       ) {
         console.error('[API Request Error] Connection refused');
         useNetworkToastStore.getState().show();
-        throw new Error(`Connection refused by ${API_BASE_URL}. Please ensure the backend server is running on port 8000.`);
+        const baseUrl = await getApiBaseUrl();
+        throw new Error(`Connection refused by ${baseUrl}. Please ensure the backend server is running.`);
       }
       // TypeError without specific message (often network related)
       else if (errorName === 'TypeError') {
         console.error('[API Request Error] TypeError - likely network issue');
         useNetworkToastStore.getState().show();
-        throw new Error(`Network error connecting to ${API_BASE_URL}. Please check: 1) Backend server is running, 2) IP address is correct, 3) Device network connection. Error: ${errorMessage || 'Unknown TypeError'}`);
+        const baseUrl = await getApiBaseUrl();
+        throw new Error(`Network error connecting to ${baseUrl}. Please check: 1) Backend server is running, 2) Network connection is active, 3) Device network connection. Error: ${errorMessage || 'Unknown TypeError'}`);
       }
       
       // For other errors, re-throw as-is but log details
@@ -391,7 +462,9 @@ class ApiService {
     if (!this.refreshToken) return false;
 
     try {
-      const response = await fetch(`${API_BASE_URL.replace('/users', '/auth')}/refresh/`, {
+      const baseUrl = await getApiBaseUrl();
+      const refreshUrl = baseUrl.replace('/api/user', '/api/auth');
+      const response = await fetch(`${refreshUrl}/refresh/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -423,7 +496,8 @@ class ApiService {
    */
   async login(email: string, password: string): Promise<LoginResponse> {
     try {
-      console.log('[Login] Attempting login with:', { email, url: `${API_BASE_URL}/login/` });
+      const baseUrl = await getApiBaseUrl();
+      console.log('[Login] Attempting login with:', { email, url: `${baseUrl}/login/` });
       
       // Note: We don't do a separate health check before login because:
       // 1. The login request itself will fail fast if backend is unreachable
@@ -582,7 +656,8 @@ class ApiService {
     try {
       // Use the admin alerts endpoint which filters by user's geofences
       // The endpoint is at /api/auth/admin/alerts/
-      const adminApiUrl = API_BASE_URL.replace('/api/user', '/api/auth');
+      const baseUrl = await getApiBaseUrl();
+      const adminApiUrl = baseUrl.replace('/api/user', '/api/auth');
       const url = `${adminApiUrl}/admin/alerts/`;
       
       console.log('[getAlerts] Fetching alerts from:', url);
@@ -662,7 +737,8 @@ class ApiService {
     message?: string;
   }> {
     try {
-      const url = `${API_BASE_URL.replace('/api/user', '/api/user')}/validate-promocode/`;
+      const baseUrl = await getApiBaseUrl();
+      const url = `${baseUrl}/validate-promocode/`;
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -716,8 +792,14 @@ class ApiService {
   /**
    * Get geofences (Premium only) (with caching)
    */
-  async getGeofences(userId: number): Promise<any> {
+  async getGeofences(userId: number, forceRefresh: boolean = false): Promise<any> {
     const cacheKey = `geofences_${userId}`;
+    
+    // If force refresh, invalidate cache first
+    if (forceRefresh) {
+      await cacheService.invalidate(cacheKey);
+    }
+    
     return cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/${userId}/geofences/`),
@@ -972,7 +1054,8 @@ class ApiService {
    * Send a chat message with file or image attachment
    */
   async sendChatMessageWithFile(userId: number, groupId: number, formData: FormData): Promise<any> {
-    const url = `${API_BASE_URL}/${userId}/chat_groups/${groupId}/messages/`;
+    const baseUrl = await getApiBaseUrl();
+    const url = `${baseUrl}/${userId}/chat_groups/${groupId}/messages/`;
     const headers: HeadersInit = {};
 
     if (this.accessToken) {

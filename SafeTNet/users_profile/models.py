@@ -201,12 +201,23 @@ class LiveLocationShare(models.Model):
     Model for tracking live location sharing sessions.
     Free: 15-30 minutes max
     Premium: Unlimited
+    Can be used by both regular users and security officers.
     """
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='live_location_sessions',
-        help_text="User sharing their location"
+        null=True,
+        blank=True,
+        help_text="User sharing their location (null if security_officer is set)"
+    )
+    security_officer = models.ForeignKey(
+        'users.SecurityOfficer',
+        on_delete=models.CASCADE,
+        related_name='live_location_sessions',
+        null=True,
+        blank=True,
+        help_text="Security officer sharing their location (null if user is set)"
     )
     shared_with = models.ManyToManyField(
         User,
@@ -253,10 +264,23 @@ class LiveLocationShare(models.Model):
         verbose_name = 'Live Location Share'
         verbose_name_plural = 'Live Location Shares'
         ordering = ['-started_at']
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(user__isnull=False, security_officer__isnull=True) |
+                    models.Q(user__isnull=True, security_officer__isnull=False)
+                ),
+                name='user_or_security_officer_required'
+            )
+        ]
     
     def __str__(self):
-        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
-        return f"Live Share - {user_email}"
+        if self.user:
+            user_email = self.user.email if hasattr(self.user, 'email') else 'User'
+            return f"Live Share - {user_email}"
+        elif self.security_officer:
+            return f"Live Share - {self.security_officer.name}"
+        return "Live Share - Unknown"
 
 
 class LiveLocationTrackPoint(models.Model):

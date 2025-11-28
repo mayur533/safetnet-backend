@@ -15,5 +15,7 @@ urlpatterns = [
     path('notifications/', views.NotificationView.as_view(), name='security-notifications'),
     path('notifications/acknowledge/', views.NotificationAcknowledgeView.as_view(), name='security-notifications-acknowledge'),
     path('dashboard/', views.DashboardView.as_view(), name='security-dashboard'),
+    path('live_location/', views.OfficerLiveLocationShareView.as_view(), name='security-live-location'),
+    path('live_location/<int:session_id>/', views.OfficerLiveLocationShareDetailView.as_view(), name='security-live-location-detail'),
 ]
 

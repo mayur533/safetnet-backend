@@ -879,14 +879,14 @@ class LiveLocationShareDetailView(APIView):
 # Geofencing endpoints (Premium only)
 class GeofenceListView(APIView):
     """
-    List and create geofences (Premium only).
+    List admin-created geofences (Premium only).
     GET /users/<user_id>/geofences/
-    POST /users/<user_id>/geofences/
+    Returns all active admin-created geofences with polygon data.
     """
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request, user_id):
-        """List user's geofences."""
+        """List admin-created geofences."""
         if request.user.id != int(user_id):
             return Response(
                 {'error': 'You can only view your own geofences.'},
@@ -901,46 +901,61 @@ class GeofenceListView(APIView):
                 'error': 'Geofencing is a Premium feature. Upgrade to Premium to use geofencing.'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        geofences = Geofence.objects.filter(user=user, is_active=True)
+        # Import admin Geofence model
+        from users.models import Geofence as AdminGeofence
+        
+        # Get all active admin-created geofences
+        admin_geofences = AdminGeofence.objects.filter(active=True).select_related('organization', 'created_by')
+        
+        # Convert to mobile app format
+        geofences_data = []
+        colors = ['#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
+        
+        for idx, admin_geo in enumerate(admin_geofences):
+            # Get polygon coordinates
+            polygon_coords = admin_geo.get_polygon_coordinates()
+            center_point = admin_geo.get_center_point()
+            
+            if not polygon_coords or not center_point:
+                continue  # Skip invalid geofences
+            
+            # Extract coordinates from polygon (GeoJSON format: [lng, lat])
+            # Convert to [[lat, lng], ...] for Leaflet
+            polygon_points = []
+            if polygon_coords and len(polygon_coords) > 0:
+                ring = polygon_coords[0]  # First ring of polygon
+                for coord in ring:
+                    if len(coord) >= 2:
+                        # GeoJSON is [lng, lat], Leaflet needs [lat, lng]
+                        polygon_points.append([coord[1], coord[0]])
+            
+            if not polygon_points:
+                continue
+            
+            geofences_data.append({
+                'id': admin_geo.id,
+                'name': admin_geo.name,
+                'description': admin_geo.description or '',
+                'polygon': polygon_points,  # Array of [lat, lng] pairs
+                'center': {
+                    'latitude': center_point[0],
+                    'longitude': center_point[1],
+                },
+                'is_active': admin_geo.active,
+                'color': colors[idx % len(colors)],
+                'organization_name': admin_geo.organization.name if admin_geo.organization else '',
+                'created_at': admin_geo.created_at.isoformat() if admin_geo.created_at else None,
+            })
+        
         return Response({
-            'geofences': GeofenceSerializer(geofences, many=True).data
+            'geofences': geofences_data
         })
     
     def post(self, request, user_id):
-        """Create a new geofence."""
-        if request.user.id != int(user_id):
-            return Response(
-                {'error': 'You can only create geofences for your own account.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        user = request.user
-        is_premium = _is_user_premium(user)
-        
-        if not is_premium:
-            return Response({
-                'error': 'Geofencing is a Premium feature. Upgrade to Premium to use geofencing.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        serializer = GeofenceCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            geofence = Geofence.objects.create(
-                user=user,
-                name=serializer.validated_data['name'],
-                center_location=serializer.validated_data['center_location'],
-                radius_meters=serializer.validated_data['radius_meters'],
-                alert_on_entry=serializer.validated_data['alert_on_entry'],
-                alert_on_exit=serializer.validated_data['alert_on_exit']
-            )
-            
-            logger.info(f"Geofence created: {user.email} - {geofence.name}")
-            
-            return Response({
-                'message': 'Geofence created successfully',
-                'geofence': GeofenceSerializer(geofence).data
-            }, status=status.HTTP_201_CREATED)
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        """Users cannot create geofences - only admins can."""
+        return Response({
+            'error': 'Geofences can only be created by administrators. Please contact your admin to create geofences.'
+        }, status=status.HTTP_403_FORBIDDEN)
 
 
 # Community Alert endpoints
