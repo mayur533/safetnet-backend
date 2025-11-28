@@ -40,8 +40,112 @@ const loadPushNotification = (forceReload: boolean = false) => {
 let notificationsConfigured = false;
 let channelCreated = false;
 
-const POLICE_CONTACT = {name: 'Police', phone: '9561606066'};
-const SECURITY_CONTACTS = [{name: 'Security Officer', phone: '+18005550101'}];
+const POLICE_CONTACT = {name: 'Police', phone: '7887659473'};
+
+/**
+ * Check if a point is inside a polygon using ray casting algorithm
+ * Polygon coordinates are in GeoJSON format: [longitude, latitude]
+ */
+const isPointInPolygon = (
+  point: {latitude: number; longitude: number},
+  polygon: number[][]
+): boolean => {
+  if (!polygon || polygon.length < 3) return false;
+  
+  const {latitude: lat, longitude: lng} = point;
+  let inside = false;
+  
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    // GeoJSON format: [longitude, latitude]
+    const [xi, yi] = polygon[i]; // xi = lng, yi = lat
+    const [xj, yj] = polygon[j]; // xj = lng, yj = lat
+    
+    // Ray casting algorithm
+    const intersect = 
+      ((yi > lat) !== (yj > lat)) &&
+      (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+    
+    if (intersect) inside = !inside;
+  }
+  
+  return inside;
+};
+
+/**
+ * Find which geofence the user is currently in
+ */
+const findUserGeofence = async (
+  location: {latitude: number; longitude: number},
+  userId: number
+): Promise<{geofence: any; securityOfficer: any} | null> => {
+  try {
+    // Get all geofences
+    const geofencesData = await apiService.getGeofences(userId, true);
+    const geofences = Array.isArray(geofencesData?.geofences) 
+      ? geofencesData.geofences 
+      : Array.isArray(geofencesData) 
+        ? geofencesData 
+        : [];
+    
+    if (!geofences.length) {
+      console.log('No geofences found');
+      return null;
+    }
+    
+    // Check each geofence to see if user is inside
+    for (const geofence of geofences) {
+      if (!geofence.is_active && geofence.active !== true) continue;
+      
+      // Check if point is inside polygon
+      const polygon = geofence.polygon || geofence.polygon_json;
+      if (polygon && Array.isArray(polygon) && polygon.length > 0) {
+        // Polygon format: [[[lng, lat], [lng, lat], ...]]
+        const ring = Array.isArray(polygon[0]) ? polygon[0] : polygon;
+        const isInside = isPointInPolygon(location, ring);
+        
+        if (isInside) {
+          console.log(`User is inside geofence: ${geofence.name}`);
+          
+          // Get security officers for this geofence
+          try {
+            const officersData = await apiService.getSecurityOfficers(
+              location.latitude,
+              location.longitude
+            );
+            const officers = Array.isArray(officersData?.officers)
+              ? officersData.officers
+              : Array.isArray(officersData)
+                ? officersData
+                : [];
+            
+            // Find officer assigned to this geofence
+            const assignedOfficer = officers.find(
+              (officer: any) => 
+                officer.assigned_geofence_id === geofence.id ||
+                officer.assigned_geofence?.id === geofence.id ||
+                officer.geofence_id === geofence.id
+            );
+            
+            if (assignedOfficer) {
+              return {
+                geofence,
+                securityOfficer: assignedOfficer,
+              };
+            }
+          } catch (error) {
+            console.error('Error getting security officers:', error);
+          }
+        }
+      }
+    }
+    
+    console.log('User is not inside any geofence');
+    return null;
+  } catch (error) {
+    console.error('Error finding user geofence:', error);
+    return null;
+  }
+};
 
 export const configureNotifications = () => {
   const notificationModule = loadPushNotification();
@@ -354,7 +458,8 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     console.error('Error getting location:', error);
   }
 
-  // Send SOS to backend API (backend starts live share and returns link)
+  // STEP 1: Send SOS to backend API and WAIT for live share URL
+  // This ensures we have the live share URL before sending any messages
   if (user?.id) {
     try {
       const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
@@ -368,7 +473,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
       sosData.notes = message || template;
       
-      console.log('Sending SOS to backend:', sosData);
+      console.log('📤 Sending SOS to backend and waiting for live share URL...');
       const sosResponse = await apiService.triggerSOS(userId, sosData);
       console.log('✅ SOS sent to backend successfully');
       console.log('SOS Response:', JSON.stringify(sosResponse, null, 2));
@@ -376,15 +481,16 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       const liveSharePayload = sosResponse?.live_share;
       console.log('Live share payload from backend:', liveSharePayload);
       
+      // Extract live share URL from backend response
       if (liveSharePayload?.share_url) {
         liveShareUrl = liveSharePayload.share_url;
-        console.log('✅ Live share URL from backend:', liveShareUrl);
+        console.log('✅ Live share URL received from backend:', liveShareUrl);
       }
 
       const backendSession = liveSharePayload?.session;
       if (backendSession?.id) {
         try {
-          // Build URL if not provided
+          // Build URL if not provided but we have a token
           if (!liveShareUrl && backendSession.share_token) {
             const liveShareBaseUrl = getLiveShareBaseUrl();
             const normalizedBase = liveShareBaseUrl.endsWith('/')
@@ -394,6 +500,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
             console.log('✅ Built live share URL from token:', liveShareUrl);
           }
           
+          // Start live location updates with the session
           await startLiveLocationShareUpdates(userId, backendSession.id, location || undefined, {
             onSessionEnded: (payload) => {
               console.log('SOS live share session ended:', payload);
@@ -404,7 +511,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
             expiresAt: backendSession.expires_at || backendSession.expiresAt || null,
           });
           liveShareSession = getActiveLiveShareSession();
-          console.log('✅ Live share session started:', liveShareSession);
+          console.log('✅ Live share session started from backend:', liveShareSession);
         } catch (error) {
           console.error('Failed to start live share updates from backend session:', error);
         }
@@ -413,18 +520,19 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       }
     } catch (error: any) {
       console.error('Error sending SOS to backend:', error);
-      // Continue with SMS/call even if backend fails
+      // Will try fallback below
     }
   } else {
     console.warn('User not authenticated, skipping backend SOS');
   }
 
-  // Fallback: start live share locally if backend did not create one
-  if (!liveShareSession && user?.id && location) {
+  // STEP 2: Fallback - start live share locally if backend did not create one
+  // This ensures we ALWAYS have a live share URL before sending messages
+  if (!liveShareUrl && !liveShareSession && user?.id && location) {
     try {
       const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
       const durationMinutes = isPremium ? 1440 : 30;
-      console.log('Starting fallback live location sharing for SOS...');
+      console.log('📤 Starting fallback live location sharing for SOS...');
       const response = await apiService.startLiveLocationShare(userId, durationMinutes);
       const session = response?.session;
       const sessionId = session?.id;
@@ -450,26 +558,38 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       }
     } catch (error) {
       console.error('Error starting fallback live location sharing for SOS:', error);
+      // Last resort: use static location URL
       if (location) {
         liveShareUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
+        console.log('⚠️ Using static location URL as last resort:', liveShareUrl);
       }
     }
   }
 
+  // STEP 3: Construct messages with live share URL
+  // NOW that we have the live share URL (or confirmed we can't get one),
+  // construct messages with the URL included
+  // At this point, we have either:
+  // 1. Live share URL from backend
+  // 2. Live share URL from fallback
+  // 3. Static location URL as last resort
+  // 4. No URL (should not happen, but handled gracefully)
+  console.log('📝 Constructing messages with live share URL:', liveShareUrl);
+  
   const settingsState = useSettingsStore.getState();
   const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
   let familyMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
   let securityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
 
   // Append live share URL to messages if available (not to police)
-  console.log('Before appending URL - liveShareUrl:', liveShareUrl);
+  console.log('📝 Before appending URL - liveShareUrl:', liveShareUrl);
   if (liveShareUrl) {
     const locationText = '\n\n📍 Track my live location: ' + liveShareUrl;
     familyMessage += locationText;
     securityMessage += locationText;
     console.log('✅ Added live share URL to messages:', liveShareUrl);
-    console.log('Family message:', familyMessage);
-    console.log('Security message:', securityMessage);
+    console.log('📱 Family message length:', familyMessage.length);
+    console.log('📱 Security message length:', securityMessage.length);
     // Don't include live share URL in police message
   } else if (location) {
     // Fallback to static location if live share failed (not to police)
@@ -482,6 +602,10 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   } else {
     console.warn('⚠️ No location or live share URL available for messages');
   }
+
+  // STEP 4: Determine recipient and send messages
+  // Messages are sent AFTER live share URL is ready and included in the message text
+  console.log('📤 Ready to send messages with live share URL included');
 
   const sendSmsGroup = async (label: string, recipients: string[], body: string) => {
     if (!recipients.length) {
@@ -497,37 +621,86 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     }
   };
 
-  if (hasFamilyContacts) {
-    const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
-    const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
-    smsInitiated = smsInitiated || familySuccess;
-
-    if (primaryContact?.phone) {
-      try {
-        await requestDirectCall(primaryContact.phone);
-        callInitiated = true;
-      } catch (error) {
-        console.error('Error calling primary contact:', error);
+  // STEP 4 (continued): Determine recipient based on geofence
+  // Check which geofence user is in and get assigned security officer
+  let assignedSecurityOfficer: any = null;
+  let isInsideGeofence = false;
+  
+  if (location && user?.id) {
+    try {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      const geofenceInfo = await findUserGeofence(location, userId);
+      
+      if (geofenceInfo?.securityOfficer) {
+        assignedSecurityOfficer = geofenceInfo.securityOfficer;
+        isInsideGeofence = true;
+        console.log('✅ Found assigned security officer:', assignedSecurityOfficer);
       }
+    } catch (error) {
+      console.error('Error checking geofence:', error);
     }
-  } else {
-    console.log('No family contacts configured. Skipping family SMS.');
   }
 
-  const securityPhones = SECURITY_CONTACTS.map((contact) => contact.phone);
-  const securitySuccess = await sendSmsGroup('security officers', securityPhones, securityMessage);
-  smsInitiated = smsInitiated || securitySuccess;
+  // STEP 4 (continued): Send messages with live share URL included
+  // Messages are sent AFTER live share URL is ready and included in the message text
+  // If inside geofence: send to assigned security officer
+  // If outside geofence: send to family and call police
+  if (isInsideGeofence && assignedSecurityOfficer) {
+    // Inside geofence - send to assigned security officer
+    const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
+    if (officerPhone) {
+      const securitySuccess = await sendSmsGroup(
+        'assigned security officer',
+        [officerPhone],
+        securityMessage
+      );
+      smsInitiated = smsInitiated || securitySuccess;
+      console.log(`SOS sent to assigned security officer: ${assignedSecurityOfficer.name || 'Unknown'}`);
+    } else {
+      console.warn('Assigned security officer has no phone number');
+    }
+    
+    // Also call police
+    try {
+      await requestDirectCall(POLICE_CONTACT.phone);
+      callInitiated = true;
+    } catch (error) {
+      console.error('Error calling police hotline:', error);
+      Alert.alert(
+        'Unable to call police',
+        'We could not place the call automatically. Please dial the police hotline manually.',
+      );
+    }
+  } else {
+    // Outside geofence - send to family and call police
+    if (hasFamilyContacts) {
+      const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+      const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
+      smsInitiated = smsInitiated || familySuccess;
 
-  // Only call police, don't send SMS
-  try {
-    await requestDirectCall(POLICE_CONTACT.phone);
-    callInitiated = true;
-  } catch (error) {
-    console.error('Error calling police hotline:', error);
-    Alert.alert(
-      'Unable to call police',
-      'We could not place the call automatically. Please dial the police hotline manually.',
-    );
+      if (primaryContact?.phone) {
+        try {
+          await requestDirectCall(primaryContact.phone);
+          callInitiated = true;
+        } catch (error) {
+          console.error('Error calling primary contact:', error);
+        }
+      }
+    } else {
+      console.log('No family contacts configured. Skipping family SMS.');
+    }
+
+    // Call police
+    try {
+      await requestDirectCall(POLICE_CONTACT.phone);
+      callInitiated = true;
+    } catch (error) {
+      console.error('Error calling police hotline:', error);
+      Alert.alert(
+        'Unable to call police',
+        'We could not place the call automatically. Please dial the police hotline manually.',
+      );
+    }
   }
 
   // Send push notification immediately (don't await to avoid blocking)

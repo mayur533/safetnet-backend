@@ -15,6 +15,8 @@ import com.swmansion.rnscreens.RNScreensPackage
 import com.BV.LinearGradient.LinearGradientPackage
 import com.reactnativecommunity.geolocation.GeolocationPackage
 import com.sensors.RNSensorsPackage
+import com.userapp.sms.SmsPackage
+import com.userapp.calls.DirectCallPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -93,6 +95,11 @@ class MainApplication : Application(), ReactApplication {
             } else {
               Log.d("MainApplication", "RNSensorsPackage found in autolinked packages")
             }
+            
+            // Add SMS and Direct Call packages
+            add(SmsPackage())
+            add(DirectCallPackage())
+            Log.d("MainApplication", "SmsPackage and DirectCallPackage added")
             
             Log.d("MainApplication", "Final packages: ${this.map { it.javaClass.simpleName }.joinToString()}")
         },

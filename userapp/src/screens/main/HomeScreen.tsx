@@ -234,6 +234,24 @@ const HomeScreen = ({navigation}: any) => {
     }
   }, [contactsInitialized, loadContacts]);
 
+  // Periodically check for active live share sessions (especially after SOS)
+  // This ensures the "Stop live sharing" button appears in the modal
+  useEffect(() => {
+    // Check immediately on mount and when user changes
+    const currentSession = getActiveLiveShareSession();
+    if (currentSession) {
+      setActiveLiveShare(currentSession);
+    }
+
+    // Set up interval to check every 2 seconds for active sessions
+    const interval = setInterval(() => {
+      const session = getActiveLiveShareSession();
+      setActiveLiveShare(session);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [user?.id]); // Only re-run when user changes
+
   useEffect(() => {
     let isMounted = true;
     const fetchCommunities = async () => {
@@ -431,8 +449,15 @@ const HomeScreen = ({navigation}: any) => {
     if (fromShake) {
       try {
         const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-        await dispatchSOSAlert(sosMessage);
-        setActiveLiveShare(getActiveLiveShareSession());
+        const sosResult = await dispatchSOSAlert(sosMessage);
+        // Update active live share state with the session from SOS
+        if (sosResult?.liveShareSession) {
+          setActiveLiveShare(sosResult.liveShareSession);
+          console.log('✅ Active live share session set from SOS (shake):', sosResult.liveShareSession);
+        } else {
+          // Fallback: check for active session
+          setActiveLiveShare(getActiveLiveShareSession());
+        }
         console.log('SOS alert sent from shake detection');
         // Notification and vibration already handled by shakeDetectionService
       } catch (error) {
@@ -450,8 +475,15 @@ const HomeScreen = ({navigation}: any) => {
     // Normal UI flow - dispatch SOS alert
     try {
       const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-      await dispatchSOSAlert(sosMessage);
-      setActiveLiveShare(getActiveLiveShareSession());
+      const sosResult = await dispatchSOSAlert(sosMessage);
+      // Update active live share state with the session from SOS
+      if (sosResult?.liveShareSession) {
+        setActiveLiveShare(sosResult.liveShareSession);
+        console.log('✅ Active live share session set from SOS (button):', sosResult.liveShareSession);
+      } else {
+        // Fallback: check for active session
+        setActiveLiveShare(getActiveLiveShareSession());
+      }
       
       // Show success screen after alert is sent
     setShowSuccess(true);

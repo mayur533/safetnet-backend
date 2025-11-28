@@ -145,7 +145,7 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
                 if not source:
                     source = 'last_known'
                 if not last_seen:
-                last_seen = profile.last_seen_at
+                    last_seen = profile.last_seen_at
                 battery = profile.battery_level
 
         # Fall back to geofence center if still no location
@@ -157,7 +157,7 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
                     'longitude': center[1],
                 }
                 if not source:
-                source = 'geofence_center'
+                    source = 'geofence_center'
 
         if location is None:
             continue
