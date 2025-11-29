@@ -790,6 +790,33 @@ class ApiService {
 
 
   /**
+   * Record geofence enter/exit event
+   */
+  async recordGeofenceEvent(
+    userId: number,
+    geofenceId: number,
+    eventType: 'enter' | 'exit',
+    latitude: number,
+    longitude: number
+  ): Promise<any> {
+    try {
+      return await this.request(`/${userId}/geofence_event/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          geofence_id: geofenceId,
+          event_type: eventType,
+          latitude,
+          longitude,
+        }),
+      });
+    } catch (error) {
+      // Don't throw - geofence event recording is non-critical
+      console.warn('Failed to record geofence event:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get geofences (Premium only) (with caching)
    */
   async getGeofences(userId: number, forceRefresh: boolean = false): Promise<any> {

@@ -35,6 +35,7 @@ import {
   getActiveLiveShareSession,
   startLiveLocationShareUpdates,
   stopLiveLocationShareUpdates,
+  startLiveLocationShare,
 } from '../../services/liveLocationShareService';
 import {sendLiveShareNotification} from '../../services/notificationService';
 import {
@@ -864,53 +865,15 @@ const HomeScreen = ({navigation}: any) => {
     }
     setIsStartingLiveShare(true);
     try {
-      const hasPermission = await ensureLocationPermission();
-      if (!hasPermission) {
-        setAlertState({
-          visible: true,
-          title: 'Permission needed',
-          message: 'Enable location permission to share live location.',
-          type: 'warning',
-        });
-        return;
-      }
-      const coords = await fetchLocationWithFallback();
-      const durationMinutes = isPremium ? 1440 : 15;
-      const response = await apiService.startLiveLocationShare(user.id, durationMinutes);
-      const session = response?.session;
-      const sessionId = session?.id;
-      if (!sessionId) {
-        throw new Error('Could not start live share session');
-      }
-      const sessionPlanType =
-        session?.plan_type === 'premium'
-          ? 'premium'
-          : session?.plan_type === 'free'
-          ? 'free'
-          : isPremium
-          ? 'premium'
-          : 'free';
-      setLastLiveSharePlan(sessionPlanType);
-      const shareToken = session?.share_token || session?.shareToken;
-      const liveShareBaseUrl = getLiveShareBaseUrl();
-      const normalizedBase = liveShareBaseUrl.endsWith('/')
-        ? liveShareBaseUrl.slice(0, -1)
-        : liveShareBaseUrl;
-      const shareLink = shareToken
-        ? `${normalizedBase}/${shareToken}/`
-        : buildGoogleMapsUrl(coords.latitude, coords.longitude);
-      await startLiveLocationShareUpdates(user.id, sessionId, coords, {
-        onSessionEnded: handleAutoLiveShareEnd,
-        shareUrl: shareLink,
-        shareToken,
-        planType: sessionPlanType,
-        expiresAt: session?.expires_at || session?.expiresAt || null,
-      });
+      // Use the reusable live location share function
+      const result = await startLiveLocationShare(handleAutoLiveShareEnd);
+      
+      // Update UI state
+      setLastLiveSharePlan(result.session?.planType || (isPremium ? 'premium' : 'free'));
       setActiveLiveShare(getActiveLiveShareSession());
-      const message = isPremium
-        ? `I'm sharing my live location. Track me here until I stop sharing:\n${shareLink}`
-        : `I'm sharing my live location for the next 15 minutes. Track me here:\n${shareLink}`;
-      await shareTextMessage(message);
+      
+      // Share the message via native share sheet
+      await shareTextMessage(result.locationMessage);
       closeActionModal();
     } catch (error: any) {
       console.error('Unable to start live sharing:', error);
@@ -918,7 +881,7 @@ const HomeScreen = ({navigation}: any) => {
         visible: true,
         title: 'Live sharing failed',
         message: error?.message || 'Please try again in a moment.',
-        type: 'error',
+        type: 'warning',
       });
     } finally {
       setIsStartingLiveShare(false);

@@ -20,14 +20,15 @@ from .models import (
     User, FamilyContact, CommunityMembership, SOSEvent,
     LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
 )
-# Import PromoCode from users app
-from users.models import PromoCode
+# Import PromoCode and Alert from users app
+from users.models import PromoCode, Alert
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
     FamilyContactSerializer, FamilyContactCreateSerializer,
     CommunityMembershipSerializer, CommunityMembershipCreateSerializer,
     SOSEventSerializer, SOSTriggerSerializer, UserLocationUpdateSerializer,
     SubscriptionSerializer, LiveLocationShareSerializer, LiveLocationShareCreateSerializer,
+    GeofenceEventSerializer,
     GeofenceSerializer, GeofenceCreateSerializer,
     CommunityAlertSerializer, CommunityAlertCreateSerializer,
     ChatGroupSerializer, ChatGroupCreateSerializer,
@@ -516,6 +517,12 @@ class SOSEventListView(generics.ListAPIView):
     serializer_class = SOSEventSerializer
     permission_classes = [permissions.IsAuthenticated]
     
+    def get_serializer_context(self):
+        """Add request to serializer context for read status checks."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
     def get_queryset(self):
         """Get SOS events for the current user."""
         user = self.request.user
@@ -577,6 +584,119 @@ class SOSEventListView(generics.ListAPIView):
             'limit': None if is_premium else FREE_TIER_LIMITS['MAX_INCIDENT_HISTORY'],
             'message': None if is_premium else f'Free plan shows last {FREE_TIER_LIMITS["MAX_INCIDENT_HISTORY"]} incidents. Upgrade to Premium for unlimited history.'
         })
+
+
+class GeofenceEventView(APIView):
+    """
+    Record geofence enter/exit events.
+    POST /users/<user_id>/geofence_event/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, user_id):
+        """Record geofence enter/exit event."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only record geofence events for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = GeofenceEventSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            geofence_id = serializer.validated_data['geofence_id']
+            event_type = serializer.validated_data['event_type']
+            latitude = serializer.validated_data['latitude']
+            longitude = serializer.validated_data['longitude']
+            timestamp = serializer.validated_data.get('timestamp', timezone.now())
+            
+            # Get the geofence (from users_profile.Geofence)
+            try:
+                geofence = Geofence.objects.get(id=geofence_id, user=user)
+            except Geofence.DoesNotExist:
+                return Response(
+                    {'error': 'Geofence not found or does not belong to you.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Determine alert type and severity
+            alert_type = 'GEOFENCE_ENTER' if event_type == 'enter' else 'GEOFENCE_EXIT'
+            severity = 'LOW'  # Geofence events are typically low severity
+            
+            # Create title and description
+            action = 'entered' if event_type == 'enter' else 'exited'
+            title = f"Geofence {event_type.title()}: {geofence.name}"
+            description = f"User {action} geofence '{geofence.name}' at {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            # Create Alert record for tracking
+            # Note: We use users.Alert model which is for admin tracking
+            # The geofence field can be null since it's for admin geofences
+            alert = Alert.objects.create(
+                user=user,
+                alert_type=alert_type,
+                severity=severity,
+                title=title,
+                description=description,
+                metadata={
+                    'geofence_id': geofence_id,
+                    'geofence_name': geofence.name,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'event_type': event_type,
+                    'source': 'user_app',
+                },
+                is_resolved=False,
+            )
+            
+            logger.info(
+                f"Geofence {event_type} event recorded: User {user.email} {action} geofence '{geofence.name}' (Alert ID: {alert.id})"
+            )
+            
+            return Response({
+                'message': f'Geofence {event_type} event recorded successfully',
+                'alert_id': alert.id,
+                'geofence_name': geofence.name,
+                'event_type': event_type,
+                'timestamp': timestamp.isoformat(),
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SOSEventMarkReadView(APIView):
+    """
+    Mark SOS event as read by admin/sub-admin/security officer.
+    POST /users/<user_id>/sos_events/<sos_event_id>/mark_read/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, user_id, sos_event_id):
+        """Mark SOS event as read."""
+        # Check if user has permission (admin, sub-admin, or security officer)
+        user = request.user
+        if user.role not in ['SUPER_ADMIN', 'SUB_ADMIN', 'security_officer']:
+            return Response(
+                {'error': 'Only admins, sub-admins, and security officers can mark SOS events as read.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            sos_event = SOSEvent.objects.get(id=sos_event_id)
+        except SOSEvent.DoesNotExist:
+            return Response(
+                {'error': 'SOS event not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Mark as read
+        is_newly_read = sos_event.mark_as_read(user)
+        
+        return Response({
+            'message': 'SOS event marked as read.' if is_newly_read else 'SOS event was already read.',
+            'is_read': True,
+            'read_timestamp': sos_event.get_read_timestamp(user),
+            'read_by_ids': list(sos_event.read_by.values_list('id', flat=True)),
+        }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])

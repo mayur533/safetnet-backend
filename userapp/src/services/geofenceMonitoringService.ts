@@ -94,12 +94,32 @@ const checkGeofences = (location: UserLocation) => {
       if (!currentGeofences.has(geofence.id)) {
         // User entered geofence
         if (geofence.alert_on_entry !== false) {
+          // Send local notification to user
           sendAlertNotification(
             'Geofence Entered',
             `You have entered ${geofence.name}`,
           ).catch((error) => {
             console.warn('Failed to send geofence entry notification:', error);
           });
+          
+          // Record event in backend (non-blocking)
+          const user = useAuthStore.getState().user;
+          if (user?.id) {
+            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+            const geofenceId = parseInt(geofence.id, 10);
+            if (!isNaN(userId) && !isNaN(geofenceId)) {
+              apiService.recordGeofenceEvent(
+                userId,
+                geofenceId,
+                'enter',
+                location.latitude,
+                location.longitude
+              ).catch((error) => {
+                console.warn('Failed to record geofence enter event:', error);
+              });
+            }
+          }
+          
           console.log(`[Geofence] Entered: ${geofence.name}`);
         }
       }
@@ -108,12 +128,32 @@ const checkGeofences = (location: UserLocation) => {
       if (currentGeofences.has(geofence.id)) {
         // User exited geofence
         if (geofence.alert_on_exit !== false) {
+          // Send local notification to user
           sendAlertNotification(
             'Geofence Exited',
             `You have exited ${geofence.name}`,
           ).catch((error) => {
             console.warn('Failed to send geofence exit notification:', error);
           });
+          
+          // Record event in backend (non-blocking)
+          const user = useAuthStore.getState().user;
+          if (user?.id) {
+            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+            const geofenceId = parseInt(geofence.id, 10);
+            if (!isNaN(userId) && !isNaN(geofenceId)) {
+              apiService.recordGeofenceEvent(
+                userId,
+                geofenceId,
+                'exit',
+                location.latitude,
+                location.longitude
+              ).catch((error) => {
+                console.warn('Failed to record geofence exit event:', error);
+              });
+            }
+          }
+          
           console.log(`[Geofence] Exited: ${geofence.name}`);
         }
       }

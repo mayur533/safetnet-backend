@@ -26,6 +26,7 @@ urlpatterns = [
     # SOS functionality
     path('<int:user_id>/sos/', views.SOSTriggerView.as_view(), name='sos-trigger'),
     path('<int:user_id>/sos_events/', views.SOSEventListView.as_view(), name='sos-events-list'),
+    path('<int:user_id>/sos_events/<int:sos_event_id>/mark_read/', views.SOSEventMarkReadView.as_view(), name='sos-event-mark-read'),
     
     # Subscription/Billing
     path('subscribe/', views.SubscriptionView.as_view(), name='subscribe'),
@@ -34,6 +35,7 @@ urlpatterns = [
     
     # Geofencing (Premium only)
     path('<int:user_id>/geofences/', views.GeofenceListView.as_view(), name='geofences'),
+    path('<int:user_id>/geofence_event/', views.GeofenceEventView.as_view(), name='geofence-event'),
     
     # Live location sharing
     path('<int:user_id>/live_location/start/', views.LiveLocationShareView.as_view(), name='live-location-start'),

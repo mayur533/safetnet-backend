@@ -184,6 +184,19 @@ class SOSEvent(models.Model):
         blank=True,
         help_text="Additional notes about the SOS event"
     )
+    # Track which admins, sub-admins, and security officers have read this SOS event
+    read_by = models.ManyToManyField(
+        User,
+        related_name='read_sos_events',
+        blank=True,
+        help_text="Admins, sub-admins, and security officers who have read this SOS event"
+    )
+    # Track read timestamps (JSON field: {user_id: timestamp})
+    read_timestamps = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Timestamps when each user read this SOS event. Format: {'user_id': 'ISO_timestamp'}"
+    )
 
     class Meta:
         db_table = 'users_profile_sosevent'
@@ -194,6 +207,46 @@ class SOSEvent(models.Model):
     def __str__(self):
         user_email = self.user.email if hasattr(self.user, 'email') else 'User'
         return f"SOS Event - {user_email} at {self.triggered_at}"
+    
+    def mark_as_read(self, user):
+        """
+        Mark this SOS event as read by a user (admin/sub-admin/security officer).
+        Returns True if newly marked, False if already read.
+        """
+        from django.utils import timezone
+        
+        if not user or not user.id:
+            return False
+        
+        # Check if already read
+        if self.read_by.filter(id=user.id).exists():
+            return False
+        
+        # Add to read_by
+        self.read_by.add(user)
+        
+        # Add timestamp
+        if not isinstance(self.read_timestamps, dict):
+            self.read_timestamps = {}
+        
+        self.read_timestamps[str(user.id)] = timezone.now().isoformat()
+        self.save(update_fields=['read_timestamps'])
+        
+        return True
+    
+    def is_read_by(self, user):
+        """Check if this SOS event has been read by the given user."""
+        if not user or not user.id:
+            return False
+        return self.read_by.filter(id=user.id).exists()
+    
+    def get_read_timestamp(self, user):
+        """Get the timestamp when the user read this SOS event."""
+        if not user or not user.id:
+            return None
+        if isinstance(self.read_timestamps, dict):
+            return self.read_timestamps.get(str(user.id))
+        return None
 
 
 class LiveLocationShare(models.Model):

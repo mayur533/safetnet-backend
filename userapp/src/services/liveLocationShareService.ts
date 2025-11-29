@@ -1,6 +1,8 @@
 import Geolocation from '@react-native-community/geolocation';
-import {Alert} from 'react-native';
+import {Alert, Platform, PermissionsAndroid} from 'react-native';
+import GeolocationService from 'react-native-geolocation-service';
 import {apiService} from './apiService';
+import {useAuthStore} from '../stores/authStore';
 
 export interface LiveShareSession {
   userId: number;
@@ -107,6 +109,243 @@ export const stopLiveLocationShareUpdates = async () => {
     }
   }
   activeSession = null;
+};
+
+/**
+ * Get live share base URL
+ */
+const getLiveShareBaseUrl = (): string => {
+  const base = __DEV__
+    ? 'http://192.168.0.125:8000/live-share'
+    : 'https://safetnet-backend.onrender.com/live-share';
+  return base.endsWith('/') ? base.slice(0, -1) : base;
+};
+
+/**
+ * Build Google Maps URL as fallback
+ */
+const buildGoogleMapsUrl = (latitude: number, longitude: number): string => {
+  return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+};
+
+/**
+ * Ensure location permission is granted
+ */
+const ensureLocationPermission = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') {
+    return true;
+  }
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Location Permission',
+        message: 'SafeTNet needs location access to share your live position.',
+        buttonPositive: 'Allow',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (error) {
+    console.warn('Error requesting location permission:', error);
+    return false;
+  }
+};
+
+/**
+ * Get current location with fallback methods
+ */
+const fetchLocationWithFallback = async (): Promise<{latitude: number; longitude: number}> => {
+  const getCurrentPosition = (options = {enableHighAccuracy: true, timeout: 15000}) =>
+    new Promise<{latitude: number; longitude: number}>((resolve, reject) => {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => reject(error),
+        options,
+      );
+    });
+
+  const getEnhancedPosition = () =>
+    new Promise<{latitude: number; longitude: number}>((resolve, reject) => {
+      GeolocationService.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => reject(error),
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          forceRequestLocation: true,
+          showLocationDialog: true,
+        },
+      );
+    });
+
+  try {
+    return await getCurrentPosition();
+  } catch (primaryError: any) {
+    if (Platform.OS === 'android') {
+      try {
+        return await getEnhancedPosition();
+      } catch (enhancedError) {
+        throw enhancedError;
+      }
+    }
+    throw primaryError;
+  }
+};
+
+/**
+ * Start live location sharing and return share URL
+ * This is a reusable function that can be called from SOS or home screen
+ */
+export interface StartLiveShareResult {
+  shareUrl: string;
+  shareToken: string | null;
+  sessionId: number;
+  session: LiveShareSession | null;
+  locationMessage: string; // The formatted message with share URL
+}
+
+export const startLiveLocationShare = async (
+  onSessionEnded?: (payload: {reason: LiveShareEndReason; message?: string}) => void,
+): Promise<StartLiveShareResult> => {
+  console.log('🚀 Starting live location share...');
+
+  // Get user info
+  const user = useAuthStore.getState().user;
+  if (!user?.id) {
+    throw new Error('User not authenticated');
+  }
+
+  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+  const isPremium = user.plan === 'premium';
+
+  // Check location permission
+  const hasPermission = await ensureLocationPermission();
+  if (!hasPermission) {
+    throw new Error('Location permission not granted');
+  }
+
+  // Get current location
+  const coords = await fetchLocationWithFallback();
+  console.log('📍 Location obtained:', coords);
+
+  // Determine duration
+  const durationMinutes = isPremium ? 1440 : 15;
+
+  // Create live location share session
+  // Let API service handle its own timeout (30 seconds)
+  let response;
+  let session;
+  let sessionId;
+  
+  try {
+    console.log('📡 Calling API to start live location share session...');
+    response = await apiService.startLiveLocationShare(userId, durationMinutes);
+    
+    session = response?.session;
+    sessionId = session?.id;
+
+    if (!sessionId) {
+      console.error('❌ No session ID in response:', response);
+      throw new Error('Could not start live share session - no session ID received from backend');
+    }
+    
+    console.log('✅ Live location share session created:', sessionId);
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unknown error';
+    console.error('❌ Live location share API error:', {
+      message: errorMessage,
+      error: error,
+    });
+    
+    // Check for timeout errors
+    if (
+      errorMessage.includes('timeout') || 
+      errorMessage.includes('timed out') ||
+      errorMessage.includes('Request timeout') ||
+      errorMessage.includes('took too long') ||
+      errorMessage.includes('aborted')
+    ) {
+      throw new Error('Live location sharing timed out. Please check your internet connection and try again.');
+    }
+    
+    // Check for network errors
+    if (
+      errorMessage.includes('Network request failed') ||
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('Cannot connect') ||
+      errorMessage.includes('ECONNREFUSED') ||
+      errorMessage.includes('Connection refused')
+    ) {
+      throw new Error('Cannot connect to server. Please check your internet connection.');
+    }
+    
+    // Re-throw with more context
+    throw new Error(`Failed to start live location sharing: ${errorMessage}`);
+  }
+
+  // Extract session info
+  const sessionPlanType =
+    session?.plan_type === 'premium'
+      ? 'premium'
+      : session?.plan_type === 'free'
+      ? 'free'
+      : isPremium
+      ? 'premium'
+      : 'free';
+
+  const shareToken = session?.share_token || session?.shareToken;
+
+  // Construct share URL
+  const liveShareBaseUrl = getLiveShareBaseUrl();
+  const normalizedBase = liveShareBaseUrl.endsWith('/')
+    ? liveShareBaseUrl.slice(0, -1)
+    : liveShareBaseUrl;
+
+  const shareUrl = shareToken
+    ? `${normalizedBase}/${shareToken}/`
+    : buildGoogleMapsUrl(coords.latitude, coords.longitude);
+
+  // Start live location updates
+  await startLiveLocationShareUpdates(userId, sessionId, coords, {
+    onSessionEnded,
+    shareUrl,
+    shareToken,
+    planType: sessionPlanType,
+    expiresAt: session?.expires_at || session?.expiresAt || null,
+  });
+
+  // Get active session
+  await new Promise<void>(resolve => setTimeout(resolve, 100));
+  const activeSession = getActiveLiveShareSession();
+
+  // Construct location message (same format as home screen)
+  const locationMessage = isPremium
+    ? `I'm sharing my live location. Track me here until I stop sharing:\n${shareUrl}`
+    : `I'm sharing my live location for the next 15 minutes. Track me here:\n${shareUrl}`;
+
+  console.log('✅ Live location share started:', {
+    shareUrl,
+    sessionId,
+    planType: sessionPlanType,
+  });
+
+  return {
+    shareUrl,
+    shareToken,
+    sessionId,
+    session: activeSession,
+    locationMessage,
+  };
 };
 
 

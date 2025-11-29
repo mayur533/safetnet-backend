@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -1144,6 +1145,48 @@ class UserReplyViewSet(ReadOnlyModelViewSet):
     search_fields = ['email', 'message']
     ordering_fields = ['email', 'date_time']
     ordering = ['-date_time']
+    
+    def get_serializer_context(self):
+        """Add request to serializer context for read status checks."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class UserReplyMarkReadView(APIView):
+    """
+    Mark user reply as read by admin/sub-admin/security officer.
+    POST /user-replies/<reply_id>/mark_read/
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, reply_id):
+        """Mark user reply as read."""
+        # Check if user has permission (admin, sub-admin, or security officer)
+        user = request.user
+        if user.role not in ['SUPER_ADMIN', 'SUB_ADMIN', 'security_officer']:
+            return Response(
+                {'error': 'Only admins, sub-admins, and security officers can mark replies as read.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            user_reply = UserReply.objects.get(id=reply_id)
+        except UserReply.DoesNotExist:
+            return Response(
+                {'error': 'User reply not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Mark as read
+        is_newly_read = user_reply.mark_as_read(user)
+        
+        return Response({
+            'message': 'Reply marked as read.' if is_newly_read else 'Reply was already read.',
+            'is_read': True,
+            'read_timestamp': user_reply.get_read_timestamp(user),
+            'read_by_ids': list(user_reply.read_by.values_list('id', flat=True)),
+        }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])

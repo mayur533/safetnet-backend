@@ -34,7 +34,7 @@ const ensureSmsPermission = async (): Promise<boolean> => {
 
 const buildSmsUrl = (phone: string, message: string) => `sms:${phone}?body=${encodeURIComponent(message)}`;
 
-export const sendSmsDirect = async (recipients: string[], message: string): Promise<boolean> => {
+export const sendSmsDirect = async (recipients: string[], message: string, forceDirect: boolean = false): Promise<boolean> => {
   if (recipients.length === 0) {
     return false;
   }
@@ -45,8 +45,13 @@ export const sendSmsDirect = async (recipients: string[], message: string): Prom
       // Request permission first
       const hasPermission = await ensureSmsPermission();
       if (!hasPermission) {
-        console.warn('SMS permission denied, falling back to SMS app');
-        // Fall through to open SMS app
+        console.warn('SMS permission denied');
+        if (forceDirect) {
+          // If forceDirect is true, don't fall back to opening app
+          console.error('SMS permission denied and forceDirect=true - cannot send SMS');
+          return false;
+        }
+        // Fall through to open SMS app only if not forced
       } else {
         // Permission granted, send SMS directly
         await Promise.all(
@@ -59,18 +64,28 @@ export const sendSmsDirect = async (recipients: string[], message: string): Prom
       }
     } catch (error) {
       console.warn('Direct SMS send failed:', error);
-      // Fall through to open SMS app
+      if (forceDirect) {
+        // If forceDirect is true, don't fall back to opening app
+        console.error('Direct SMS failed and forceDirect=true - cannot send SMS');
+        return false;
+      }
+      // Fall through to open SMS app only if not forced
     }
   }
 
   // Fallback: Open default SMS app (works on both Android and iOS)
-  try {
-    const url = buildSmsUrl(recipients[0], message);
-    await Linking.openURL(url);
-    console.log('📱 Opened SMS app as fallback');
-    return true;
-  } catch (error) {
-    Alert.alert('Unable to open SMS', 'Please try again or check your SMS permissions.');
-    return false;
+  // Only do this if forceDirect is false
+  if (!forceDirect) {
+    try {
+      const url = buildSmsUrl(recipients[0], message);
+      await Linking.openURL(url);
+      console.log('📱 Opened SMS app as fallback');
+      return true;
+    } catch (error) {
+      Alert.alert('Unable to open SMS', 'Please try again or check your SMS permissions.');
+      return false;
+    }
   }
+
+  return false;
 };

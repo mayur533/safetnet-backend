@@ -50,6 +50,9 @@ urlpatterns = [
     # Notification read status
     path('notifications/<int:notification_id>/mark-read/', views.mark_notification_read, name='mark_notification_read'),
     
+    # User Reply mark read endpoint
+    path('admin/user-replies/<int:reply_id>/mark_read/', views.UserReplyMarkReadView.as_view(), name='user-reply-mark-read'),
+    
     # Analytics
     path('analytics/data/', views.analytics_data, name='analytics_data'),
 ]
