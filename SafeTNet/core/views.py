@@ -34,11 +34,15 @@ def live_share_view(request, share_token):
     """
     try:
         from django.conf import settings
-        # Get the base URL for API calls
-        if settings.DEBUG:
-            api_base_url = 'http://127.0.0.1:8000'
-        else:
-            api_base_url = 'https://safetnet-backend.onrender.com'
+        # Get the base URL for API calls - use the request's host
+        scheme = 'https' if request.is_secure() else 'http'
+        host = request.get_host()
+        api_base_url = f"{scheme}://{host}"
+        
+        # Fallback for DEBUG mode if needed
+        if settings.DEBUG and '192.168' not in host and 'localhost' not in host and '127.0.0.1' not in host:
+            # If accessing from phone on same network, use the IP from request
+            api_base_url = f"http://{host}"
         
         return render(request, "core/live_share.html", {
             "share_token": share_token,

@@ -6,7 +6,7 @@ import {sendSmsDirect} from './smsService';
 import {useSettingsStore, DEFAULT_SOS_TEMPLATE, DEFAULT_SOS_MESSAGES} from '../stores/settingsStore';
 import {useAuthStore} from '../stores/authStore';
 import {apiService} from './apiService';
-import {startLiveLocationShareUpdates, getActiveLiveShareSession, type LiveShareSession, startLiveLocationShare} from './liveLocationShareService';
+import {startLiveLocationShareUpdates, getActiveLiveShareSession, type LiveShareSession} from './liveLocationShareService';
 import {sendAlertNotification} from './notificationService';
 
 // Import push notifications - use dynamic import to avoid bundling issues
@@ -545,21 +545,15 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   let apiCallCompleted = false;
 
   try {
-    // STEP 2a: Start live location sharing FIRST (wait for it to complete or timeout)
-    console.log('📍 Starting live location sharing for SOS (with 10s timeout)...');
+    // STEP 2a: Start live location sharing FIRST (exactly like HomeScreen)
+    console.log('📍 Starting live location sharing for SOS...');
     let liveShareResult: {shareUrl: string; locationMessage: string} | null = null;
     
     try {
-      // Add timeout wrapper - max 10 seconds for live share setup
-      const liveSharePromise = startLiveLocationShare((payload) => {
+      // Use live location service directly (same as HomeScreen)
+      const result = await startLiveLocationShare((payload) => {
         console.log('SOS live share session ended:', payload);
       });
-      
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Live location share timeout after 10 seconds')), 10000);
-      });
-      
-      const result = await Promise.race([liveSharePromise, timeoutPromise]);
       
       liveShareUrl = result.shareUrl;
       liveShareSession = result.session;
@@ -635,36 +629,52 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
 
     // STEP 2c: Send SMS messages with combined SOS + Location (NOW both are ready)
     // Run SMS and API call in parallel
+    console.log('📤 Preparing to send SMS and API call...');
+    console.log('📝 Family message:', familyMessage.substring(0, 100) + '...');
+    console.log('📝 Security message:', securityMessage.substring(0, 100) + '...');
+    
     const [smsResult, apiResult] = await Promise.allSettled([
       // Send SMS
       (async () => {
-        if (isInsideGeofence && assignedSecurityOfficer) {
-          const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
-          if (officerPhone) {
-            const securitySuccess = await sendSmsGroup(
-              'assigned security officer',
-              [officerPhone],
-              securityMessage
-            );
-            smsInitiated = smsInitiated || securitySuccess;
-            console.log(`✅ SMS sent to assigned security officer: ${assignedSecurityOfficer.name || 'Unknown'}`);
-            return securitySuccess;
+        try {
+          if (isInsideGeofence && assignedSecurityOfficer) {
+            const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
+            if (officerPhone) {
+              console.log(`📤 Attempting to send SMS to security officer: ${officerPhone}`);
+              const securitySuccess = await sendSmsGroup(
+                'assigned security officer',
+                [officerPhone],
+                securityMessage
+              );
+              smsInitiated = smsInitiated || securitySuccess;
+              console.log(`✅ SMS result for security officer: ${securitySuccess}`);
+              return securitySuccess;
+            } else {
+              console.warn('⚠️ No phone number for security officer');
+              return false;
+            }
+          } else {
+            if (hasFamilyContacts) {
+              const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+              console.log(`📤 Attempting to send SMS to ${smsRecipients.length} family contact(s):`, smsRecipients);
+              const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
+              smsInitiated = smsInitiated || familySuccess;
+              console.log(`✅ SMS result for family contacts: ${familySuccess}`);
+              return familySuccess;
+            } else {
+              console.warn('⚠️ No family contacts available');
+              return false;
+            }
           }
-        } else {
-          if (hasFamilyContacts) {
-            const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
-            const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
-            smsInitiated = smsInitiated || familySuccess;
-            console.log(`✅ SMS sent to ${smsRecipients.length} family contact(s)`);
-            return familySuccess;
-          }
+        } catch (error) {
+          console.error('❌ Error in SMS sending promise:', error);
+          return false;
         }
-        return false;
       })(),
       // Send API call
       (async () => {
-        if (user?.id) {
-          try {
+        try {
+          if (user?.id) {
             const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
             const sosData: {longitude?: number; latitude?: number; notes?: string} = {};
             
@@ -681,21 +691,53 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
             console.log('✅ SOS event created in backend');
             apiCallCompleted = true;
             return true;
-          } catch (error) {
-            console.error('Error sending SOS to backend:', error);
+          } else {
+            console.warn('⚠️ No user ID available for API call');
             return false;
           }
+        } catch (error) {
+          console.error('❌ Error sending SOS to backend:', error);
+          return false;
         }
-        return false;
       })(),
     ]);
 
-    // Check results
+    // Check results - handle both fulfilled and rejected
     if (smsResult.status === 'fulfilled') {
       smsInitiated = smsResult.value || smsInitiated;
+      console.log('✅ SMS promise fulfilled:', smsResult.value);
+    } else {
+      console.error('❌ SMS promise rejected:', smsResult.reason);
+      // Try to send SMS again as fallback
+      try {
+        const settingsState = useSettingsStore.getState();
+        const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
+        const baseMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
+        const fallbackMessage = liveShareResult 
+          ? `${baseMessage}\n\n${liveShareResult.locationMessage}`
+          : baseMessage;
+        
+        if (isInsideGeofence && assignedSecurityOfficer) {
+          const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
+          if (officerPhone) {
+            const retrySuccess = await sendSmsGroup('security officer (retry)', [officerPhone], fallbackMessage);
+            smsInitiated = smsInitiated || retrySuccess;
+          }
+        } else if (hasFamilyContacts) {
+          const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+          const retrySuccess = await sendSmsGroup('family contacts (retry)', smsRecipients, fallbackMessage);
+          smsInitiated = smsInitiated || retrySuccess;
+        }
+      } catch (retryError) {
+        console.error('❌ SMS retry also failed:', retryError);
+      }
     }
+    
     if (apiResult.status === 'fulfilled') {
       apiCallCompleted = apiResult.value || apiCallCompleted;
+      console.log('✅ API promise fulfilled:', apiResult.value);
+    } else {
+      console.error('❌ API promise rejected:', apiResult.reason);
     }
 
     console.log('✅ Background SOS operations completed:', {
@@ -704,8 +746,43 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       liveShareUrl,
       liveShareSession: liveShareSession ? 'active' : 'none',
     });
+    
+    // Final check: If SMS wasn't sent, try one more time with whatever we have
+    if (!smsInitiated) {
+      console.warn('⚠️ SMS was not sent successfully, attempting final fallback...');
+      try {
+        const settingsState = useSettingsStore.getState();
+        const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
+        const baseMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
+        
+        // Try to include location if available
+        let finalMessage = baseMessage;
+        if (liveShareResult) {
+          finalMessage = `${baseMessage}\n\n${liveShareResult.locationMessage}`;
+        } else if (location) {
+          const staticUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
+          finalMessage = `${baseMessage}\n\nMy location:\n${staticUrl}`;
+        }
+        
+        if (isInsideGeofence && assignedSecurityOfficer) {
+          const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
+          if (officerPhone) {
+            const finalSuccess = await sendSmsGroup('assigned security officer (final fallback)', [officerPhone], finalMessage);
+            smsInitiated = smsInitiated || finalSuccess;
+            console.log('✅ Final fallback SMS result:', finalSuccess);
+          }
+        } else if (hasFamilyContacts) {
+          const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+          const finalSuccess = await sendSmsGroup('family contacts (final fallback)', smsRecipients, finalMessage);
+          smsInitiated = smsInitiated || finalSuccess;
+          console.log('✅ Final fallback SMS result:', finalSuccess);
+        }
+      } catch (finalError) {
+        console.error('❌ Final fallback SMS also failed:', finalError);
+      }
+    }
   } catch (error) {
-    console.error('Error in background SOS operations:', error);
+    console.error('❌ Error in background SOS operations:', error);
     // Even if there's an error, try to send basic SOS message without location
     try {
       const settingsState = useSettingsStore.getState();
@@ -715,14 +792,18 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       if (isInsideGeofence && assignedSecurityOfficer) {
         const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
         if (officerPhone) {
-          await sendSmsGroup('assigned security officer (fallback)', [officerPhone], baseMessage);
+          const fallbackSuccess = await sendSmsGroup('assigned security officer (fallback)', [officerPhone], baseMessage);
+          smsInitiated = smsInitiated || fallbackSuccess;
+          console.log('✅ Fallback SMS result:', fallbackSuccess);
         }
       } else if (hasFamilyContacts) {
         const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
-        await sendSmsGroup('family contacts (fallback)', smsRecipients, baseMessage);
+        const fallbackSuccess = await sendSmsGroup('family contacts (fallback)', smsRecipients, baseMessage);
+        smsInitiated = smsInitiated || fallbackSuccess;
+        console.log('✅ Fallback SMS result:', fallbackSuccess);
       }
     } catch (fallbackError) {
-      console.error('Fallback SMS also failed:', fallbackError);
+      console.error('❌ Fallback SMS also failed:', fallbackError);
     }
   }
 

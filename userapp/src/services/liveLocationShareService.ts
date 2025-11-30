@@ -217,16 +217,14 @@ export interface StartLiveShareResult {
 export const startLiveLocationShare = async (
   onSessionEnded?: (payload: {reason: LiveShareEndReason; message?: string}) => void,
 ): Promise<StartLiveShareResult> => {
-  console.log('🚀 Starting live location share...');
-
   // Get user info
   const user = useAuthStore.getState().user;
   if (!user?.id) {
     throw new Error('User not authenticated');
   }
 
-  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
   const isPremium = user.plan === 'premium';
+  const durationMinutes = isPremium ? 1440 : 15;
 
   // Check location permission
   const hasPermission = await ensureLocationPermission();
@@ -236,64 +234,19 @@ export const startLiveLocationShare = async (
 
   // Get current location
   const coords = await fetchLocationWithFallback();
-  console.log('📍 Location obtained:', coords);
 
-  // Determine duration
-  const durationMinutes = isPremium ? 1440 : 15;
+  // Create live location share session (exactly like old working HomeScreen)
+  // Note: Old commit used user.id directly, but API expects number, so we ensure it's a number
+  const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+  const response = await apiService.startLiveLocationShare(userId, durationMinutes);
+  const session = response?.session;
+  const sessionId = session?.id;
 
-  // Create live location share session
-  // Let API service handle its own timeout (30 seconds)
-  let response;
-  let session;
-  let sessionId;
-  
-  try {
-    console.log('📡 Calling API to start live location share session...');
-    response = await apiService.startLiveLocationShare(userId, durationMinutes);
-    
-    session = response?.session;
-    sessionId = session?.id;
-
-    if (!sessionId) {
-      console.error('❌ No session ID in response:', response);
-      throw new Error('Could not start live share session - no session ID received from backend');
-    }
-    
-    console.log('✅ Live location share session created:', sessionId);
-  } catch (error: any) {
-    const errorMessage = error?.message || 'Unknown error';
-    console.error('❌ Live location share API error:', {
-      message: errorMessage,
-      error: error,
-    });
-    
-    // Check for timeout errors
-    if (
-      errorMessage.includes('timeout') || 
-      errorMessage.includes('timed out') ||
-      errorMessage.includes('Request timeout') ||
-      errorMessage.includes('took too long') ||
-      errorMessage.includes('aborted')
-    ) {
-      throw new Error('Live location sharing timed out. Please check your internet connection and try again.');
-    }
-    
-    // Check for network errors
-    if (
-      errorMessage.includes('Network request failed') ||
-      errorMessage.includes('Failed to fetch') ||
-      errorMessage.includes('Cannot connect') ||
-      errorMessage.includes('ECONNREFUSED') ||
-      errorMessage.includes('Connection refused')
-    ) {
-      throw new Error('Cannot connect to server. Please check your internet connection.');
-    }
-    
-    // Re-throw with more context
-    throw new Error(`Failed to start live location sharing: ${errorMessage}`);
+  if (!sessionId) {
+    throw new Error('Could not start live share session');
   }
 
-  // Extract session info
+  // Session plan type logic (exactly like old working HomeScreen with fallback)
   const sessionPlanType =
     session?.plan_type === 'premium'
       ? 'premium'
@@ -304,8 +257,6 @@ export const startLiveLocationShare = async (
       : 'free';
 
   const shareToken = session?.share_token || session?.shareToken;
-
-  // Construct share URL
   const liveShareBaseUrl = getLiveShareBaseUrl();
   const normalizedBase = liveShareBaseUrl.endsWith('/')
     ? liveShareBaseUrl.slice(0, -1)
@@ -315,7 +266,7 @@ export const startLiveLocationShare = async (
     ? `${normalizedBase}/${shareToken}/`
     : buildGoogleMapsUrl(coords.latitude, coords.longitude);
 
-  // Start live location updates
+  // Start live location updates (exactly like old working HomeScreen)
   await startLiveLocationShareUpdates(userId, sessionId, coords, {
     onSessionEnded,
     shareUrl,
@@ -325,19 +276,12 @@ export const startLiveLocationShare = async (
   });
 
   // Get active session
-  await new Promise<void>(resolve => setTimeout(resolve, 100));
   const activeSession = getActiveLiveShareSession();
 
-  // Construct location message (same format as home screen)
+  // Construct location message (exactly like old working HomeScreen)
   const locationMessage = isPremium
     ? `I'm sharing my live location. Track me here until I stop sharing:\n${shareUrl}`
     : `I'm sharing my live location for the next 15 minutes. Track me here:\n${shareUrl}`;
-
-  console.log('✅ Live location share started:', {
-    shareUrl,
-    sessionId,
-    planType: sessionPlanType,
-  });
 
   return {
     shareUrl,

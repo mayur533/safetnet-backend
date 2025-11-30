@@ -249,16 +249,23 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://security-app-vert.vercel.app",
-    "https://security-app-veot.onrender.com",
-    "https://safetnet-backend.onrender.com",
-]
+# In DEBUG mode, allow all origins for development (including live-share pages)
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS = []  # Ignore specific origins when allowing all
+else:
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://security-app-vert.vercel.app",
+        "https://security-app-veot.onrender.com",
+        "https://safetnet-backend.onrender.com",
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = False  # Set to False for security, only allow listed origins
 CORS_PREFLIGHT_MAX_AGE = 86400  # Cache preflight requests for 24 hours
 
 # Allow all common headers
