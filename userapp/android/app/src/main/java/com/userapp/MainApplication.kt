@@ -101,6 +101,14 @@ class MainApplication : Application(), ReactApplication {
             add(DirectCallPackage())
             Log.d("MainApplication", "SmsPackage and DirectCallPackage added")
             
+            // Add Geofence monitoring package
+            add(GeofencePackage())
+            Log.d("MainApplication", "GeofencePackage added")
+            
+            // Add Intent package for handling app launch intents
+            add(IntentPackage())
+            Log.d("MainApplication", "IntentPackage added")
+            
             Log.d("MainApplication", "Final packages: ${this.map { it.javaClass.simpleName }.joinToString()}")
         },
     )

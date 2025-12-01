@@ -12,6 +12,12 @@ class BootReceiver : BroadcastReceiver() {
                 // Start the service on boot
                 ShakeDetectionService.startService(context)
             }
+            
+            // Check if geofence monitoring is enabled
+            if (GeofenceMonitoringService.isGeofenceEnabled(context)) {
+                // Start the geofence service on boot
+                GeofenceMonitoringService.startService(context)
+            }
         }
     }
 }

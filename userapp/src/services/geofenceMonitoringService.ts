@@ -30,6 +30,7 @@ let watchId: number | null = null;
 let isMonitoring = false;
 let lastKnownLocation: UserLocation | null = null;
 let geofences: Geofence[] = [];
+let nativeLocationListener: any = null; // Listener for native service location updates
 
 /**
  * Calculate distance between two points using Haversine formula
@@ -249,6 +250,36 @@ export const startGeofenceMonitoring = async (userId: number) => {
 
   console.log(`[Geofence] Starting monitoring for ${geofences.length} geofences`);
 
+  // Try to start native background service first (works even when app is closed)
+  try {
+    const {NativeModules} = require('react-native');
+    const GeofenceModule = NativeModules.GeofenceModule;
+    if (GeofenceModule && typeof GeofenceModule.startGeofenceMonitoring === 'function') {
+      await GeofenceModule.startGeofenceMonitoring(userId);
+      console.log('[Geofence] Native background service started');
+      
+      // Listen for location updates from native service (works even when app is in background)
+      const {DeviceEventEmitter} = require('react-native');
+      // Remove existing listener if any
+      if (nativeLocationListener) {
+        nativeLocationListener.remove();
+      }
+      nativeLocationListener = DeviceEventEmitter.addListener('GeofenceLocationUpdate', (locationData: any) => {
+        if (locationData && locationData.latitude && locationData.longitude) {
+          const location = {
+            latitude: locationData.latitude,
+            longitude: locationData.longitude,
+          };
+          lastKnownLocation = location;
+          checkGeofences(location);
+        }
+      });
+      console.log('[Geofence] Native location update listener registered');
+    }
+  } catch (error) {
+    console.warn('[Geofence] Could not start native service, using React Native location:', error);
+  }
+
   // Clear any existing watch
   if (watchId !== null) {
     Geolocation.clearWatch(watchId);
@@ -274,7 +305,7 @@ export const startGeofenceMonitoring = async (userId: number) => {
     },
   );
 
-  // Start watching position
+  // Start watching position (as backup if native service fails)
   watchId = Geolocation.watchPosition(
     (position) => {
       const location = {
@@ -303,6 +334,25 @@ export const startGeofenceMonitoring = async (userId: number) => {
  * Stop monitoring geofences
  */
 export const stopGeofenceMonitoring = () => {
+  // Stop native background service
+  try {
+    const {NativeModules} = require('react-native');
+    const GeofenceModule = NativeModules.GeofenceModule;
+    if (GeofenceModule && typeof GeofenceModule.stopGeofenceMonitoring === 'function') {
+      GeofenceModule.stopGeofenceMonitoring().catch((error: any) => {
+        console.warn('[Geofence] Error stopping native service:', error);
+      });
+    }
+  } catch (error) {
+    console.warn('[Geofence] Could not stop native service:', error);
+  }
+  
+  // Remove native location listener
+  if (nativeLocationListener) {
+    nativeLocationListener.remove();
+    nativeLocationListener = null;
+  }
+  
   if (watchId !== null) {
     Geolocation.clearWatch(watchId);
     watchId = null;

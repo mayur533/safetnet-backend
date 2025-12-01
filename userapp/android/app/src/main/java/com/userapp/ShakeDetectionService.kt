@@ -228,10 +228,18 @@ class ShakeDetectionService : Service(), SensorEventListener {
             e.printStackTrace()
         }
         
+        // Launch app with SOS trigger intent (works even when app is closed)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            action = "com.userapp.TRIGGER_SOS_FROM_SHAKE"
+            putExtra("triggerSource", "shake")
+        }
+        startActivity(intent)
+        
         // Send SOS notification (works even when app is closed)
         sendSOSNotification()
         
-        // Also send event to JavaScript to trigger SOS dispatch
+        // Also send event to JavaScript to trigger SOS dispatch (if app is running)
         try {
             val reactContext = applicationContext as? com.facebook.react.bridge.ReactApplicationContext
             reactContext?.let {
@@ -239,7 +247,8 @@ class ShakeDetectionService : Service(), SensorEventListener {
                 eventEmitter.emit("ShakeDetected", null)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // App is closed, event won't be received - that's OK, intent will launch app
+            android.util.Log.d("ShakeDetection", "App is closed, SOS will trigger when app opens")
         }
     }
     

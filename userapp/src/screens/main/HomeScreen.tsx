@@ -237,6 +237,34 @@ const HomeScreen = ({navigation}: any) => {
     }
   }, [route?.params?.showLoginModal, navigation]);
 
+  // Check for SOS trigger from shake gesture when app launches
+  useEffect(() => {
+    if (Platform.OS === 'android' && isAuthenticated) {
+      const checkInitialIntent = async () => {
+        try {
+          const {NativeModules} = require('react-native');
+          const IntentModule = NativeModules.IntentModule;
+          if (IntentModule && typeof IntentModule.getInitialIntent === 'function') {
+            const intent = await IntentModule.getInitialIntent();
+            if (intent?.action === 'com.userapp.TRIGGER_SOS_FROM_SHAKE' || intent?.triggerSource === 'shake') {
+              console.log('[HomeScreen] SOS triggered from shake gesture (app was closed)');
+              // Clear the intent to prevent re-triggering
+              IntentModule.clearIntent().catch(() => {});
+              // Trigger SOS
+              sendAlert(true);
+            }
+          }
+        } catch (error) {
+          console.warn('[HomeScreen] Could not check initial intent:', error);
+        }
+      };
+      
+      // Check after a short delay to ensure app is fully loaded
+      const timeout = setTimeout(checkInitialIntent, 1000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     if (!contactsInitialized) {
       loadContacts().catch(() => {});
