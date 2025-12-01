@@ -38,7 +38,23 @@ class SmsModule(reactContext: ReactApplicationContext) :
         @Suppress("DEPRECATION")
         SmsManager.getDefault()
       }
-      smsManager?.sendTextMessage(phoneNumber, null, message, null, null)
+      
+      if (smsManager == null) {
+        promise.reject("E_SMS_FAILED", "SmsManager is null")
+        return
+      }
+      
+      // Check if message needs to be split (SMS has 160 character limit, or 70 for Unicode)
+      val messageParts = smsManager.divideMessage(message)
+      
+      if (messageParts.size > 1) {
+        // Long message - use sendMultipartTextMessage
+        smsManager.sendMultipartTextMessage(phoneNumber, null, messageParts, null, null)
+      } else {
+        // Short message - use sendTextMessage
+        smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+      }
+      
       promise.resolve(true)
     } catch (error: SecurityException) {
       promise.reject("E_PERMISSION_DENIED", error)

@@ -148,11 +148,9 @@ type CategoryCard = typeof categoryCards[number];
 
 const {width} = Dimensions.get('window');
 
-// Live share base URL with fallback
+// Live share base URL
 const getLiveShareBaseUrl = (): string => {
-  const base = __DEV__
-    ? 'http://192.168.0.125:8000/live-share'
-    : 'https://safetnet-backend.onrender.com/live-share';
+  const base = 'https://safetnet.onrender.com/live-share';
   return base.endsWith('/') ? base.slice(0, -1) : base;
 };
 
@@ -206,6 +204,15 @@ const HomeScreen = ({navigation}: any) => {
   const [familyActionMode, setFamilyActionMode] = useState<'single' | 'all'>('single');
   const [selectedFamilyContactId, setSelectedFamilyContactId] = useState<string | null>(null);
   const [isSharingCurrentLocation, setIsSharingCurrentLocation] = useState(false);
+  const [liveShareStopAlert, setLiveShareStopAlert] = useState<{
+    visible: boolean;
+    message: string;
+    type: 'success' | 'info';
+  }>({
+    visible: false,
+    message: '',
+    type: 'success',
+  });
   const [isStartingLiveShare, setIsStartingLiveShare] = useState(false);
   const [activeLiveShare, setActiveLiveShare] = useState(getActiveLiveShareSession());
   const [lastLiveSharePlan, setLastLiveSharePlan] = useState<'free' | 'premium'>(isPremium ? 'premium' : 'free');
@@ -778,19 +785,34 @@ const HomeScreen = ({navigation}: any) => {
   const handleLiveShareTermination = useCallback(
     (reason: 'user' | 'limit' | 'expired' | 'error', extraMessage?: string) => {
       let message = extraMessage || 'Live location sharing stopped.';
+      let alertType: 'success' | 'info' = 'success';
+      
       if (reason === 'limit') {
         message =
           extraMessage ||
           'You have reached the free live sharing limit. Upgrade to Premium for longer live sessions.';
+        alertType = 'info';
       } else if (reason === 'expired') {
         message = extraMessage || 'Live location session has ended.';
+        alertType = 'info';
       } else if (reason === 'error') {
         message = extraMessage || 'Live sharing ended due to a connection issue.';
+        alertType = 'info';
+      } else if (reason === 'user') {
+        message = 'Live location sharing has been stopped successfully.';
+        alertType = 'success';
       }
+      
       setActiveLiveShare(null);
       const isForeground = AppState.currentState === 'active';
+      
       if (isForeground) {
-        Alert.alert('Live location sharing', message);
+        // Use modern ThemedAlert instead of basic Alert
+        setLiveShareStopAlert({
+          visible: true,
+          message: message,
+          type: alertType,
+        });
       } else {
         sendLiveShareNotification('Live location sharing', message);
       }
@@ -1847,6 +1869,22 @@ const HomeScreen = ({navigation}: any) => {
           },
         ]}
         onDismiss={() => setAlertState({...alertState, visible: false})}
+      />
+      
+      {/* Modern Live Share Stop Alert */}
+      <ThemedAlert
+        visible={liveShareStopAlert.visible}
+        title="Live Location Sharing"
+        message={liveShareStopAlert.message}
+        type={liveShareStopAlert.type}
+        buttons={[
+          {
+            text: 'Got it',
+            onPress: () => setLiveShareStopAlert({...liveShareStopAlert, visible: false}),
+            style: 'default',
+          },
+        ]}
+        onDismiss={() => setLiveShareStopAlert({...liveShareStopAlert, visible: false})}
       />
     </View>
   );

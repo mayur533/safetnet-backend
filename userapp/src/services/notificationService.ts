@@ -95,55 +95,77 @@ export const sendAlertNotification = async (title: string, message: string, aler
     configureNotifications();
     
     const notificationModule = loadPushNotification();
-    if (!notificationModule) {
-      console.warn('PushNotification not available');
-      return;
-    }
-
+    
     // Check native module
+    let nativeModuleAvailable = false;
     try {
       const RNPushNotification = NativeModules.RNPushNotification;
-      if (!RNPushNotification || RNPushNotification === null) {
-        console.warn('RNPushNotification native module is null');
-        return;
+      if (RNPushNotification && RNPushNotification !== null) {
+        nativeModuleAvailable = true;
       }
     } catch (error) {
       console.warn('Could not check native module:', error);
     }
 
-    const notificationConfig: any = {
-      id: 'alert-' + (alertId || Date.now()),
-      title: title,
-      message: message,
-      playSound: true,
-      soundName: 'default',
-      vibrate: true,
-      vibration: 1000,
-      tag: 'alert',
-      userInfo: {
-        type: 'alert',
-        alertId: alertId,
-        timestamp: Date.now(),
-      },
-    };
+    // If native module is available, use it
+    if (notificationModule && nativeModuleAvailable) {
+      const notificationConfig: any = {
+        id: 'alert-' + (alertId || Date.now()),
+        title: title,
+        message: message,
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 1000,
+        tag: 'alert',
+        userInfo: {
+          type: 'alert',
+          alertId: alertId,
+          timestamp: Date.now(),
+        },
+      };
 
-    if (Platform.OS === 'android') {
-      notificationConfig.channelId = 'alerts-channel';
-      notificationConfig.importance = 'high';
-      notificationConfig.priority = 'high';
-      notificationConfig.autoCancel = true;
+      if (Platform.OS === 'android') {
+        notificationConfig.channelId = 'alerts-channel';
+        notificationConfig.importance = 'high';
+        notificationConfig.priority = 'high';
+        notificationConfig.autoCancel = true;
+      }
+
+      if (typeof notificationModule.localNotification === 'function') {
+        try {
+          notificationModule.localNotification(notificationConfig);
+          console.log('Alert notification sent:', title);
+          return; // Success, exit early
+        } catch (error) {
+          console.warn('Could not send alert notification via module:', error);
+          // Fall through to fallback
+        }
+      }
     }
 
-    if (notificationModule && typeof notificationModule.localNotification === 'function') {
-      try {
-        notificationModule.localNotification(notificationConfig);
-        console.log('Alert notification sent:', title);
-      } catch (error) {
-        console.warn('Could not send alert notification:', error);
-      }
+    // Fallback: Use Alert for critical notifications (works even if native module is null)
+    // This ensures users still see important alerts
+    if (Platform.OS === 'android') {
+      // On Android, try to use Toast or Alert as fallback
+      const {Alert} = require('react-native');
+      Alert.alert(title, message, [{text: 'OK'}]);
+      console.log('Alert notification sent via Alert.alert fallback:', title);
+    } else {
+      // iOS fallback
+      const {Alert} = require('react-native');
+      Alert.alert(title, message, [{text: 'OK'}]);
+      console.log('Alert notification sent via Alert.alert fallback:', title);
     }
   } catch (error) {
     console.error('Error sending alert notification:', error);
+    // Last resort: try basic Alert
+    try {
+      const {Alert} = require('react-native');
+      Alert.alert(title || 'Alert', message || 'Notification');
+    } catch (fallbackError) {
+      console.error('Even fallback Alert failed:', fallbackError);
+    }
   }
 };
 
@@ -155,53 +177,57 @@ export const sendCommunityNotification = async (title: string, message: string, 
     configureNotifications();
     
     const notificationModule = loadPushNotification();
-    if (!notificationModule) {
-      console.warn('PushNotification not available');
-      return;
-    }
-
+    
     // Check native module
+    let nativeModuleAvailable = false;
     try {
       const RNPushNotification = NativeModules.RNPushNotification;
-      if (!RNPushNotification || RNPushNotification === null) {
-        console.warn('RNPushNotification native module is null');
-        return;
+      if (RNPushNotification && RNPushNotification !== null) {
+        nativeModuleAvailable = true;
       }
     } catch (error) {
       console.warn('Could not check native module:', error);
     }
 
-    const notificationConfig: any = {
-      id: 'community-' + (communityId || Date.now()),
-      title: title,
-      message: message,
-      playSound: true,
-      soundName: 'default',
-      vibrate: true,
-      vibration: 1000,
-      tag: 'community',
-      userInfo: {
-        type: 'community',
-        communityId: communityId,
-        timestamp: Date.now(),
-      },
-    };
+    // If native module is available, use it
+    if (notificationModule && nativeModuleAvailable) {
+      const notificationConfig: any = {
+        id: 'community-' + (communityId || Date.now()),
+        title: title,
+        message: message,
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 1000,
+        tag: 'community',
+        userInfo: {
+          type: 'community',
+          communityId: communityId,
+          timestamp: Date.now(),
+        },
+      };
 
-    if (Platform.OS === 'android') {
-      notificationConfig.channelId = 'alerts-channel';
-      notificationConfig.importance = 'high';
-      notificationConfig.priority = 'high';
-      notificationConfig.autoCancel = true;
-    }
+      if (Platform.OS === 'android') {
+        notificationConfig.channelId = 'alerts-channel';
+        notificationConfig.importance = 'high';
+        notificationConfig.priority = 'high';
+        notificationConfig.autoCancel = true;
+      }
 
-    if (notificationModule && typeof notificationModule.localNotification === 'function') {
-      try {
-        notificationModule.localNotification(notificationConfig);
-        console.log('Community notification sent:', title);
-      } catch (error) {
-        console.warn('Could not send community notification:', error);
+      if (typeof notificationModule.localNotification === 'function') {
+        try {
+          notificationModule.localNotification(notificationConfig);
+          console.log('Community notification sent:', title);
+          return; // Success, exit early
+        } catch (error) {
+          console.warn('Could not send community notification via module:', error);
+          // Fall through to fallback (silent for community messages)
+        }
       }
     }
+
+    // For community messages, we don't show Alert fallback (less critical)
+    console.log('Community notification skipped (native module unavailable):', title);
   } catch (error) {
     console.error('Error sending community notification:', error);
   }
@@ -211,48 +237,67 @@ export const sendLiveShareNotification = async (title: string, message: string) 
   try {
     configureNotifications();
     const notificationModule = loadPushNotification();
-    if (!notificationModule) {
-      console.warn('PushNotification not available');
-      return;
-    }
-
+    
+    // Check native module
+    let nativeModuleAvailable = false;
     try {
       const RNPushNotification = NativeModules.RNPushNotification;
-      if (!RNPushNotification || RNPushNotification === null) {
-        console.warn('RNPushNotification native module is null');
-        return;
+      if (RNPushNotification && RNPushNotification !== null) {
+        nativeModuleAvailable = true;
       }
     } catch (error) {
       console.warn('Could not check native module:', error);
     }
 
-    const notificationConfig: any = {
-      id: 'live-share-' + Date.now(),
-      title,
-      message,
-      playSound: true,
-      soundName: 'default',
-      vibrate: true,
-      vibration: 1000,
-      tag: 'live-share',
-      userInfo: {
-        type: 'live-share',
-        timestamp: Date.now(),
-      },
-    };
+    // If native module is available, use it
+    if (notificationModule && nativeModuleAvailable) {
+      const notificationConfig: any = {
+        id: 'live-share-' + Date.now(),
+        title,
+        message,
+        playSound: true,
+        soundName: 'default',
+        vibrate: true,
+        vibration: 1000,
+        tag: 'live-share',
+        userInfo: {
+          type: 'live-share',
+          timestamp: Date.now(),
+        },
+      };
 
-    if (Platform.OS === 'android') {
-      notificationConfig.channelId = 'alerts-channel';
-      notificationConfig.importance = 'high';
-      notificationConfig.priority = 'high';
-      notificationConfig.autoCancel = true;
+      if (Platform.OS === 'android') {
+        notificationConfig.channelId = 'alerts-channel';
+        notificationConfig.importance = 'high';
+        notificationConfig.priority = 'high';
+        notificationConfig.autoCancel = true;
+      }
+
+      if (typeof notificationModule.localNotification === 'function') {
+        try {
+          notificationModule.localNotification(notificationConfig);
+          console.log('Live share notification sent:', title);
+          return; // Success, exit early
+        } catch (error) {
+          console.warn('Could not send live share notification via module:', error);
+          // Fall through to fallback
+        }
+      }
     }
 
-    if (notificationModule && typeof notificationModule.localNotification === 'function') {
-      notificationModule.localNotification(notificationConfig);
-    }
+    // Fallback: Use Alert for critical live share notifications
+    const {Alert} = require('react-native');
+    Alert.alert(title, message, [{text: 'OK'}]);
+    console.log('Live share notification sent via Alert.alert fallback:', title);
   } catch (error) {
     console.error('Error sending live share notification:', error);
+    // Last resort: try basic Alert
+    try {
+      const {Alert} = require('react-native');
+      Alert.alert(title || 'Live Share', message || 'Notification');
+    } catch (fallbackError) {
+      console.error('Even fallback Alert failed:', fallbackError);
+    }
   }
 };
 

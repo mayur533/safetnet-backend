@@ -18,75 +18,19 @@ getAsyncStorage().then((storage) => {
   console.error('Failed to initialize AsyncStorage in apiService:', error);
 });
 
-// API Base URL configuration with fallback
-// Try localhost/IP first, then fallback to live server
-const LOCAL_API_URLS = [
-  'http://192.168.0.125:8000/api/user',
-  'http://localhost:8000/api/user',
-  'http://127.0.0.1:8000/api/user',
-];
+// API Base URL configuration - use live server
+const API_BASE_URL = 'https://safetnet-backend.onrender.com/api/user';
 
-const LIVE_API_URL = 'https://safetnet-backend.onrender.com/api/user';
-
-// Test connectivity to a URL
-const testUrlConnectivity = async (url: string, timeoutMs: number = 2000): Promise<boolean> => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    
-    const response = await fetch(`${url}/login/`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({}), // Empty body to test connectivity
-    });
-    
-    clearTimeout(timeoutId);
-    // Any response (even 400/401) means backend is reachable
-    return response.status !== undefined;
-  } catch (error) {
-    return false;
-  }
-};
-
-// Get the working API base URL with fallback
+// Get the working API base URL
 let cachedApiBaseUrl: string | null = null;
 
 const getApiBaseUrl = async (): Promise<string> => {
-  // Return cached URL if available and not in dev mode (to allow testing)
-  if (cachedApiBaseUrl && !__DEV__) {
-    return cachedApiBaseUrl;
+  if (!cachedApiBaseUrl) {
+    console.log(`[API] Using local server: ${API_BASE_URL}`);
+    cachedApiBaseUrl = API_BASE_URL;
   }
-
-  // Try local URLs first (in dev mode or if explicitly testing)
-  if (__DEV__) {
-    for (const localUrl of LOCAL_API_URLS) {
-      const isReachable = await testUrlConnectivity(localUrl, 2000);
-      if (isReachable) {
-        console.log(`[API] Using local URL: ${localUrl}`);
-        cachedApiBaseUrl = localUrl;
-        return localUrl;
-      }
-    }
-  }
-
-  // Fallback to live server
-  const isLiveReachable = await testUrlConnectivity(LIVE_API_URL, 3000);
-  if (isLiveReachable) {
-    console.log(`[API] Using live server: ${LIVE_API_URL}`);
-    cachedApiBaseUrl = LIVE_API_URL;
-    return LIVE_API_URL;
-  }
-
-  // If nothing works, default to first local URL in dev, or live in production
-  const defaultUrl = __DEV__ ? LOCAL_API_URLS[0] : LIVE_API_URL;
-  console.warn(`[API] Could not test connectivity, using default: ${defaultUrl}`);
-  cachedApiBaseUrl = defaultUrl;
-  return defaultUrl;
+  return API_BASE_URL;
 };
-
-// Initialize API base URL (will be set on first API call)
-let API_BASE_URL = __DEV__ ? LOCAL_API_URLS[0] : LIVE_API_URL;
 
 interface LoginResponse {
   message: string;
@@ -380,13 +324,17 @@ class ApiService {
         clearTimeout(timeoutId);
       }
       
-      console.error('[API Request Error] Full error details:', {
-        name: error?.name,
-        message: error?.message,
-        stack: error?.stack,
-        url: url,
-        endpoint: endpoint,
-      });
+      // For SOS endpoint, don't log detailed errors (they're expected and non-critical)
+      const isSOSEndpoint = endpoint.includes('/sos/');
+      if (!isSOSEndpoint) {
+        console.error('[API Request Error] Full error details:', {
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack,
+          url: url,
+          endpoint: endpoint,
+        });
+      }
       
       // Handle network errors specifically
       // Check error message, name, and string representation
@@ -395,6 +343,8 @@ class ApiService {
       const errorString = String(error || '');
       
       // Timeout errors (check first)
+      // For SOS endpoint, don't log timeout errors as they're expected and non-critical
+      // Reuse isSOSEndpoint declared above
       if (
         error.name === 'AbortError' ||
         errorMessage.includes('timeout') ||
@@ -402,10 +352,17 @@ class ApiService {
         errorMessage.includes('TIMEOUT') ||
         errorMessage.includes('aborted')
       ) {
-        console.error('[API Request Error] Request timeout');
-        useNetworkToastStore.getState().show();
-        const baseUrl = await getApiBaseUrl();
-        throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${baseUrl} took too long to respond. Please check if the backend is running.`);
+        if (isSOSEndpoint) {
+          // For SOS endpoint, silently handle timeout - it's non-critical and runs in background
+          // Don't log error or show toast for SOS timeouts
+          throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${await getApiBaseUrl()} took too long to respond.`);
+        } else {
+          // For other endpoints, log timeout as before
+          console.error('[API Request Error] Request timeout');
+          useNetworkToastStore.getState().show();
+          const baseUrl = await getApiBaseUrl();
+          throw new Error(`Request timeout after ${timeoutMs}ms. The server at ${baseUrl} took too long to respond. Please check if the backend is running.`);
+        }
       }
       
       // Network request failed - common in React Native
@@ -1214,9 +1171,23 @@ class ApiService {
    * Update live location session with coordinates
    */
   async updateLiveLocationShare(userId: number, sessionId: number, latitude: number, longitude: number): Promise<any> {
+    // Detailed logging for Android app
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('📤 [API REQUEST - SENDING COORDINATES]');
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log(`👤 User ID: ${userId}`);
+    console.log(`🆔 Session ID: ${sessionId}`);
+    console.log(`🌍 Latitude: ${latitude}`);
+    console.log(`🌍 Longitude: ${longitude}`);
+    console.log(`🔗 Endpoint: /${userId}/live_location/${sessionId}/`);
+    console.log(`📦 Payload:`, JSON.stringify({latitude, longitude}, null, 2));
+    console.log(`🕐 Time: ${new Date().toISOString()}`);
+    console.log('═══════════════════════════════════════════════════════════');
+    
+    const payload = {latitude, longitude};
     return this.request(`/${userId}/live_location/${sessionId}/`, {
       method: 'PATCH',
-      body: JSON.stringify({latitude, longitude}),
+      body: JSON.stringify(payload),
     });
   }
 

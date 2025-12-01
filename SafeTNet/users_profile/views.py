@@ -414,94 +414,32 @@ class SOSTriggerView(APIView):
         serializer = SOSTriggerSerializer(data=request.data)
         if serializer.is_valid():
             user = request.user
-            is_premium = _is_user_premium(user)
             longitude = serializer.validated_data.get('longitude')
             latitude = serializer.validated_data.get('latitude')
             notes = serializer.validated_data.get('notes', '')
-            live_share_payload = None
             
-            # Create SOS event
+            # SIMPLIFIED: Only store SOS message in database
+            # Security officers can access it from there
+            # All other operations (SMS, live share, calls) are handled by frontend
+            
             location_data = None
             if longitude is not None and latitude is not None:
                 location_data = {'longitude': longitude, 'latitude': latitude}
             
+            # Create SOS event - simple and fast
             sos_event = SOSEvent.objects.create(
                 user=user,
                 notes=notes,
-                location=location_data
+                location=location_data,
+                status='triggered'  # Default status, can be updated later
             )
-
-            # Automatically start live location sharing for this SOS
-            if location_data:
-                try:
-                    live_share_duration = 1440 if is_premium else FREE_TIER_LIMITS.get('MAX_LIVE_SHARE_MINUTES', 30)
-                    expires_at = timezone.now() + timedelta(minutes=live_share_duration)
-                    live_share = LiveLocationShare.objects.create(
-                        user=user,
-                        expires_at=expires_at,
-                        current_location={
-                            'latitude': latitude,
-                            'longitude': longitude
-                        },
-                        last_broadcast_at=timezone.now(),
-                        plan_type='premium' if is_premium else 'free',
-                        stop_reason='',
-                    )
-                    live_share.track_points.create(latitude=latitude, longitude=longitude)
-                    base_url = getattr(settings, 'LIVE_SHARE_BASE_URL', 'https://safetnet-backend.onrender.com/live-share/')
-                    # Ensure base_url ends with / for consistency
-                    if not base_url.endswith('/'):
-                        base_url = f"{base_url}/"
-                    live_share_url = f"{base_url}{live_share.share_token}/"
-                    live_share_payload = {
-                        'session': LiveLocationShareSerializer(live_share).data,
-                        'share_url': live_share_url,
-                    }
-                    logger.info(f"Live share session created for SOS: {user.email} -> {live_share_url}")
-                    logger.info(f"Live share payload: {live_share_payload}")
-                except Exception as exc:
-                    logger.error(f"Failed to start live sharing for SOS: {exc}", exc_info=True)
-                    live_share_payload = None
             
-            # Send SMS to family contacts (both free and premium)
-            try:
-                sms_service = SMSService()
-                family_contacts = FamilyContact.objects.filter(user=user)
-                
-                for contact in family_contacts:
-                    try:
-                        sms_service.send_sos_alert(
-                            to_phone=contact.phone,
-                            user_name=getattr(user, 'name', user.email),
-                            user_phone=getattr(user, 'phone', ''),
-                            location=location_data
-                        )
-                        logger.info(f"SOS SMS sent to family contact: {contact.phone}")
-                    except Exception as e:
-                        logger.error(f"Failed to send SOS SMS to {contact.phone}: {str(e)}")
-            except Exception as e:
-                logger.error(f"SMS service error: {str(e)}")
+            logger.info(f"SOS event stored in database for user: {user.email}")
             
-            # Update status based on premium tier
-            if is_premium:
-                # Notify 24x7 Emergency Response Center (if implemented)
-                sos_event.status = 'response_center_notified'
-                # Premium: Priority notification - Premium users get faster dispatch
-                logger.info(f"Premium SOS event - Priority dispatch - Response center notified: {user.email}")
-            else:
-                sos_event.status = 'sms_sent'
-                # Free users get standard priority
-                logger.info(f"Free SOS event - Standard dispatch: {user.email}")
-            
-            sos_event.save()
-            
-            logger.info(f"SOS event triggered for user: {user.email} (Premium: {is_premium})")
-            
+            # Return response immediately - this should be < 1 second
             return Response({
-                'message': 'SOS event triggered successfully',
+                'message': 'SOS event stored successfully',
                 'sos_event': SOSEventSerializer(sos_event).data,
-                'is_premium': is_premium,
-                'live_share': live_share_payload,
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -987,18 +925,40 @@ class LiveLocationShareDetailView(APIView):
         latitude = request.data.get('latitude')
         longitude = request.data.get('longitude')
         
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f'[Live Share Update] Received request data: {request.data}')
+        logger.info(f'[Live Share Update] Raw values - latitude={latitude} (type: {type(latitude)}), longitude={longitude} (type: {type(longitude)})')
+        
         if latitude is None or longitude is None:
+            logger.error(f'[Live Share Update] Missing coordinates - latitude={latitude}, longitude={longitude}')
             return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             lat = float(latitude)
             lng = float(longitude)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            logger.error(f'[Live Share Update] Invalid coordinate conversion: {e}')
             return Response({'error': 'Invalid latitude/longitude values'}, status=status.HTTP_400_BAD_REQUEST)
         
-        live_share.current_location = {'latitude': lat, 'longitude': lng}
+        # Validate coordinate ranges
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            logger.error(f'[Live Share Update] Coordinates out of range: lat={lat}, lng={lng}')
+            return Response({'error': 'Coordinates out of valid range'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f'[Live Share Update] Processing session {session_id} for user {user_id}: lat={lat}, lng={lng}')
+        
+        location_dict = {'latitude': lat, 'longitude': lng}
+        logger.info(f'[Live Share Update] Storing location dict: {location_dict}')
+        
+        live_share.current_location = location_dict
         live_share.last_broadcast_at = timezone.now()
         live_share.save(update_fields=['current_location', 'last_broadcast_at'])
+        
+        # Verify what was saved
+        live_share.refresh_from_db()
+        logger.info(f'[Live Share Update] Saved location: {live_share.current_location}')
+        logger.info(f'[Live Share Update] Location type: {type(live_share.current_location)}')
 
         last_point = live_share.track_points.order_by('-recorded_at').first()
         should_record = True

@@ -447,6 +447,12 @@ class PublicLiveLocationShareView(APIView):
         if not user_name:
             user_name = share.user.email.split('@')[0]
 
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f'[Public Live Share] Fetching session for token {share_token}')
+        logger.info(f'[Public Live Share] Current location from DB: {share.current_location}')
+        logger.info(f'[Public Live Share] Location type: {type(share.current_location)}')
+        
         payload = {
             'share_token': str(share.share_token),
             'session_id': share.id,
@@ -477,6 +483,8 @@ class PublicLiveLocationShareView(APIView):
         location = share.current_location or {}
         lat = location.get('latitude')
         lon = location.get('longitude')
+        logger.info(f'[Public Live Share] Extracted coordinates: lat={lat}, lon={lon}')
+        logger.info(f'[Public Live Share] Full location dict: {location}')
 
         if lat is not None and lon is not None:
             if 'help' in include_parts:

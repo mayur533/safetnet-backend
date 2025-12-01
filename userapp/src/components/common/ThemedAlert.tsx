@@ -97,7 +97,7 @@ export const ThemedAlert: React.FC<ThemedAlertProps> = ({
             ]}>
             <MaterialIcons
               name={typeColors.icon as any}
-              size={32}
+              size={36}
               color={typeColors.iconColor}
             />
           </View>
@@ -149,44 +149,47 @@ export const ThemedAlert: React.FC<ThemedAlertProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backdropFilter: 'blur(4px)',
   },
   container: {
     width: '100%',
     maxWidth: 400,
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 20,
+    padding: 28,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
   },
   iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
+    letterSpacing: 0.3,
   },
   message: {
     fontSize: 16,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-    opacity: 0.8,
+    lineHeight: 24,
+    marginBottom: 28,
+    opacity: 0.85,
+    paddingHorizontal: 4,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -195,16 +198,22 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 48,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
 });
 

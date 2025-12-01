@@ -1,12 +1,13 @@
 import {Alert, Platform, PermissionsAndroid, NativeModules} from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
+import GeolocationService from 'react-native-geolocation-service';
 import {useContactStore} from '../stores/contactStore';
 import {requestDirectCall} from './callService';
 import {sendSmsDirect} from './smsService';
 import {useSettingsStore, DEFAULT_SOS_TEMPLATE, DEFAULT_SOS_MESSAGES} from '../stores/settingsStore';
 import {useAuthStore} from '../stores/authStore';
 import {apiService} from './apiService';
-import {startLiveLocationShareUpdates, getActiveLiveShareSession, type LiveShareSession} from './liveLocationShareService';
+import {startLiveLocationShareUpdates, startLiveLocationShare, getActiveLiveShareSession, type LiveShareSession} from './liveLocationShareService';
 import {sendAlertNotification} from './notificationService';
 
 // Import push notifications - use dynamic import to avoid bundling issues
@@ -232,11 +233,6 @@ const sendSOSNotification = async () => {
       notificationModule = null;
     }
 
-    if (!notificationModule) {
-      console.warn('PushNotification is not available - notification will not be sent');
-      return;
-    }
-
     // Ensure notifications are configured first
     configureNotifications();
 
@@ -260,9 +256,10 @@ const sendSOSNotification = async () => {
           );
           if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
             console.warn('Notification permission not granted:', granted);
-            return;
+            // Continue to fallback even if permission denied
+          } else {
+            console.log('Notification permission granted');
           }
-          console.log('Notification permission granted');
         } else {
           console.log('Notification permission already granted');
         }
@@ -271,136 +268,151 @@ const sendSOSNotification = async () => {
       }
     }
 
-    // Small delay to ensure channel is created on Android
-    if (Platform.OS === 'android' && !channelCreated) {
-      await new Promise<void>(resolve => setTimeout(resolve, 100));
-    }
-
-    // Re-check notification module one more time before using it
-    if (!notificationModule || notificationModule === null || notificationModule === false) {
-      console.warn('PushNotification module is not available - skipping notification');
-      return;
-    }
-
-    // Check if localNotification method exists
-    if (typeof notificationModule.localNotification !== 'function') {
-      console.warn('PushNotification.localNotification is not a function');
-      if (notificationModule) {
-        console.log('PushNotification object type:', typeof notificationModule);
-        try {
-          const keys = Object.keys(notificationModule);
-          console.log('PushNotification object keys (first 10):', keys.slice(0, 10));
-        } catch {
-          console.log('Could not get keys from notificationModule');
-        }
-      }
-      return;
-    }
-
-    // Prepare notification config
-      const notificationConfig: any = {
-        id: 'sos-' + Date.now(),
-        title: 'SOS Sent',
-        message: 'SOS is sent, we will reach you immediately as soon as possible',
-        playSound: true,
-        soundName: 'default',
-        vibrate: true,
-        vibration: 1000,
-        tag: 'sos-alert',
-        userInfo: {
-          type: 'sos',
-          timestamp: Date.now(),
-        },
-      };
-
-      // Add Android-specific properties
-      if (Platform.OS === 'android') {
-        notificationConfig.channelId = 'sos-channel';
-        notificationConfig.importance = 'high';
-        notificationConfig.priority = 'high';
-        notificationConfig.autoCancel = false;
-        notificationConfig.ongoing = false;
-      }
-
-      console.log('Sending SOS notification with config:', JSON.stringify(notificationConfig, null, 2));
-      
-    // Final validation before calling - check native module directly
-    if (!notificationModule || 
-        notificationModule === null || 
-        notificationModule === false ||
-        typeof notificationModule.localNotification !== 'function') {
-      console.error('PushNotification.localNotification is not available');
-      return;
-    }
-
-    // Check if the native module exists (react-native-push-notification uses RNPushNotification native module)
+    // Check native module availability
+    let nativeModuleAvailable = false;
     try {
       const RNPushNotification = NativeModules.RNPushNotification;
-      if (!RNPushNotification || RNPushNotification === null) {
-        console.warn('RNPushNotification native module is null - notification cannot be sent');
-        return;
-      }
-      
-      // Check if presentLocalNotification method exists on native module
-      if (typeof RNPushNotification.presentLocalNotification !== 'function') {
-        console.warn('RNPushNotification.presentLocalNotification is not available - notification cannot be sent');
-        return;
+      if (RNPushNotification && RNPushNotification !== null) {
+        nativeModuleAvailable = true;
+        console.log('✅ RNPushNotification native module is available');
+      } else {
+        console.warn('⚠️ RNPushNotification native module is null');
       }
     } catch (nativeCheckError) {
       console.warn('Could not check native module:', nativeCheckError);
-      // Continue anyway - the try-catch below will handle it
     }
 
-    // Call localNotification with final safety check
-    try {
-      // Double-check notificationModule is still valid right before calling
-      if (!notificationModule || typeof notificationModule.localNotification !== 'function') {
-        console.error('PushNotification became invalid right before call');
-        return;
+    // Try to send notification via native module if available
+    if (notificationModule && nativeModuleAvailable && typeof notificationModule.localNotification === 'function') {
+      try {
+        const notificationConfig: any = {
+          id: 'sos-' + Date.now(),
+          title: 'SOS Sent',
+          message: 'SOS is sent, we will reach you immediately as soon as possible',
+          playSound: true,
+          soundName: 'default',
+          vibrate: true,
+          vibration: 1000,
+          tag: 'sos-alert',
+          userInfo: {
+            type: 'sos',
+            timestamp: Date.now(),
+          },
+        };
+
+        if (Platform.OS === 'android') {
+          notificationConfig.channelId = 'sos-channel';
+          notificationConfig.importance = 'high';
+          notificationConfig.priority = 'high';
+          notificationConfig.autoCancel = false;
+          notificationConfig.ongoing = false;
+        }
+
+        notificationModule.localNotification(notificationConfig);
+        console.log('✅ SOS notification sent successfully via native module');
+        return; // Success, exit early
+      } catch (notifError: any) {
+        console.warn('Could not send notification via native module:', notifError?.message || String(notifError));
+        // Fall through to fallback
       }
-      
-      notificationModule.localNotification(notificationConfig);
-      console.log('✅ SOS notification sent successfully');
-    } catch (notifError: any) {
-      // Silently handle the error - don't crash the app
-      console.warn('Could not send notification (this is non-critical):', notifError?.message || String(notifError));
-      // Don't log the full error stack to avoid cluttering console
+    } else {
+      console.warn('⚠️ Native notification module not available, using Alert fallback');
+    }
+
+    // Fallback: Use Alert.alert for critical SOS notifications (works even if native module is null)
+    // This ensures users always see the SOS confirmation
+    try {
+      Alert.alert(
+        'SOS Sent',
+        'SOS is sent, we will reach you immediately as soon as possible',
+        [{text: 'OK'}]
+      );
+      console.log('✅ SOS notification sent via Alert.alert fallback');
+    } catch (fallbackError) {
+      console.error('Even Alert.alert fallback failed:', fallbackError);
     }
   } catch (error: any) {
     console.error('Failed to send SOS notification:', error);
-    console.error('Error message:', error?.message || String(error));
+    // Last resort: try basic Alert
+    try {
+      Alert.alert('SOS Sent', 'SOS alert has been triggered');
+    } catch (finalError) {
+      console.error('All notification methods failed:', finalError);
+    }
   }
 };
 
 type DispatchResult = {
   smsInitiated: boolean;
   callInitiated: boolean;
+  apiCallCompleted: boolean;
   liveShareUrl?: string | null;
   liveShareSession?: LiveShareSession | null;
 };
 
 /**
- * Get current user location
+ * Get current user location using enhanced GPS (same method that works in liveLocationShareService)
  */
 const getCurrentLocation = (): Promise<{latitude: number; longitude: number} | null> => {
   return new Promise((resolve) => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      (error) => {
-        console.warn('Error getting location for SOS:', error);
-        resolve(null);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
+    // On Android, use enhanced GPS service (more reliable)
+    if (Platform.OS === 'android') {
+      GeolocationService.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn('[SOS Location] Enhanced GPS failed, trying primary GPS...', error);
+          // Fallback to primary GPS
+          Geolocation.getCurrentPosition(
+            (position) => {
+              resolve({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              });
+            },
+            (error) => {
+              console.warn('Error getting location for SOS:', error);
+              resolve(null);
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 15000,
+              maximumAge: 0,
+            }
+          );
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+          forceRequestLocation: true,
+          showLocationDialog: true,
+        }
+      );
+    } else {
+      // iOS - use primary GPS
+      Geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn('Error getting location for SOS:', error);
+          resolve(null);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        }
+      );
+    }
   });
 };
 
@@ -408,9 +420,7 @@ const getCurrentLocation = (): Promise<{latitude: number; longitude: number} | n
  * Get live share base URL
  */
 const getLiveShareBaseUrl = (): string => {
-  const base = __DEV__
-    ? 'http://192.168.0.125:8000/live-share'
-    : 'https://safetnet-backend.onrender.com/live-share';
+  const base = 'https://safetnet.onrender.com/live-share';
   return base.endsWith('/') ? base.slice(0, -1) : base;
 };
 
@@ -440,6 +450,8 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
   const hasFamilyContacts = sanitizedContacts.length > 0;
 
   // Variables for background operations (will be updated asynchronously)
+  let smsInitiated = false;
+  let apiCallCompleted = false;
   let liveShareUrl: string | null = null;
   let liveShareSession: LiveShareSession | null = null;
 
@@ -476,7 +488,45 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     }
   }
 
-  // STEP 1: TRIGGER CALLS IMMEDIATELY (User already held for 3 seconds)
+  // STEP 1: STORE SOS IN DATABASE FIRST (should be fast now - < 1 second)
+  // This allows security officers to access it immediately
+  console.log('💾 ========== STORING SOS IN DATABASE (FIRST) ==========');
+  
+  if (user?.id) {
+    try {
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      const sosData: {longitude?: number; latitude?: number; notes?: string} = {};
+      
+      if (location) {
+        sosData.longitude = location.longitude;
+        sosData.latitude = location.latitude;
+      }
+      
+      const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
+      sosData.notes = message || template;
+      
+      console.log('📤 Storing SOS event in database...');
+      // API call should be fast now (< 1 second) - await it to ensure it completes
+      await apiService.triggerSOS(userId, sosData);
+      console.log('✅ SOS event stored in database');
+      apiCallCompleted = true;
+    } catch (error: any) {
+      // Log error but don't block - continue with calls and SMS
+      const errorMessage = error?.message || String(error);
+      const isTimeout = errorMessage.includes('timeout') || 
+                       errorMessage.includes('Aborted') || 
+                       error?.name === 'AbortError';
+      
+      if (!isTimeout) {
+        console.warn('⚠️ Failed to store SOS in database (non-critical):', errorMessage);
+      } else {
+        console.log('⏱️ SOS database storage timed out (non-critical, continuing...)');
+      }
+      apiCallCompleted = false;
+    }
+  }
+
+  // STEP 2: TRIGGER CALLS IMMEDIATELY (User already held for 3 seconds)
   // Call happens immediately and doesn't block - runs in background
   console.log('📞 ========== TRIGGERING CALLS IMMEDIATELY (NON-BLOCKING) ==========');
   let callInitiated = false;
@@ -516,47 +566,119 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     }
   })().catch(err => console.error('Call initiation failed:', err));
 
-  // STEP 2: HANDLE LIVE LOCATION SHARING, SMS, AND API CALLS
-  // Wait for all of these to complete before returning (so success screen shows at right time)
-  console.log('📤 ========== HANDLING LIVE LOCATION, SMS & API CALLS ==========');
+  // STEP 3: HANDLE LIVE LOCATION SHARING AND SMS IN BACKGROUND
+  // These run asynchronously and don't block - they continue even if call screen opens
+  console.log('📤 ========== HANDLING LIVE LOCATION & SMS (BACKGROUND) ==========');
   
-  const sendSmsGroup = async (label: string, recipients: string[], body: string) => {
-    if (!recipients.length) {
-      return false;
-    }
-    try {
-      console.log(`📤 Sending SMS to ${label} with message:`, body);
-      // Force direct SMS sending (don't open app selector) for SOS
-      const sent = await sendSmsDirect(recipients, body, true);
-      if (sent) {
-        console.log(`✅ SMS sent directly to ${label}:`, recipients);
-      } else {
-        console.warn(`⚠️ SMS could not be sent directly to ${label} - permission may be required`);
-      }
-      return sent;
-    } catch (error) {
-      console.error(`❌ Failed to send ${label} SMS:`, error);
-      return false;
-    }
-  };
-  
-  // Wait for all background operations to complete
-  let smsInitiated = false;
-  let apiCallCompleted = false;
-
-  try {
-    // STEP 2a: Start live location sharing FIRST (exactly like HomeScreen)
-    console.log('📍 Starting live location sharing for SOS...');
-    let liveShareResult: {shareUrl: string; locationMessage: string} | null = null;
+  // Start background operations immediately (non-blocking - don't await)
+  // They will complete in the background and continue even when call screen is open
+  (async () => {
+    let backgroundSmsInitiated = false;
+    let backgroundLiveShareUrl: string | null = null;
+    let backgroundLiveShareSession: LiveShareSession | null = null;
     
-    try {
-      // Use live location service directly (same as HomeScreen)
-      const result = await startLiveLocationShare((payload) => {
-        console.log('SOS live share session ended:', payload);
-      });
+    // Function to send multiple SMS messages in batch (quick succession)
+    const sendSmsBatch = async (label: string, recipients: string[], messages: string[]): Promise<boolean> => {
+      if (!recipients.length || !messages.length) {
+        return false;
+      }
       
-      liveShareUrl = result.shareUrl;
-      liveShareSession = result.session;
+      console.log(`📤 [SOS SMS Batch] Sending ${messages.length} message(s) to ${label}, recipients:`, recipients);
+      
+      // Send each message in quick succession
+      let allSuccess = true;
+      for (let i = 0; i < messages.length; i++) {
+        const messageText = messages[i];
+        console.log(`📤 [SOS SMS Batch] Sending message ${i + 1}/${messages.length} to ${label}...`);
+        console.log(`📤 [SOS SMS Batch] Message ${i + 1} length:`, messageText.length);
+        
+        try {
+          const success = await sendSmsDirect(recipients, messageText);
+          console.log(`📤 [SOS SMS Batch] Message ${i + 1} sendSmsDirect result:`, success);
+          
+          if (success) {
+            console.log(`✅ [SOS SMS Batch] Message ${i + 1} sent successfully`);
+          } else {
+            console.warn(`⚠️ [SOS SMS Batch] Message ${i + 1} failed`);
+            allSuccess = false;
+          }
+          
+          // Small delay between messages (100ms) to ensure they're sent in order
+          if (i < messages.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          console.error(`❌ [SOS SMS Batch] Error sending message ${i + 1}:`, error);
+          allSuccess = false;
+        }
+      }
+      
+      // Return result - no SMS app fallback
+      if (allSuccess) {
+        console.log(`✅ [SOS SMS Batch] All ${messages.length} message(s) sent successfully via direct SMS`);
+        return true;
+      } else {
+        console.warn(`⚠️ [SOS SMS Batch] Some messages failed to send`);
+        return false;
+      }
+    };
+    
+    const sendSmsGroup = async (label: string, recipients: string[], body: string) => {
+      if (!recipients.length) {
+        return false;
+      }
+      
+      // Use EXACT same logic as HomeScreen handleSendSMS (lines 675-709)
+      const {Linking} = require('react-native');
+      const messageBody = body || '';
+      
+      // Use direct SMS sending (no app opens) if available, otherwise fallback to SMS app
+      // EXACT same as HomeScreen line 689-690
+      try {
+        console.log(`📤 [SOS SMS] Sending to ${label}, recipients:`, recipients);
+        console.log(`📤 [SOS SMS] Message length:`, messageBody.length);
+        const success = await sendSmsDirect(recipients, messageBody); // No third param, same as HomeScreen line 690
+        console.log(`📤 [SOS SMS] sendSmsDirect result:`, success);
+        if (success) {
+          console.log(`✅ [SOS SMS] Direct SMS sent to ${label} (${recipients.length} recipient(s))`);
+          return true;
+        }
+        // Direct SMS failed - return false (no fallback)
+        console.warn(`⚠️ [SOS SMS] Direct SMS returned false for ${label}`);
+        return false;
+      } catch (error) {
+        // Direct SMS error - return false (no fallback)
+        console.warn(`⚠️ [SOS SMS] Failed to send direct SMS to ${label}:`, error);
+        return false;
+      }
+    };
+  
+    try {
+      // STEP 2a: Start live location sharing FIRST (exactly like HomeScreen)
+      console.log('📍 Starting live location sharing for SOS (background)...');
+      let liveShareResult: {shareUrl: string; locationMessage: string} | null = null;
+      
+      try {
+        // Use live location service directly (same as HomeScreen)
+        // Increased timeout to 30 seconds to allow for slower GPS/API
+        const result = await Promise.race([
+          startLiveLocationShare((payload) => {
+            console.log('SOS live share session ended:', payload);
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Live share timeout after 30 seconds')), 30000)
+          ),
+        ]) as Awaited<ReturnType<typeof startLiveLocationShare>>;
+      
+      // Verify we got a valid URL
+      if (!result.shareUrl || !result.locationMessage) {
+        throw new Error('Live share URL or message is missing');
+      }
+      
+      backgroundLiveShareUrl = result.shareUrl;
+      backgroundLiveShareSession = result.session;
+      liveShareUrl = result.shareUrl; // Update outer scope
+      liveShareSession = result.session; // Update outer scope
       liveShareResult = {
         shareUrl: result.shareUrl,
         locationMessage: result.locationMessage,
@@ -564,6 +686,7 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       
       console.log('✅ Live location sharing started for SOS:', {
         shareUrl: result.shareUrl,
+        locationMessage: result.locationMessage.substring(0, 100) + '...',
         sessionId: result.sessionId,
       });
     } catch (error: any) {
@@ -602,52 +725,84 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
       }
     }
 
-    // STEP 2b: Construct combined SOS + Location messages (NOW we have location ready)
+    // STEP 2b: Construct 3 separate messages: [SOS message, Location text, URL]
     const settingsState = useSettingsStore.getState();
     const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
     const baseFamilyMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
     const baseSecurityMessage = messageTemplates.security || DEFAULT_SOS_MESSAGES.security;
 
-    let familyMessage: string;
-    let securityMessage: string;
+    // Prepare messages as separate arrays: [SOS message, Location text, URL]
+    let familyMessages: string[] = [];
+    let securityMessages: string[] = [];
     
-    if (liveShareResult) {
-      // Combine SOS message with live location message
-      // Format: SOS Message + \n\n + Location Message
-      familyMessage = `${baseFamilyMessage}\n\n${liveShareResult.locationMessage}`;
-      securityMessage = `${baseSecurityMessage}\n\n${liveShareResult.locationMessage}`;
+    if (liveShareResult && liveShareResult.shareUrl) {
+      // Message 1: SOS message
+      // Message 2: Location sharing text (without URL)
+      // Message 3: URL only
+      const locationTextWithoutUrl = liveShareResult.locationMessage 
+        ? liveShareResult.locationMessage.replace(liveShareResult.shareUrl, '').trim()
+        : 'Track my live location:';
+      
+      familyMessages = [
+        baseFamilyMessage, 
+        locationTextWithoutUrl || 'I\'m sharing my live location.',
+        liveShareResult.shareUrl
+      ];
+      securityMessages = [
+        baseSecurityMessage,
+        locationTextWithoutUrl || 'I\'m sharing my live location.',
+        liveShareResult.shareUrl
+      ];
+      
+      console.log('✅ Prepared 3 separate messages for batch sending:', {
+        familyMessages: familyMessages.length,
+        securityMessages: securityMessages.length,
+        url: liveShareResult.shareUrl,
+        message1Length: familyMessages[0]?.length || 0,
+        message2Length: familyMessages[1]?.length || 0,
+        message3Length: familyMessages[2]?.length || 0,
+      });
     } else if (location) {
-      // Fallback: static location
+      // Fallback: static location - send as 3 messages
       const staticLocationUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
-      familyMessage = `${baseFamilyMessage}\n\nMy location:\n${staticLocationUrl}`;
-      securityMessage = `${baseSecurityMessage}\n\nMy location:\n${staticLocationUrl}`;
+      familyMessages = [
+        baseFamilyMessage, 
+        'My location:',
+        staticLocationUrl
+      ];
+      securityMessages = [
+        baseSecurityMessage,
+        'My location:',
+        staticLocationUrl
+      ];
     } else {
-      // No location available - just SOS message
-      familyMessage = baseFamilyMessage;
-      securityMessage = baseSecurityMessage;
+      // No location available - just SOS message (send as single message)
+      familyMessages = [baseFamilyMessage];
+      securityMessages = [baseSecurityMessage];
     }
 
-    // STEP 2c: Send SMS messages with combined SOS + Location (NOW both are ready)
-    // Run SMS and API call in parallel
-    console.log('📤 Preparing to send SMS and API call...');
-    console.log('📝 Family message:', familyMessage.substring(0, 100) + '...');
-    console.log('📝 Security message:', securityMessage.substring(0, 100) + '...');
+    // STEP 3a: Send SMS messages in batch (separate messages sent in quick succession)
+    console.log('📤 Preparing to send SMS in batch (separate messages)...');
+    console.log('📝 Family messages:', familyMessages);
+    console.log('📝 Security messages:', securityMessages);
+    console.log('🔗 Live share URL included:', liveShareResult?.shareUrl || 'NO URL');
     
-    const [smsResult, apiResult] = await Promise.allSettled([
-      // Send SMS
+    // Send SMS in batch (await this one as it's important)
+    const smsResult = await Promise.resolve(
       (async () => {
         try {
           if (isInsideGeofence && assignedSecurityOfficer) {
             const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
             if (officerPhone) {
-              console.log(`📤 Attempting to send SMS to security officer: ${officerPhone}`);
-              const securitySuccess = await sendSmsGroup(
+              console.log(`📤 Attempting to send batch SMS to security officer: ${officerPhone}`);
+              const securitySuccess = await sendSmsBatch(
                 'assigned security officer',
                 [officerPhone],
-                securityMessage
+                securityMessages
               );
-              smsInitiated = smsInitiated || securitySuccess;
-              console.log(`✅ SMS result for security officer: ${securitySuccess}`);
+              backgroundSmsInitiated = backgroundSmsInitiated || securitySuccess;
+              smsInitiated = backgroundSmsInitiated; // Update outer scope
+              console.log(`✅ SMS batch result for security officer: ${securitySuccess}`);
               return securitySuccess;
             } else {
               console.warn('⚠️ No phone number for security officer');
@@ -656,10 +811,11 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
           } else {
             if (hasFamilyContacts) {
               const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
-              console.log(`📤 Attempting to send SMS to ${smsRecipients.length} family contact(s):`, smsRecipients);
-              const familySuccess = await sendSmsGroup('family contacts', smsRecipients, familyMessage);
-              smsInitiated = smsInitiated || familySuccess;
-              console.log(`✅ SMS result for family contacts: ${familySuccess}`);
+              console.log(`📤 Attempting to send batch SMS to ${smsRecipients.length} family contact(s):`, smsRecipients);
+              const familySuccess = await sendSmsBatch('family contacts', smsRecipients, familyMessages);
+              backgroundSmsInitiated = backgroundSmsInitiated || familySuccess;
+              smsInitiated = backgroundSmsInitiated; // Update outer scope
+              console.log(`✅ SMS batch result for family contacts: ${familySuccess}`);
               return familySuccess;
             } else {
               console.warn('⚠️ No family contacts available');
@@ -667,47 +823,19 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
             }
           }
         } catch (error) {
-          console.error('❌ Error in SMS sending promise:', error);
+          console.error('❌ Error in SMS batch sending:', error);
           return false;
         }
-      })(),
-      // Send API call
-      (async () => {
-        try {
-          if (user?.id) {
-            const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
-            const sosData: {longitude?: number; latitude?: number; notes?: string} = {};
-            
-            if (location) {
-              sosData.longitude = location.longitude;
-              sosData.latitude = location.latitude;
-            }
-            
-            const template = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
-            sosData.notes = message || template;
-            
-            console.log('📤 Sending SOS event to backend...');
-            await apiService.triggerSOS(userId, sosData);
-            console.log('✅ SOS event created in backend');
-            apiCallCompleted = true;
-            return true;
-          } else {
-            console.warn('⚠️ No user ID available for API call');
-            return false;
-          }
-        } catch (error) {
-          console.error('❌ Error sending SOS to backend:', error);
-          return false;
-        }
-      })(),
-    ]);
+      })()
+    );
 
-    // Check results - handle both fulfilled and rejected
-    if (smsResult.status === 'fulfilled') {
-      smsInitiated = smsResult.value || smsInitiated;
-      console.log('✅ SMS promise fulfilled:', smsResult.value);
+    // Check SMS result
+    if (smsResult) {
+      backgroundSmsInitiated = smsResult || backgroundSmsInitiated;
+      smsInitiated = backgroundSmsInitiated; // Update outer scope
+      console.log('✅ SMS sent:', smsResult);
     } else {
-      console.error('❌ SMS promise rejected:', smsResult.reason);
+      console.warn('⚠️ SMS was not sent successfully, attempting fallback...');
       // Try to send SMS again as fallback
       try {
         const settingsState = useSettingsStore.getState();
@@ -721,34 +849,28 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
           const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
           if (officerPhone) {
             const retrySuccess = await sendSmsGroup('security officer (retry)', [officerPhone], fallbackMessage);
-            smsInitiated = smsInitiated || retrySuccess;
+            backgroundSmsInitiated = backgroundSmsInitiated || retrySuccess;
+            smsInitiated = backgroundSmsInitiated; // Update outer scope
           }
         } else if (hasFamilyContacts) {
           const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
           const retrySuccess = await sendSmsGroup('family contacts (retry)', smsRecipients, fallbackMessage);
-          smsInitiated = smsInitiated || retrySuccess;
+          backgroundSmsInitiated = backgroundSmsInitiated || retrySuccess;
+          smsInitiated = backgroundSmsInitiated; // Update outer scope
         }
       } catch (retryError) {
         console.error('❌ SMS retry also failed:', retryError);
       }
     }
-    
-    if (apiResult.status === 'fulfilled') {
-      apiCallCompleted = apiResult.value || apiCallCompleted;
-      console.log('✅ API promise fulfilled:', apiResult.value);
-    } else {
-      console.error('❌ API promise rejected:', apiResult.reason);
-    }
 
     console.log('✅ Background SOS operations completed:', {
-      smsInitiated,
-      apiCallCompleted,
-      liveShareUrl,
-      liveShareSession: liveShareSession ? 'active' : 'none',
+      smsInitiated: backgroundSmsInitiated,
+      liveShareUrl: backgroundLiveShareUrl,
+      liveShareSession: backgroundLiveShareSession ? 'active' : 'none',
     });
     
     // Final check: If SMS wasn't sent, try one more time with whatever we have
-    if (!smsInitiated) {
+    if (!backgroundSmsInitiated) {
       console.warn('⚠️ SMS was not sent successfully, attempting final fallback...');
       try {
         const settingsState = useSettingsStore.getState();
@@ -757,8 +879,9 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
         
         // Try to include location if available
         let finalMessage = baseMessage;
-        if (liveShareResult) {
-          finalMessage = `${baseMessage}\n\n${liveShareResult.locationMessage}`;
+        if (liveShareResult && liveShareResult.shareUrl) {
+          const locationText = liveShareResult.locationMessage || `Track my live location:\n${liveShareResult.shareUrl}`;
+          finalMessage = `${baseMessage}\n\n${locationText}`;
         } else if (location) {
           const staticUrl = buildGoogleMapsUrl(location.latitude, location.longitude);
           finalMessage = `${baseMessage}\n\nMy location:\n${staticUrl}`;
@@ -768,13 +891,15 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
           const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
           if (officerPhone) {
             const finalSuccess = await sendSmsGroup('assigned security officer (final fallback)', [officerPhone], finalMessage);
-            smsInitiated = smsInitiated || finalSuccess;
+            backgroundSmsInitiated = backgroundSmsInitiated || finalSuccess;
+            smsInitiated = backgroundSmsInitiated; // Update outer scope
             console.log('✅ Final fallback SMS result:', finalSuccess);
           }
         } else if (hasFamilyContacts) {
           const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
           const finalSuccess = await sendSmsGroup('family contacts (final fallback)', smsRecipients, finalMessage);
-          smsInitiated = smsInitiated || finalSuccess;
+          backgroundSmsInitiated = backgroundSmsInitiated || finalSuccess;
+          smsInitiated = backgroundSmsInitiated; // Update outer scope
           console.log('✅ Final fallback SMS result:', finalSuccess);
         }
       } catch (finalError) {
@@ -793,19 +918,42 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
         const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
         if (officerPhone) {
           const fallbackSuccess = await sendSmsGroup('assigned security officer (fallback)', [officerPhone], baseMessage);
-          smsInitiated = smsInitiated || fallbackSuccess;
+          backgroundSmsInitiated = backgroundSmsInitiated || fallbackSuccess;
+          smsInitiated = backgroundSmsInitiated; // Update outer scope
           console.log('✅ Fallback SMS result:', fallbackSuccess);
         }
       } else if (hasFamilyContacts) {
         const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
         const fallbackSuccess = await sendSmsGroup('family contacts (fallback)', smsRecipients, baseMessage);
-        smsInitiated = smsInitiated || fallbackSuccess;
+        backgroundSmsInitiated = backgroundSmsInitiated || fallbackSuccess;
+        smsInitiated = backgroundSmsInitiated; // Update outer scope
         console.log('✅ Fallback SMS result:', fallbackSuccess);
       }
     } catch (fallbackError) {
       console.error('❌ Fallback SMS also failed:', fallbackError);
     }
   }
+  })().catch(err => {
+    console.error('❌ Error in background SOS operations:', err);
+    // Try to send basic SMS even on error
+    try {
+      const settingsState = useSettingsStore.getState();
+      const messageTemplates = settingsState.sosMessages || DEFAULT_SOS_MESSAGES;
+      const baseMessage = message?.trim() || messageTemplates.family || DEFAULT_SOS_TEMPLATE;
+      
+      if (isInsideGeofence && assignedSecurityOfficer) {
+        const officerPhone = assignedSecurityOfficer.contact || assignedSecurityOfficer.phone;
+        if (officerPhone) {
+          sendSmsDirect([officerPhone], baseMessage, true).catch(() => {});
+        }
+      } else if (hasFamilyContacts) {
+        const smsRecipients = sanitizedContacts.map((contact) => contact.phone);
+        sendSmsDirect(smsRecipients, baseMessage, true).catch(() => {});
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback SMS also failed:', fallbackError);
+    }
+  });
 
   // Send push notification immediately (don't await to avoid blocking)
   // This ensures notification is sent even if there are delays in other operations
@@ -813,11 +961,13 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
     console.error('Failed to send SOS notification:', error);
   });
 
-  // Return result - function will only return after SMS and API call complete
+  // Return immediately - background operations continue asynchronously
+  // The function returns right away so the call screen can open without blocking
   return {
-    smsInitiated,
+    smsInitiated, // May be false initially, will be updated by background operations
     callInitiated,
-    liveShareUrl,
-    liveShareSession,
+    apiCallCompleted, // API call completed first (before calls and SMS)
+    liveShareUrl, // May be null initially, will be updated by background operations
+    liveShareSession, // May be null initially, will be updated by background operations
   };
 };

@@ -44,6 +44,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS.append('safetnet.onrender.com')
 ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
+ALLOWED_HOSTS.append('192.168.0.125')  # Local network IP for device testing
 # Application definition
 
 INSTALLED_APPS = [
@@ -69,6 +70,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "core.middleware.RemoveCOOPHeaderMiddleware",  # Remove COOP header in DEBUG mode
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -255,15 +257,18 @@ if DEBUG:
     CORS_ALLOWED_ORIGINS = []  # Ignore specific origins when allowing all
 else:
     CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "https://security-app-vert.vercel.app",
-        "https://security-app-veot.onrender.com",
+    "https://security-app-vert.vercel.app",
+    "https://security-app-veot.onrender.com",
+    "https://safetnet-backend.onrender.com",
+        # Allow same-origin requests for live-share pages
         "https://safetnet-backend.onrender.com",
-    ]
+        "http://safetnet-backend.onrender.com",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_PREFLIGHT_MAX_AGE = 86400  # Cache preflight requests for 24 hours
@@ -291,6 +296,12 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
+# Proxy Configuration (for Render.com and other reverse proxies)
+# Trust proxy headers for HTTPS detection
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
 # CSRF Configuration
 CSRF_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_HTTPONLY = True
@@ -308,6 +319,15 @@ CSRF_TRUSTED_ORIGINS = [
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# Disable Cross-Origin-Opener-Policy for local development (causes browser warnings with HTTP)
+# This is only needed for HTTPS in production
+if DEBUG:
+    # Don't set COOP header in DEBUG mode (local development with HTTP)
+    pass
+else:
+    # In production, COOP is handled by SecurityMiddleware automatically
+    pass
 
 # Logging Configuration
 LOG_DIR = BASE_DIR / 'logs'

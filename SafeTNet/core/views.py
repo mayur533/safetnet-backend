@@ -34,20 +34,38 @@ def live_share_view(request, share_token):
     """
     try:
         from django.conf import settings
-        # Get the base URL for API calls - use the request's host
-        scheme = 'https' if request.is_secure() else 'http'
+        
+        # Get the base URL for API calls
+        # Check X-Forwarded-Proto header (set by Render/proxy) first
+        forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
+        if forwarded_proto:
+            scheme = forwarded_proto
+        elif request.is_secure():
+            scheme = 'https'
+        else:
+            scheme = 'http'
+        
         host = request.get_host()
+        
+        # For production (onrender.com), always use https
+        if 'onrender.com' in host:
+            scheme = 'https'
+        # For local development, use http
+        elif settings.DEBUG or 'localhost' in host or '127.0.0.1' in host or '192.168' in host:
+            scheme = 'http'
+        
         api_base_url = f"{scheme}://{host}"
         
-        # Fallback for DEBUG mode if needed
-        if settings.DEBUG and '192.168' not in host and 'localhost' not in host and '127.0.0.1' not in host:
-            # If accessing from phone on same network, use the IP from request
-            api_base_url = f"http://{host}"
-        
-        return render(request, "core/live_share.html", {
+        response = render(request, "core/live_share.html", {
             "share_token": share_token,
             "api_base_url": api_base_url
         })
+        # Remove Cross-Origin-Opener-Policy header for local development (HTTP)
+        # This prevents browser warnings when using HTTP instead of HTTPS
+        if settings.DEBUG:
+            if hasattr(response, 'headers'):
+                response.headers.pop('Cross-Origin-Opener-Policy', None)
+        return response
     except Exception as e:
         from django.http import HttpResponse
         import logging
