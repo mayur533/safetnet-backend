@@ -34,16 +34,38 @@ def live_share_view(request, share_token):
     """
     try:
         from django.conf import settings
-        # Get the base URL for API calls
-        if settings.DEBUG:
-            api_base_url = 'http://127.0.0.1:8000'
-        else:
-            api_base_url = 'https://safetnet-backend.onrender.com'
         
-        return render(request, "core/live_share.html", {
+        # Get the base URL for API calls
+        # Check X-Forwarded-Proto header (set by Render/proxy) first
+        forwarded_proto = request.META.get('HTTP_X_FORWARDED_PROTO', '')
+        if forwarded_proto:
+            scheme = forwarded_proto
+        elif request.is_secure():
+            scheme = 'https'
+        else:
+            scheme = 'http'
+        
+        host = request.get_host()
+        
+        # For production (onrender.com), always use https
+        if 'onrender.com' in host:
+            scheme = 'https'
+        # For local development, use http
+        elif settings.DEBUG or 'localhost' in host or '127.0.0.1' in host or '192.168' in host:
+            scheme = 'http'
+        
+        api_base_url = f"{scheme}://{host}"
+        
+        response = render(request, "core/live_share.html", {
             "share_token": share_token,
             "api_base_url": api_base_url
         })
+        # Remove Cross-Origin-Opener-Policy header for local development (HTTP)
+        # This prevents browser warnings when using HTTP instead of HTTPS
+        if settings.DEBUG:
+            if hasattr(response, 'headers'):
+                response.headers.pop('Cross-Origin-Opener-Policy', None)
+        return response
     except Exception as e:
         from django.http import HttpResponse
         import logging

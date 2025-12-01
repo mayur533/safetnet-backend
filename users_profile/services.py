@@ -195,25 +195,10 @@ class EmergencyService:
                 logger.warning("Emergency response called with None user or sos_event")
                 return False
             
-            # Send SMS to family contacts (if relationship exists)
-            try:
-                if hasattr(user, 'family_contacts'):
-                    family_contacts = user.family_contacts.all()
-                    for contact in family_contacts:
-                        try:
-                            if hasattr(contact, 'phone') and contact.phone:
-                                self.sms_service.send_sos_alert(
-                                    to_phone=contact.phone,
-                                    user_name=getattr(user, 'name', 'User'),
-                                    user_phone=getattr(user, 'phone', ''),
-                                    location=getattr(sos_event, 'location', None)
-                                )
-                        except Exception as e:
-                            logger.error(f"Failed to send emergency SMS to {getattr(contact, 'phone', 'unknown')}: {str(e)}")
-                else:
-                    logger.warning(f"User {getattr(user, 'email', 'unknown')} has no family_contacts relationship")
-            except Exception as e:
-                logger.error(f"Error accessing family contacts: {str(e)}")
+            # NOTE: SMS sending is now handled by the frontend app for faster response
+            # Backend SMS sending was removed to prevent timeout issues
+            # Each SMS call to Twilio/Exotel takes 1-3 seconds, which was blocking responses
+            logger.info(f"Emergency response triggered - SMS will be sent by frontend app for user: {getattr(user, 'email', 'unknown')}")
             
             security_payload = self._notify_security_officers(user, sos_event)
             

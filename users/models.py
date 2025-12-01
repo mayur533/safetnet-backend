@@ -556,6 +556,29 @@ class UserReply(models.Model):
     email = models.EmailField(help_text="Email address of the user who replied")
     message = models.TextField(help_text="Reply message from the user")
     date_time = models.DateTimeField(auto_now_add=True, help_text="Date and time when the reply was received")
+    # Link to SOS event if this reply is related to an SOS alert
+    sos_event = models.ForeignKey(
+        'users_profile.SOSEvent',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='user_replies',
+        help_text="Related SOS event if this reply is about an SOS alert",
+        db_constraint=True
+    )
+    # Track which admins, sub-admins, and security officers have read this reply
+    read_by = models.ManyToManyField(
+        User,
+        related_name='read_user_replies',
+        blank=True,
+        help_text="Admins, sub-admins, and security officers who have read this reply"
+    )
+    # Track read timestamps (JSON field: {user_id: timestamp})
+    read_timestamps = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Timestamps when each user read this reply. Format: {'user_id': 'ISO_timestamp'}"
+    )
     
     class Meta:
         verbose_name = 'User Reply'
@@ -564,6 +587,46 @@ class UserReply(models.Model):
     
     def __str__(self):
         return f"{self.email} - {self.date_time.strftime('%Y-%m-%d %H:%M')}"
+    
+    def mark_as_read(self, user):
+        """
+        Mark this reply as read by a user (admin/sub-admin/security officer).
+        Returns True if newly marked, False if already read.
+        """
+        from django.utils import timezone
+        
+        if not user or not user.id:
+            return False
+        
+        # Check if already read
+        if self.read_by.filter(id=user.id).exists():
+            return False
+        
+        # Add to read_by
+        self.read_by.add(user)
+        
+        # Add timestamp
+        if not isinstance(self.read_timestamps, dict):
+            self.read_timestamps = {}
+        
+        self.read_timestamps[str(user.id)] = timezone.now().isoformat()
+        self.save(update_fields=['read_timestamps'])
+        
+        return True
+    
+    def is_read_by(self, user):
+        """Check if this reply has been read by the given user."""
+        if not user or not user.id:
+            return False
+        return self.read_by.filter(id=user.id).exists()
+    
+    def get_read_timestamp(self, user):
+        """Get the timestamp when the user read this reply."""
+        if not user or not user.id:
+            return None
+        if isinstance(self.read_timestamps, dict):
+            return self.read_timestamps.get(str(user.id))
+        return None
 
 
 class PasswordResetOTP(models.Model):

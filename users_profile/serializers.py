@@ -415,12 +415,16 @@ class SOSEventSerializer(serializers.ModelSerializer):
     """
     location = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(source='triggered_at', read_only=True)
+    read_by_ids = serializers.SerializerMethodField()
+    is_read_by_current_user = serializers.SerializerMethodField()
+    read_timestamp = serializers.SerializerMethodField()
     
     class Meta:
         model = SOSEvent
         fields = (
             'id', 'location', 'status', 'triggered_at', 'created_at',
-            'resolved_at', 'notes'
+            'resolved_at', 'notes', 'read_by_ids', 'is_read_by_current_user',
+            'read_timestamp'
         )
         read_only_fields = ('id', 'triggered_at', 'created_at', 'resolved_at')
     
@@ -437,6 +441,38 @@ class SOSEventSerializer(serializers.ModelSerializer):
                     'latitude': obj.location.y
                 }
         return None
+    
+    def get_read_by_ids(self, obj):
+        """Return list of user IDs who have read this SOS event."""
+        return list(obj.read_by.values_list('id', flat=True))
+    
+    def get_is_read_by_current_user(self, obj):
+        """Check if current user has read this SOS event."""
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.is_read_by(request.user)
+        return False
+    
+    def get_read_timestamp(self, obj):
+        """Get read timestamp for current user."""
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.get_read_timestamp(request.user)
+        return None
+
+
+class GeofenceEventSerializer(serializers.Serializer):
+    """
+    Serializer for geofence enter/exit events.
+    """
+    geofence_id = serializers.IntegerField(help_text="ID of the geofence")
+    event_type = serializers.ChoiceField(
+        choices=['enter', 'exit'],
+        help_text="Type of event: 'enter' or 'exit'"
+    )
+    latitude = serializers.FloatField(help_text="User's latitude at time of event")
+    longitude = serializers.FloatField(help_text="User's longitude at time of event")
+    timestamp = serializers.DateTimeField(required=False, help_text="Event timestamp (optional, defaults to now)")
 
 
 class SOSTriggerSerializer(serializers.Serializer):

@@ -523,10 +523,42 @@ class DiscountEmailCreateSerializer(serializers.ModelSerializer):
 
 
 class UserReplySerializer(serializers.ModelSerializer):
+    sos_event_id = serializers.IntegerField(source='sos_event.id', read_only=True)
+    read_by_ids = serializers.SerializerMethodField()
+    is_read_by_current_user = serializers.SerializerMethodField()
+    read_timestamp = serializers.SerializerMethodField()
+    
     class Meta:
         model = UserReply
-        fields = ('id', 'email', 'message', 'date_time')
+        fields = (
+            'id', 
+            'email', 
+            'message', 
+            'date_time',
+            'sos_event_id',
+            'read_by_ids',
+            'is_read_by_current_user',
+            'read_timestamp',
+        )
         read_only_fields = ('id', 'date_time')
+    
+    def get_read_by_ids(self, obj):
+        """Return list of user IDs who have read this reply."""
+        return list(obj.read_by.values_list('id', flat=True))
+    
+    def get_is_read_by_current_user(self, obj):
+        """Check if current user has read this reply."""
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.is_read_by(request.user)
+        return False
+    
+    def get_read_timestamp(self, obj):
+        """Get read timestamp for current user."""
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.get_read_timestamp(request.user)
+        return None
 
 
 class UserDetailsSerializer(serializers.ModelSerializer):

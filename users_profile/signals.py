@@ -56,14 +56,28 @@ def sos_event_post_save(sender, instance, created, **kwargs):
         if created:
             logger.info(f"SOS event created for user: {instance.user.email if instance.user else 'Unknown'}")
             
-            # Trigger emergency response (only if user exists)
+            # NOTE: Emergency response is now handled asynchronously to prevent blocking
+            # The signal still triggers but doesn't block the API response
+            # SMS sending is handled by the frontend app for faster response times
             if instance.user:
                 try:
-                    from .services import EmergencyService
-                    emergency_service = EmergencyService()
-                    emergency_service.trigger_emergency_response(instance.user, instance)
+                    # Run emergency response in background (don't block)
+                    # This prevents the API call from timing out
+                    import threading
+                    def run_emergency_response():
+                        try:
+                            from .services import EmergencyService
+                            emergency_service = EmergencyService()
+                            emergency_service.trigger_emergency_response(instance.user, instance)
+                        except Exception as e:
+                            logger.error(f"Failed to trigger emergency response (background): {str(e)}")
+                    
+                    # Start emergency response in background thread
+                    thread = threading.Thread(target=run_emergency_response, daemon=True)
+                    thread.start()
+                    logger.info(f"Emergency response triggered in background for user: {instance.user.email}")
                 except Exception as e:
-                    logger.error(f"Failed to trigger emergency response: {str(e)}")
+                    logger.error(f"Failed to start emergency response thread: {str(e)}")
         else:
             logger.info(f"SOS event updated for user: {instance.user.email if instance.user else 'Unknown'}")
     except Exception as e:
