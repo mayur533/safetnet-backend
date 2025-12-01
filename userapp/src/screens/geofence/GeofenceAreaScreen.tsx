@@ -56,10 +56,7 @@ const GeofenceAreaScreen = () => {
     if (!user?.id) {
       return;
     }
-    if (!isPremium) {
-      setGeofences([]);
-      return;
-    }
+    // All users can view geofences (premium restriction removed)
     
     try {
       setLoading(true);

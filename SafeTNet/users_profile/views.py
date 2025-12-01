@@ -18,7 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import (
     User, FamilyContact, CommunityMembership, SOSEvent,
-    LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
+    LiveLocationShare, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
 )
 # Import PromoCode and Alert from users app
 from users.models import PromoCode, Alert
@@ -28,13 +28,11 @@ from .serializers import (
     CommunityMembershipSerializer, CommunityMembershipCreateSerializer,
     SOSEventSerializer, SOSTriggerSerializer, UserLocationUpdateSerializer,
     SubscriptionSerializer, LiveLocationShareSerializer, LiveLocationShareCreateSerializer,
-    GeofenceEventSerializer,
-    GeofenceSerializer, GeofenceCreateSerializer,
     CommunityAlertSerializer, CommunityAlertCreateSerializer,
     ChatGroupSerializer, ChatGroupCreateSerializer,
     ChatMessageSerializer, ChatMessageCreateSerializer
 )
-from .services import SMSService, GeofenceService
+from .services import SMSService
 
 logger = logging.getLogger(__name__)
 
@@ -528,14 +526,29 @@ class GeofenceEventView(APIView):
     """
     Record geofence enter/exit events.
     POST /users/<user_id>/geofence_event/
+    Premium users only - this is a premium feature.
     """
     permission_classes = [permissions.IsAuthenticated]
     
     def post(self, request, user_id):
-        """Record geofence enter/exit event."""
+        """Record geofence enter/exit event (Premium users only)."""
         if request.user.id != int(user_id):
             return Response(
                 {'error': 'You can only record geofence events for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if user is premium
+        user = request.user
+        is_premium = _is_user_premium(user)
+        
+        if not is_premium:
+            return Response(
+                {
+                    'error': 'Geofence events are a Premium feature. Upgrade to Premium to use geofence monitoring.',
+                    'is_premium': False,
+                    'upgrade_required': True
+                },
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -548,12 +561,13 @@ class GeofenceEventView(APIView):
             longitude = serializer.validated_data['longitude']
             timestamp = serializer.validated_data.get('timestamp', timezone.now())
             
-            # Get the geofence (from users_profile.Geofence)
+            # Get the geofence (from users.models.Geofence - common organization-based geofence)
+            from users.models import Geofence as AdminGeofence
             try:
-                geofence = Geofence.objects.get(id=geofence_id, user=user)
-            except Geofence.DoesNotExist:
+                geofence = AdminGeofence.objects.get(id=geofence_id, active=True)
+            except AdminGeofence.DoesNotExist:
                 return Response(
-                    {'error': 'Geofence not found or does not belong to you.'},
+                    {'error': 'Geofence not found or is inactive.'},
                     status=status.HTTP_404_NOT_FOUND
                 )
             
@@ -993,32 +1007,39 @@ class LiveLocationShareDetailView(APIView):
 # Geofencing endpoints (Premium only)
 class GeofenceListView(APIView):
     """
-    List admin-created geofences (Premium only).
+    List admin-created geofences.
     GET /users/<user_id>/geofences/
     Returns all active admin-created geofences with polygon data.
+    Premium users only - this is a premium feature.
     """
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request, user_id):
-        """List admin-created geofences."""
+        """List admin-created geofences (Premium users only)."""
         if request.user.id != int(user_id):
             return Response(
                 {'error': 'You can only view your own geofences.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # Check if user is premium
         user = request.user
         is_premium = _is_user_premium(user)
         
         if not is_premium:
-            return Response({
-                'error': 'Geofencing is a Premium feature. Upgrade to Premium to use geofencing.'
-            }, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {
+                    'error': 'Geofences are a Premium feature. Upgrade to Premium to view and use geofences.',
+                    'is_premium': False,
+                    'upgrade_required': True
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         # Import admin Geofence model
         from users.models import Geofence as AdminGeofence
         
-        # Get all active admin-created geofences
+        # Get all active admin-created geofences (all users can see all geofences)
         admin_geofences = AdminGeofence.objects.filter(active=True).select_related('organization', 'created_by')
         
         # Convert to mobile app format
@@ -1046,6 +1067,24 @@ class GeofenceListView(APIView):
             if not polygon_points:
                 continue
             
+            # Calculate radius from polygon (max distance from center to any point)
+            import math
+            center_lat, center_lon = center_point[0], center_point[1]
+            max_radius = 0
+            for point in polygon_points:
+                point_lat, point_lon = point[0], point[1]
+                # Haversine formula to calculate distance
+                R = 6371000  # Earth radius in meters
+                dlat = math.radians(point_lat - center_lat)
+                dlon = math.radians(point_lon - center_lon)
+                a = math.sin(dlat/2)**2 + math.cos(math.radians(center_lat)) * math.cos(math.radians(point_lat)) * math.sin(dlon/2)**2
+                c = 2 * math.asin(math.sqrt(a))
+                distance = R * c
+                max_radius = max(max_radius, distance)
+            
+            # Round to nearest 10 meters for cleaner display
+            radius_meters = int(math.ceil(max_radius / 10) * 10)
+            
             geofences_data.append({
                 'id': admin_geo.id,
                 'name': admin_geo.name,
@@ -1055,13 +1094,21 @@ class GeofenceListView(APIView):
                     'latitude': center_point[0],
                     'longitude': center_point[1],
                 },
+                'center_location': {  # Backward compatibility
+                    'latitude': center_point[0],
+                    'longitude': center_point[1],
+                },
+                'radius': radius_meters,  # Calculated radius in meters
+                'radius_meters': radius_meters,  # Alternative field name for compatibility
                 'is_active': admin_geo.active,
+                'alert_on_entry': True,  # Default values for compatibility
+                'alert_on_exit': True,
                 'color': colors[idx % len(colors)],
                 'organization_name': admin_geo.organization.name if admin_geo.organization else '',
                 'created_at': admin_geo.created_at.isoformat() if admin_geo.created_at else None,
             })
-            
-            return Response({
+        
+        return Response({
             'geofences': geofences_data
         })
     
@@ -1167,14 +1214,6 @@ class CommunityAlertListView(APIView):
             except Exception as e:
                 logger.warning(f"Could not get user location: {e}")
             
-            # Get user's geofences
-            user_geofences = []
-            try:
-                user_geofences = Geofence.objects.filter(user=user, is_active=True).only('center_location', 'radius_meters')
-            except Exception as e:
-                logger.warning(f"Could not fetch user geofences: {e}")
-                user_geofences = []
-            
             # Get all community alerts
             try:
                 all_alerts = CommunityAlert.objects.select_related('user').all().order_by('-sent_at')
@@ -1185,17 +1224,13 @@ class CommunityAlertListView(APIView):
             # Filter alerts based on geofence
             relevant_alerts = []
             
-            # Check if user has location or geofences
-            has_location_or_geofence = False
-            if user_location:
-                has_location_or_geofence = True
-            elif len(user_geofences) > 0:
-                has_location_or_geofence = True
+            # Check if user has location
+            has_location = user_location is not None
             
-            # If user has no location and no geofences, show ALL alerts
+            # If user has no location, show ALL alerts
             # (Without location data, we can't filter properly, so show everything)
-            if not has_location_or_geofence:
-                logger.info(f"User {user.id} has no location or geofences, returning all {all_alerts.count()} alerts")
+            if not has_location:
+                logger.info(f"User {user.id} has no location, returning all {all_alerts.count()} alerts")
                 serializer = CommunityAlertSerializer(all_alerts, many=True)
                 return Response(serializer.data, status=status.HTTP_200_OK)
             
@@ -1212,29 +1247,11 @@ class CommunityAlertListView(APIView):
                     if alert_lat is None or alert_lon is None:
                         continue
                     
-                    # Check if alert is within user's geofences
+                    # Check if alert is within user's location radius
                     is_within_geofence = False
                     
-                    # Check against user's geofences
-                    for geofence in user_geofences:
-                        try:
-                            center = geofence.center_location
-                            if center:
-                                center_lat = center.get('latitude') or center.get('lat') or (center[1] if isinstance(center, (list, tuple)) else None)
-                                center_lon = center.get('longitude') or center.get('lng') or (center[0] if isinstance(center, (list, tuple)) else None)
-                                radius = geofence.radius_meters or 500
-                                
-                                if center_lat and center_lon:
-                                    distance = self._haversine_distance(center_lat, center_lon, alert_lat, alert_lon)
-                                    if distance <= radius:
-                                        is_within_geofence = True
-                                        break
-                        except Exception as e:
-                            logger.warning(f"Error processing geofence: {e}")
-                            continue
-                    
-                    # Also check if user's location is within alert's radius
-                    if user_location and not is_within_geofence:
+                    # Check if user's location is within alert's radius
+                    if user_location:
                         try:
                             user_lat = user_location.get('latitude') or user_location.get('lat') or (user_location[1] if isinstance(user_location, (list, tuple)) else None)
                             user_lon = user_location.get('longitude') or user_location.get('lng') or (user_location[0] if isinstance(user_location, (list, tuple)) else None)
@@ -1755,21 +1772,10 @@ class AvailableUsersListView(APIView):
             users = users.filter(query)
         
         user_list = []
-        current_user_geofences = []
-        
-        # Get current user's geofences if filtering by geofence
+        # Geofence filtering is no longer supported (user profile geofences removed)
         if geofence_only:
-            try:
-                from .models import Geofence
-                current_user_geofences = list(Geofence.objects.filter(
-                    user=request.user,
-                    is_active=True
-                ).values('center_location', 'radius_meters'))
-            except Exception as e:
-                logger.warning(f"Geofence table not available or error fetching geofences: {e}")
-                # If geofence filtering is requested but table doesn't exist, return all users
-                current_user_geofences = []
-                geofence_only = False  # Disable geofence filtering
+            logger.warning("Geofence filtering requested but user profile geofences are no longer supported")
+            geofence_only = False  # Disable geofence filtering
         
         # Get current user's location
         current_user_location = None
@@ -1782,23 +1788,7 @@ class AvailableUsersListView(APIView):
             if hasattr(user, 'location') and user.location:
                 user_location = user.location
             
-            # Filter by geofence if enabled
-            if geofence_only and current_user_geofences:
-                if not user_location:
-                    continue  # Skip users without location
-                
-                is_within_geofence = False
-                for geofence in current_user_geofences:
-                    center = geofence.get('center_location')
-                    radius = geofence.get('radius_meters', 100)
-                    if self._is_within_geofence(user_location, center, radius):
-                        is_within_geofence = True
-                        break
-                
-                if not is_within_geofence:
-                    # If include_other_geofences is true, still include them
-                    if not include_other_geofences:
-                        continue
+            # Geofence filtering removed - user profile geofences no longer supported
             
             # Safely get user name
             user_name = user.email  # Default to email

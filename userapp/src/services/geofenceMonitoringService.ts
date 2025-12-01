@@ -193,22 +193,31 @@ const loadGeofences = async (userId: number): Promise<Geofence[]> => {
     // Handle response format: backend returns {geofences: [...]} or direct array
     const data = response?.geofences || (Array.isArray(response) ? response : []);
     if (Array.isArray(data)) {
-      return data.map((geo: any) => ({
-        id: geo.id?.toString() || geo.name,
-        name: geo.name,
-        radius: geo.radius_meters || geo.radius || 100,
-        center: geo.center_location
-          ? {
-              lat:
-                geo.center_location.latitude || geo.center_location.lat || 0,
-              lng:
-                geo.center_location.longitude || geo.center_location.lng || 0,
-            }
-          : {lat: 0, lng: 0},
-        isActive: geo.is_active !== false,
-        alert_on_entry: geo.alert_on_entry !== false,
-        alert_on_exit: geo.alert_on_exit !== false,
-      }));
+      return data.map((geo: any) => {
+        // Handle both old format (center_location) and new format (center)
+        let center = {lat: 0, lng: 0};
+        if (geo.center_location) {
+          center = {
+            lat: geo.center_location.latitude || geo.center_location.lat || 0,
+            lng: geo.center_location.longitude || geo.center_location.lng || 0,
+          };
+        } else if (geo.center) {
+          center = {
+            lat: geo.center.latitude || geo.center.lat || 0,
+            lng: geo.center.longitude || geo.center.lng || 0,
+          };
+        }
+        
+        return {
+          id: geo.id?.toString() || geo.name,
+          name: geo.name,
+          radius: geo.radius_meters || geo.radius || 100,
+          center,
+          isActive: geo.is_active !== false,
+          alert_on_entry: geo.alert_on_entry !== false,
+          alert_on_exit: geo.alert_on_exit !== false,
+        };
+      });
     }
     return [];
   } catch (error) {
