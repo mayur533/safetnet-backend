@@ -1,5 +1,7 @@
 package com.userapp
 
+import android.content.Intent
+import android.os.Bundle
 import android.view.KeyEvent
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -12,6 +14,26 @@ class MainActivity : ReactActivity() {
    * rendering of the component.
    */
   override fun getMainComponentName(): String = "userapp"
+  
+  /**
+   * Override onCreate to handle intents when app is launched (works when app is closed)
+   */
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    // Check for shake intent in onCreate (when app is launched from closed state)
+    handleShakeIntent(intent)
+  }
+  
+  /**
+   * Handle shake intent - called from both onCreate and onNewIntent
+   */
+  private fun handleShakeIntent(intent: Intent?) {
+    if (intent?.action == "com.userapp.TRIGGER_SOS_FROM_SHAKE" || 
+        intent?.getStringExtra("triggerSource") == "shake") {
+      android.util.Log.d("MainActivity", "Shake intent detected in onCreate/onNewIntent")
+      // Intent will be read by HomeScreen when it mounts
+    }
+  }
 
   /**
    * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
@@ -24,6 +46,26 @@ class MainActivity : ReactActivity() {
     // AsyncStorage requires New Architecture to work properly
     val fabricEnabled = true // Enable New Architecture for TurboModule support
     return DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+  }
+
+  /**
+   * Override onNewIntent to handle new intents when app is already running
+   * This is called when the app is brought to foreground with a new intent
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent) // Update the intent so getIntent() returns the latest one
+    // Handle shake intent when app is brought to foreground
+    handleShakeIntent(intent)
+  }
+  
+  /**
+   * Override onResume to check for intent when app comes to foreground
+   */
+  override fun onResume() {
+    super.onResume()
+    // Check intent again when app resumes (in case it was missed)
+    handleShakeIntent(intent)
   }
 
   /**

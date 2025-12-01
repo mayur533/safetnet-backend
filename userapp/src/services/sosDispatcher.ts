@@ -761,7 +761,9 @@ export const dispatchSOSAlert = async (message: string): Promise<DispatchResult>
         message1Length: familyMessages[0]?.length || 0,
         message2Length: familyMessages[1]?.length || 0,
         message3Length: familyMessages[2]?.length || 0,
+        message3Content: familyMessages[2]?.substring(0, 100) || 'EMPTY',
       });
+      console.log('🔗 Live location URL that will be sent:', liveShareResult.shareUrl);
     } else if (location) {
       // Fallback: static location - send as 3 messages
       const staticLocationUrl = buildGoogleMapsUrl(location.latitude, location.longitude);

@@ -299,8 +299,19 @@ class ShakeDetectionService {
             this.eventEmitter = DeviceEventEmitter;
             this.eventEmitter.addListener('ShakeDetected', () => {
               console.log('[NATIVE SERVICE] Shake detected event received from native service');
-              // Trigger SOS directly when native service detects shake
-              this.sendSOS();
+              // Navigate to Home screen and show modal (app is already running)
+              try {
+                const {navigate} = require('../navigation/navigationRef');
+                navigate('Home');
+                console.log('[NATIVE SERVICE] Navigated to Home screen');
+              } catch (e) {
+                console.warn('[NATIVE SERVICE] Could not navigate to Home:', e);
+              }
+              // Trigger callback to show modal
+              if (this.onShakeDetected) {
+                console.log('[NATIVE SERVICE] Triggering callback to show modal');
+                this.onShakeDetected();
+              }
             });
             console.log('Listening for native shake detection events');
           }
@@ -567,59 +578,24 @@ class ShakeDetectionService {
                 // Reset shake timestamps to prevent re-triggering
                 this.shakeTimestamps = [];
                 
-                // Check if app is in foreground - if not, send SOS directly without confirmation
-                // When app is closed/background, we can't show dialogs, so send directly
-                const isAppInForeground = AppState.currentState === 'active';
-                
-                if (!isAppInForeground) {
-                  // App is in background - send SOS directly without confirmation
-                  console.log('[SOS DETECTED] App in background, sending SOS directly');
-                  this.sendSOS();
-                  return;
-                }
-                
-                // App is in foreground - show confirmation dialog
+                // Always trigger the callback to show modern modal (native service will open app if closed)
+                // The modal will be shown when app opens, and user can confirm to send SOS
                 if (!this.pendingConfirmation) {
                   this.pendingConfirmation = true;
-                  console.log('[SOS DETECTED] 3 consecutive shakes detected, showing confirmation dialog');
+                  console.log('[SOS DETECTED] 3 consecutive shakes detected - triggering callback to show modal');
                   
-                  // Vibrate to indicate shake detection
-                  try {
-                    const {CustomVibration} = require('../modules/VibrationModule');
-                    CustomVibration.vibrate(200); // Short vibration to indicate detection
-                    console.log('[SOS DETECTED] Vibration triggered for shake detection');
-                  } catch (e) {
-                    console.warn('[SOS DETECTED] Could not vibrate:', e);
-                    // Fallback to React Native Vibration
-                    try {
-                      const {Vibration} = require('react-native');
-                      Vibration.vibrate(200);
-                    } catch (e2) {
-                      console.error('[SOS DETECTED] Fallback vibration also failed:', e2);
-                    }
+                  // Trigger the callback which will show the modern modal in HomeScreen
+                  // Native service already vibrated and will open app if closed
+                  if (this.onShakeDetected) {
+                    this.onShakeDetected();
                   }
                   
-                  // Use setTimeout with a small delay to ensure we're on the main thread
+                  // Reset pending confirmation after a delay to allow modal to show
                   setTimeout(() => {
-                    try {
-                      console.log('[SOS DETECTED] About to show confirmation dialog');
-                      this.showConfirmationDialog(() => {
-                        // User confirmed - send SOS
-                        console.log('[SOS DETECTED] User confirmed - sending SOS');
-                        this.pendingConfirmation = false;
-                        this.sendSOS();
-                      }, () => {
-                        // User cancelled
-                        this.pendingConfirmation = false;
-                        console.log('[SOS DETECTED] User cancelled SOS');
-                      });
-                    } catch (error) {
-                      console.error('[SOS DETECTED] Error in showConfirmationDialog setTimeout:', error);
-                      this.pendingConfirmation = false;
-                    }
-                  }, 100);
+                    this.pendingConfirmation = false;
+                  }, 2000);
                 } else {
-                  console.log('[SOS DETECTED] Confirmation dialog already pending, ignoring shake');
+                  console.log('[SOS DETECTED] Confirmation already pending, ignoring shake');
                 }
               }
             }
@@ -628,31 +604,36 @@ class ShakeDetectionService {
     this.lastAcceleration = {x, y, z};
   }
 
-  private sendSOS() {
+  private sendSOS(vibrationAlreadyDone: boolean = false) {
     console.log('3 consecutive shakes detected - sending SOS');
     
-    // Vibrate on 3rd shake (before sending notification)
-    try {
-      // Use CustomVibration for better reliability
-      const {CustomVibration} = require('../modules/VibrationModule');
-      // Vibrate once for 1000ms when 3 shakes detected (longer for better feel)
-      console.log('Attempting to vibrate using CustomVibration...');
-      CustomVibration.vibrate(1000);
-      console.log('Vibration triggered on 3rd shake via CustomVibration');
-    } catch (e) {
-      console.warn('Could not vibrate using CustomVibration:', e);
-      // Fallback to React Native Vibration
+    // Vibrate on 3rd shake (before sending notification) - only if not already done by native service
+    if (!vibrationAlreadyDone) {
       try {
-        const {Vibration} = require('react-native');
-        console.log('Attempting fallback vibration using React Native Vibration...');
-        Vibration.vibrate(1000);
-        console.log('Vibration triggered on 3rd shake via React Native Vibration');
-      } catch (e2) {
-        console.error('Fallback vibration also failed:', e2);
+        // Use CustomVibration for better reliability
+        const {CustomVibration} = require('../modules/VibrationModule');
+        // Vibrate once for 1000ms when 3 shakes detected (longer for better feel)
+        console.log('Attempting to vibrate using CustomVibration...');
+        CustomVibration.vibrate(1000);
+        console.log('Vibration triggered on 3rd shake via CustomVibration');
+      } catch (e) {
+        console.warn('Could not vibrate using CustomVibration:', e);
+        // Fallback to React Native Vibration
+        try {
+          const {Vibration} = require('react-native');
+          console.log('Attempting fallback vibration using React Native Vibration...');
+          Vibration.vibrate(1000);
+          console.log('Vibration triggered on 3rd shake via React Native Vibration');
+        } catch (e2) {
+          console.error('Fallback vibration also failed:', e2);
+        }
       }
+    } else {
+      console.log('[NATIVE SERVICE] Vibration already handled by native service, skipping duplicate vibration');
     }
     
     // Trigger SOS (this will send alert and show push notification)
+    // This will call the callback which triggers sendAlert(true) -> dispatchSOSAlert() -> calls
     this.triggerShakeDetected();
   }
 
@@ -708,13 +689,15 @@ class ShakeDetectionService {
   }
 
   private triggerShakeDetected() {
-    console.log('Triggering shake detected - sending SOS');
+    console.log('Triggering shake detected - showing confirmation modal');
     if (this.onShakeDetected) {
-      // Call the callback to send SOS
+      console.log('[SHAKE] Callback found, triggering modal display');
+      // Call the callback to show modal (this will show the modern SOS confirmation modal)
       this.onShakeDetected();
+    } else {
+      console.warn('[SHAKE] No callback set! Modal will not be shown. Make sure shake detection is started with a callback.');
     }
-    // Show notification
-    this.showSOSNotification();
+    // Don't show notification - app will open and show modal instead
   }
 
 

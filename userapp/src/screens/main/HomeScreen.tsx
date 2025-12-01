@@ -18,6 +18,7 @@ import {
   PermissionsAndroid,
   Alert,
   AppState,
+  DeviceEventEmitter,
 } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import GeolocationService from 'react-native-geolocation-service';
@@ -179,6 +180,7 @@ const HomeScreen = ({navigation}: any) => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showShakeSOSModal, setShowShakeSOSModal] = useState(false);
   const [alertState, setAlertState] = useState<{
     visible: boolean;
     title: string;
@@ -220,6 +222,7 @@ const HomeScreen = ({navigation}: any) => {
   // All refs must be declared before any useEffect hooks (Rules of Hooks)
   const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shakeSOSModalShownRef = useRef(false);
   const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownAnim = useRef(new Animated.Value(1)).current;
 
@@ -237,33 +240,74 @@ const HomeScreen = ({navigation}: any) => {
     }
   }, [route?.params?.showLoginModal, navigation]);
 
-  // Check for SOS trigger from shake gesture when app launches
+  // Check for SOS trigger from shake gesture - works when app launches or comes to foreground
   useEffect(() => {
     if (Platform.OS === 'android' && isAuthenticated) {
-      const checkInitialIntent = async () => {
+      const checkIntent = async () => {
         try {
           const {NativeModules} = require('react-native');
           const IntentModule = NativeModules.IntentModule;
           if (IntentModule && typeof IntentModule.getInitialIntent === 'function') {
             const intent = await IntentModule.getInitialIntent();
             if (intent?.action === 'com.userapp.TRIGGER_SOS_FROM_SHAKE' || intent?.triggerSource === 'shake') {
-              console.log('[HomeScreen] SOS triggered from shake gesture (app was closed)');
-              // Clear the intent to prevent re-triggering
-              IntentModule.clearIntent().catch(() => {});
-              // Trigger SOS
-              sendAlert(true);
+              console.log('[HomeScreen] SOS triggered from shake gesture');
+              console.log('[HomeScreen] Intent received - navigating to Home and showing modal');
+              
+              // Only show modal if we haven't already shown it and success screen is not showing
+              if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+                // Clear the intent to prevent re-triggering
+                IntentModule.clearIntent().catch(() => {});
+                // Navigate to Home screen if not already there
+                if (navigation) {
+                  navigation.navigate('Home');
+                }
+                // Show modern SOS confirmation modal instead of directly sending
+                // Add small delay to ensure app is fully loaded and navigation completes
+                setTimeout(() => {
+                  // Double-check ref and success screen state before showing modal
+                  if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+                    shakeSOSModalShownRef.current = true;
+                    setShowShakeSOSModal(true);
+                  }
+                }, 500);
+              } else {
+                // Intent already processed or success screen is showing - just clear it
+                IntentModule.clearIntent().catch(() => {});
+                console.log('[HomeScreen] Intent received but modal already shown or success screen active - ignoring');
+              }
             }
           }
         } catch (error) {
-          console.warn('[HomeScreen] Could not check initial intent:', error);
+          console.warn('[HomeScreen] Could not check intent:', error);
         }
       };
       
-      // Check after a short delay to ensure app is fully loaded
-      const timeout = setTimeout(checkInitialIntent, 1000);
-      return () => clearTimeout(timeout);
+      // Check on mount (app launches) - check multiple times to catch intent
+      checkIntent(); // Check immediately
+      const timeout1 = setTimeout(checkIntent, 300); // Check after 300ms
+      const timeout2 = setTimeout(checkIntent, 800); // Check after 800ms
+      const timeout3 = setTimeout(checkIntent, 1500); // Check after 1500ms
+      
+      // Also check when app comes to foreground (app was in background)
+      const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+        if (nextAppState === 'active') {
+          // App came to foreground - check for new intent multiple times
+          checkIntent(); // Check immediately
+          setTimeout(checkIntent, 200); // Check after 200ms
+          setTimeout(checkIntent, 500); // Check after 500ms
+          setTimeout(checkIntent, 1000); // Check after 1000ms
+        }
+      });
+      
+      return () => {
+        clearTimeout(timeout1);
+        clearTimeout(timeout2);
+        clearTimeout(timeout3);
+        appStateSubscription.remove();
+      };
     }
   }, [isAuthenticated]);
+
 
   useEffect(() => {
     if (!contactsInitialized) {
@@ -478,15 +522,19 @@ const HomeScreen = ({navigation}: any) => {
 
   const sendAlert = async (fromShake: boolean = false) => {
     if (!isAuthenticated) {
+      console.warn('[SOS] Cannot send alert - user not authenticated');
       return;
     }
 
     // If called from shake detection, send alert directly without UI countdown
-    // Vibration and notification are already handled in shakeDetectionService
+    // Vibration is already handled by native service on 3rd shake
     if (fromShake) {
+      console.log('[SOS SHAKE] Starting SOS dispatch from shake gesture...');
       try {
         const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
+        console.log('[SOS SHAKE] Calling dispatchSOSAlert - this will trigger calls and send alerts');
         const sosResult = await dispatchSOSAlert(sosMessage);
+        console.log('[SOS SHAKE] dispatchSOSAlert completed, result:', sosResult);
         // Update active live share state with the session from SOS
         if (sosResult?.liveShareSession) {
           setActiveLiveShare(sosResult.liveShareSession);
@@ -495,10 +543,10 @@ const HomeScreen = ({navigation}: any) => {
           // Fallback: check for active session
           setActiveLiveShare(getActiveLiveShareSession());
         }
-        console.log('SOS alert sent from shake detection');
+        console.log('✅ SOS alert sent from shake detection - calls should be initiated');
         // Notification and vibration already handled by shakeDetectionService
       } catch (error) {
-        console.error('Error dispatching SOS alert from shake:', error);
+        console.error('❌ Error dispatching SOS alert from shake:', error);
         setAlertState({
           visible: true,
           title: 'Error',
@@ -511,6 +559,18 @@ const HomeScreen = ({navigation}: any) => {
 
     // Normal UI flow - dispatch SOS alert
     try {
+      // Clear intent and reset ref to prevent modal from showing again
+      shakeSOSModalShownRef.current = false;
+      try {
+        const {NativeModules} = require('react-native');
+        const IntentModule = NativeModules.IntentModule;
+        if (IntentModule && typeof IntentModule.clearIntent === 'function') {
+          await IntentModule.clearIntent();
+        }
+      } catch (e) {
+        console.warn('Could not clear intent:', e);
+      }
+      
       const sosMessage = useSettingsStore.getState().sosMessageTemplate || DEFAULT_SOS_TEMPLATE;
       const sosResult = await dispatchSOSAlert(sosMessage);
       // Update active live share state with the session from SOS
@@ -563,6 +623,8 @@ const HomeScreen = ({navigation}: any) => {
   };
 
   const handleBackFromSuccess = () => {
+    // Reset shake modal ref when success screen is dismissed
+    shakeSOSModalShownRef.current = false;
     resetState();
   };
 
@@ -590,7 +652,25 @@ const HomeScreen = ({navigation}: any) => {
       // Start shake detection
       shakeDetectionService.start(() => {
         // This callback is called when shake is detected
-        sendAlert(true); // Pass true to indicate it's from shake
+        console.log('[HomeScreen] Shake detected callback - navigating to Home and showing modal');
+        // Only show modal if we haven't already shown it and success screen is not showing
+        if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+          // Navigate to Home screen if not already there (works when app is running on other pages)
+          if (navigation) {
+            navigation.navigate('Home');
+          }
+          // Show modern SOS confirmation modal instead of directly sending
+          // Only show if modal is not already visible (prevent duplicates)
+          setTimeout(() => {
+            // Double-check ref and success screen state before showing modal
+            if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+              shakeSOSModalShownRef.current = true;
+              setShowShakeSOSModal(true);
+            }
+          }, 300);
+        } else {
+          console.log('[HomeScreen] Shake detected but modal already shown or success screen active - ignoring');
+        }
       });
     } else {
       // Stop shake detection only if setting is disabled
@@ -1914,6 +1994,68 @@ const HomeScreen = ({navigation}: any) => {
         ]}
         onDismiss={() => setLiveShareStopAlert({...liveShareStopAlert, visible: false})}
       />
+
+      {/* Modern Shake SOS Confirmation Modal */}
+      <Modal
+        visible={showShakeSOSModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowShakeSOSModal(false)}>
+        <View style={[styles.modalOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)'}]}>
+          <View style={[styles.modalContent, {backgroundColor: colors.card, borderColor: colors.border}]}>
+            <View
+              style={[
+                styles.modalIconContainer,
+                {backgroundColor: withAlpha('#B91C1C', isDarkMode ? 0.2 : 0.1)},
+              ]}>
+              <MaterialIcons name="emergency" size={56} color="#B91C1C" />
+            </View>
+            <Text style={[styles.modalTitle, {color: colors.text}]}>Shake Detected</Text>
+            <Text style={[styles.modalMessage, {color: colors.notification}]}>
+              Do you want to send SOS alert?
+            </Text>
+            <Text style={[styles.modalSubMessage, {color: mutedTextColor}]}>
+              This will trigger the same countdown and alert sequence as the SOS button.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalCancelButton,
+                  {borderColor: colors.border, backgroundColor: softSurface},
+                ]}
+                onPress={() => {
+                  shakeSOSModalShownRef.current = false;
+                  setShowShakeSOSModal(false);
+                }}
+                activeOpacity={0.7}>
+                <Text style={[styles.modalCancelText, {color: colors.text}]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSOSButton, {backgroundColor: '#B91C1C'}]}
+                onPress={async () => {
+                  shakeSOSModalShownRef.current = false;
+                  setShowShakeSOSModal(false);
+                  // Clear intent to prevent modal from showing again
+                  try {
+                    const {NativeModules} = require('react-native');
+                    const IntentModule = NativeModules.IntentModule;
+                    if (IntentModule && typeof IntentModule.clearIntent === 'function') {
+                      await IntentModule.clearIntent();
+                    }
+                  } catch (e) {
+                    console.warn('Could not clear intent:', e);
+                  }
+                  // Directly send SOS without countdown
+                  await sendAlert();
+                }}
+                activeOpacity={0.8}>
+                <MaterialIcons name="send" size={20} color="#FFFFFF" style={{marginRight: 8}} />
+                <Text style={styles.modalSOSText}>Send SOS</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -2469,13 +2611,13 @@ const styles = StyleSheet.create({
   modalCancelButton: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     borderRadius: 10,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
   },
   modalCancelText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#374151',
   },
@@ -2491,6 +2633,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  modalSubMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  modalSOSButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    minWidth: 100,
+    shadowColor: '#B91C1C',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  modalSOSText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
 

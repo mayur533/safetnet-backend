@@ -228,27 +228,33 @@ class ShakeDetectionService : Service(), SensorEventListener {
             e.printStackTrace()
         }
         
-        // Launch app with SOS trigger intent (works even when app is closed)
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            action = "com.userapp.TRIGGER_SOS_FROM_SHAKE"
-            putExtra("triggerSource", "shake")
-        }
-        startActivity(intent)
-        
-        // Send SOS notification (works even when app is closed)
-        sendSOSNotification()
-        
-        // Also send event to JavaScript to trigger SOS dispatch (if app is running)
-        try {
+        // Check if app is running in foreground
+        val isAppRunning = try {
             val reactContext = applicationContext as? com.facebook.react.bridge.ReactApplicationContext
-            reactContext?.let {
-                val eventEmitter = it.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                eventEmitter.emit("ShakeDetected", null)
-            }
+            reactContext != null && reactContext.hasActiveCatalystInstance()
         } catch (e: Exception) {
-            // App is closed, event won't be received - that's OK, intent will launch app
-            android.util.Log.d("ShakeDetection", "App is closed, SOS will trigger when app opens")
+            false
+        }
+        
+        if (isAppRunning) {
+            // App is running - send event to JavaScript to show modal directly
+            android.util.Log.d("ShakeDetection", "App is running - sending event to show modal")
+            try {
+                val reactContext = applicationContext as? com.facebook.react.bridge.ReactApplicationContext
+                reactContext?.let {
+                    val eventEmitter = it.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    eventEmitter.emit("ShakeDetected", null)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("ShakeDetection", "Could not send event to JavaScript: ${e.message}")
+                // Fallback to notification
+                sendSOSNotification()
+            }
+        } else {
+            // App is closed or in background - send notification
+            // User clicks notification to open app with modal
+            android.util.Log.d("ShakeDetection", "App is closed/in background - sending notification")
+            sendSOSNotification()
         }
     }
     
@@ -266,12 +272,18 @@ class ShakeDetectionService : Service(), SensorEventListener {
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 200, 500)
                 enableLights(true)
+                setShowBadge(true)
             }
             notificationManager.createNotificationChannel(sosChannel)
         }
         
+        // Create intent to open app with shake trigger
         val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            action = "com.userapp.TRIGGER_SOS_FROM_SHAKE"
+            putExtra("triggerSource", "shake")
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
@@ -281,8 +293,8 @@ class ShakeDetectionService : Service(), SensorEventListener {
         val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) "sos_channel" else CHANNEL_ID
         
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("SOS Sent Successfully")
-            .setContentText("Your emergency alert has been sent. Our officials will be there shortly. Help will arrive soon.")
+            .setContentTitle("Shake Detected - SOS Alert")
+            .setContentText("Tap to open app and confirm sending SOS")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
@@ -290,9 +302,12 @@ class ShakeDetectionService : Service(), SensorEventListener {
             .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))
             .setVibrate(longArrayOf(0, 500, 200, 500))
             .setLights(0xFF0000, 1000, 1000)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true) // Show as heads-up notification
             .build()
         
         notificationManager.notify(2, notification)
+        android.util.Log.d("ShakeDetection", "SOS notification sent - user can tap to open app")
     }
     
     private fun createNotificationChannel() {
