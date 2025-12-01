@@ -360,52 +360,6 @@ class LiveLocationTrackPoint(models.Model):
         return f"{self.share_id} @ {self.recorded_at}"
 
 
-class Geofence(models.Model):
-    """
-    Model for geofencing (Premium feature only).
-    Alerts family when user enters/exits marked zones.
-    """
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='user_profile_geofences',
-        help_text="User who owns this geofence"
-    )
-    name = models.CharField(
-        max_length=200,
-        help_text="Name of the geofence (e.g., 'Home', 'Work')"
-    )
-    center_location = models.JSONField(
-        help_text="Center point of geofence (longitude, latitude)"
-    )
-    radius_meters = models.IntegerField(
-        default=100,
-        help_text="Radius of the geofence in meters"
-    )
-    alert_on_entry = models.BooleanField(
-        default=True,
-        help_text="Alert when user enters the geofence"
-    )
-    alert_on_exit = models.BooleanField(
-        default=True,
-        help_text="Alert when user exits the geofence"
-    )
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Whether the geofence is active"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        db_table = 'users_profile_geofence'
-        verbose_name = 'Geofence'
-        verbose_name_plural = 'Geofences'
-    
-    def __str__(self):
-        user_email = self.user.email if hasattr(self.user, 'email') else 'User'
-        return f"Geofence {self.name} - {user_email}"
-
-
 class CommunityAlert(models.Model):
     """
     Model for community alerts.

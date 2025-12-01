@@ -6,7 +6,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import User, FamilyContact, CommunityMembership, SOSEvent, LiveLocationShare, Geofence, CommunityAlert, ChatGroup, ChatMessage
+from .models import User, FamilyContact, CommunityMembership, SOSEvent, LiveLocationShare, CommunityAlert, ChatGroup, ChatMessage
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -610,33 +610,6 @@ class LiveLocationShareCreateSerializer(serializers.Serializer):
         required=False,
         help_text="List of user IDs to share location with"
     )
-
-
-class GeofenceSerializer(serializers.ModelSerializer):
-    """
-    Serializer for geofences (Premium only).
-    """
-    class Meta:
-        model = Geofence
-        fields = (
-            'id', 'name', 'center_location', 'radius_meters',
-            'alert_on_entry', 'alert_on_exit', 'is_active', 'created_at'
-        )
-        read_only_fields = ('id', 'created_at')
-
-
-class GeofenceCreateSerializer(serializers.Serializer):
-    """
-    Serializer for creating geofences.
-    """
-    name = serializers.CharField(max_length=200)
-    center_location = serializers.DictField(
-        child=serializers.FloatField(),
-        help_text="Center location as {longitude: float, latitude: float}"
-    )
-    radius_meters = serializers.IntegerField(min_value=10, max_value=10000)
-    alert_on_entry = serializers.BooleanField(default=True)
-    alert_on_exit = serializers.BooleanField(default=True)
 
 
 class CommunityAlertSerializer(serializers.ModelSerializer):
