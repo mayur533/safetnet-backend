@@ -44,7 +44,7 @@
     
     <!-- Sensor permissions for shake detection -->
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
-    
+
     <!-- Permission to bring app to foreground from background -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 

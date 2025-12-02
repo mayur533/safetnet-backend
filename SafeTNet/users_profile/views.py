@@ -1775,7 +1775,7 @@ class AvailableUsersListView(APIView):
         # Geofence filtering is no longer supported (user profile geofences removed)
         if geofence_only:
             logger.warning("Geofence filtering requested but user profile geofences are no longer supported")
-            geofence_only = False  # Disable geofence filtering
+                geofence_only = False  # Disable geofence filtering
         
         # Get current user's location
         current_user_location = None

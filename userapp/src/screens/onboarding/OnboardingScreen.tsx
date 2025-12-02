@@ -1,60 +1,207 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useMemo} from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
+  FlatList,
   Dimensions,
   TouchableOpacity,
-  Image,
   StatusBar,
+  Image,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import {useNavigation, useTheme} from '@react-navigation/native';
 import {useAuthStore} from '../../stores/authStore';
-import {useNavigation} from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 
-const {width, height} = Dimensions.get('window');
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-interface OnboardingPageProps {
-  children: React.ReactNode;
+interface Step {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  color: string;
+  isWelcome?: boolean;
 }
 
-const OnboardingPage: React.FC<OnboardingPageProps> = ({children}) => (
-  <View style={styles.page}>{children}</View>
-);
-
 const OnboardingScreen = () => {
-  const [currentPage, setCurrentPage] = useState(0);
-  const [agreeTerms, setAgreeTerms] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const login = useAuthStore((state) => state.login);
   const navigation = useNavigation<any>();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const [currentPage, setCurrentPage] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+  const theme = useTheme();
+  const {colors, dark} = theme;
 
-  const totalPages = 6;
+  const themeColors = useMemo(
+    () => ({
+      background: colors.background || (dark ? '#0F172A' : '#F9FAFB'),
+      card: colors.card || (dark ? '#1E293B' : '#FFFFFF'),
+      text: colors.text || (dark ? '#F8FAFC' : '#111827'),
+      textMuted: dark ? 'rgba(248, 250, 252, 0.7)' : '#6B7280',
+      primary: colors.primary || '#2563EB',
+      border: colors.border || (dark ? 'rgba(148, 163, 184, 0.4)' : '#E5E7EB'),
+      overlay: dark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(15, 23, 42, 0.04)',
+      navigationBg: dark ? 'rgba(15, 23, 42, 0.92)' : '#F9FAFB',
+    }),
+    [colors, dark],
+  );
 
-  const handleScroll = (event: any) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const page = Math.round(offsetX / width);
-    setCurrentPage(page);
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
+
+  // Steps based on actual app features
+  const steps: Step[] = [
+    {
+      id: 'welcome',
+      title: 'Welcome to SafeTNet',
+      description: 'Your personal safety companion. Get help instantly when you need it most.',
+      icon: 'security',
+      color: '#2563EB',
+      isWelcome: true,
+    },
+    {
+      id: 'sos',
+      title: 'SOS Emergency Button',
+      description: 'Press and hold the SOS button to instantly alert emergency services, your contacts, and share your live location. Works even when the app is closed.',
+      icon: 'warning',
+      color: '#EF4444',
+    },
+    {
+      id: 'shake',
+      title: 'Shake to SOS',
+      description: 'Shake your device 3 times to trigger an SOS alert. Perfect for emergencies when you can\'t reach your phone. Enable this feature in settings.',
+      icon: 'phonelink-ring',
+      color: '#F59E0B',
+    },
+    {
+      id: 'contacts',
+      title: 'Emergency Contacts',
+      description: 'Add your family and friends as emergency contacts. They\'ll receive instant alerts, calls, and your live location when you send an SOS.',
+      icon: 'favorite',
+      color: '#7C3AED',
+    },
+    {
+      id: 'community',
+      title: 'Community Groups',
+      description: 'Create or join community groups for your neighborhood, workplace, or any group. Share safety alerts and communicate with members instantly.',
+      icon: 'groups',
+      color: '#B91C1C',
+    },
+    {
+      id: 'location',
+      title: 'Live Location Sharing',
+      description: 'Share your real-time location with trusted contacts. They can track your location and receive updates automatically during emergencies.',
+      icon: 'my-location',
+      color: '#0EA5E9',
+    },
+    {
+      id: 'geofence',
+      title: 'Geofencing (Premium)',
+      description: 'Get automatic alerts when entering or leaving designated safe zones. Premium users can view all geofences and receive location-based security assistance.',
+      icon: 'location-on',
+      color: '#10B981',
+    },
+  ];
+
+  const totalPages = steps.length;
+  const isLastPage = currentPage === steps.length - 1;
+
+  const handleSkip = () => {
+    // Jump to last page (terms and services)
+    const lastPageIndex = totalPages - 1;
+    try {
+      flatListRef.current?.scrollToIndex({index: lastPageIndex, animated: true});
+      setCurrentPage(lastPageIndex);
+    } catch (error) {
+      flatListRef.current?.scrollToOffset({offset: lastPageIndex * SCREEN_WIDTH, animated: true});
+      setCurrentPage(lastPageIndex);
+    }
   };
 
   const handleGetStarted = () => {
-    if (!agreeTerms) {
-      return;
+    // If user is already authenticated, navigate to Home
+    if (isAuthenticated) {
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'Home'}],
+      });
+    } else {
+      // For backward compatibility
+      const {login} = useAuthStore.getState();
+      login('demo@example.com', 'demo123');
     }
-    login('demo@example.com', 'demo123');
+  };
+
+  const onViewableItemsChanged = useRef(({viewableItems}: any) => {
+    if (viewableItems && viewableItems.length > 0) {
+      const index = viewableItems[0].index;
+      if (index !== null && index !== undefined) {
+        setCurrentPage(index);
+      }
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+  }).current;
+
+  const goToNext = () => {
+    if (currentPage < steps.length - 1) {
+      const nextIndex = currentPage + 1;
+      try {
+        flatListRef.current?.scrollToIndex({index: nextIndex, animated: true});
+        setCurrentPage(nextIndex);
+      } catch (error) {
+        flatListRef.current?.scrollToOffset({offset: nextIndex * SCREEN_WIDTH, animated: true});
+        setCurrentPage(nextIndex);
+      }
+    }
+  };
+
+  const renderStep = ({item, index}: {item: Step; index: number}) => {
+    if (item.isWelcome) {
+      return (
+        <View style={[styles.pageContainer, {width: SCREEN_WIDTH}]}>
+          <LinearGradient
+            colors={['#60A5FA', '#2563EB']}
+            style={styles.welcomeContainer}>
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../assets/images/app_logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.welcomeTitle}>{item.title}</Text>
+            <Text style={styles.welcomeSubtitle}>{item.description}</Text>
+          </LinearGradient>
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.pageContainer, {width: SCREEN_WIDTH}]}>
+        <View style={styles.contentContainer}>
+          <View style={[styles.iconCircle, {backgroundColor: item.color}]}>
+            <MaterialIcons name={item.icon as any} size={64} color="#FFFFFF" />
+          </View>
+          <Text style={styles.stepNumber}>Step {index} of {steps.length - 1}</Text>
+          <Text style={styles.stepTitle}>{item.title}</Text>
+          <Text style={styles.stepDescription}>{item.description}</Text>
+        </View>
+      </View>
+    );
   };
 
   const renderPaginationDots = () => {
     return (
       <View style={styles.paginationContainer}>
-        {Array.from({length: totalPages}).map((_, index) => (
+        {steps.map((_, index) => (
           <View
             key={index}
             style={[
               styles.paginationDot,
-              currentPage === index && styles.paginationDotActive,
+              index === currentPage && styles.paginationDotActive,
             ]}
           />
         ))}
@@ -62,467 +209,304 @@ const OnboardingScreen = () => {
     );
   };
 
-  const renderPanicDiagram = (highlightedSegment: 'family' | 'community' | 'police' | 'security' | 'none' = 'none') => {
-    const getSegmentColor = (segment: string) => {
-      if (segment === highlightedSegment) return '#2563eb';
-      return '#E5E7EB';
-    };
-
-    const getTextColor = (segment: string) => {
-      if (segment === highlightedSegment) return '#FFFFFF';
-      return '#6B7280';
-    };
-
-    return (
-      <View style={styles.diagramContainer}>
-        <View style={styles.circleOuter}>
-          {/* Family Segment - Top Left */}
-          <View style={[styles.segment, styles.segmentTopLeft, {backgroundColor: getSegmentColor('family')}]}>
-            <MaterialIcons name="people" size={28} color={getTextColor('family')} />
-            <Text style={[styles.segmentText, {color: getTextColor('family')}]}>Family</Text>
-          </View>
-          
-          {/* Community Segment - Top Right */}
-          <View style={[styles.segment, styles.segmentTopRight, {backgroundColor: getSegmentColor('community')}]}>
-            <MaterialIcons name="groups" size={28} color={getTextColor('community')} />
-            <Text style={[styles.segmentText, {color: getTextColor('community')}]}>Community</Text>
-          </View>
-          
-          {/* Police Segment - Bottom Left */}
-          <View style={[styles.segment, styles.segmentBottomLeft, {backgroundColor: getSegmentColor('police')}]}>
-            <MaterialIcons name="local-police" size={28} color={getTextColor('police')} />
-            <Text style={[styles.segmentText, {color: getTextColor('police')}]}>Police</Text>
-          </View>
-          
-          {/* Security Segment - Bottom Right */}
-          <View style={[styles.segment, styles.segmentBottomRight, {backgroundColor: getSegmentColor('security')}]}>
-            <MaterialIcons name="security" size={28} color={getTextColor('security')} />
-            <Text style={[styles.segmentText, {color: getTextColor('security')}]}>Security</Text>
-          </View>
-          
-          {/* Central PANIC Button */}
-          <View style={styles.panicButton}>
-            <Text style={styles.panicText}>PANIC</Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
-      <ScrollView
-        ref={scrollViewRef}
+      <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={themeColors.background} />
+      
+      {/* Skip Button */}
+      {currentPage < totalPages - 1 && !steps[currentPage].isWelcome && (
+        <TouchableOpacity
+          style={styles.skipButton}
+          onPress={handleSkip}
+          activeOpacity={0.7}>
+          <Text style={styles.skipButtonText}>Skip</Text>
+        </TouchableOpacity>
+      )}
+      
+      <FlatList
+        ref={flatListRef}
+        data={steps}
+        renderItem={renderStep}
+        keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}>
-        
-        {/* Page 1: Welcome Screen */}
-        <OnboardingPage>
-          <LinearGradient
-            colors={['#60A5FA', '#2563EB']}
-            style={styles.welcomeContainer}>
-            <View style={styles.logoContainer}>
-              <MaterialIcons name="security" size={120} color="#FFFFFF" />
-            </View>
-            <Text style={styles.welcomeTitle}>Welcome to SafeTNet, the #1</Text>
-            <Text style={styles.welcomeTitle}>personal safety app.</Text>
-            <Text style={styles.welcomeSubtitle}>Let's take a couple of minutes to</Text>
-            <Text style={styles.welcomeSubtitle}>walk through how the app works.</Text>
-          </LinearGradient>
-        </OnboardingPage>
-
-        {/* Page 2: Family Feature */}
-        <OnboardingPage>
-          <View style={styles.pageContent}>
-            <View style={styles.diagramSection}>
-              {renderPanicDiagram('family')}
-            </View>
-            <View style={styles.infoBoxContainer}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Family button will send a notification to up to three people when you need help. It will provide your location via text, email and within the app. Family member must download free version of the app.
-                </Text>
-                <Text style={styles.infoText}>
-                  Set up your family members by clicking on the menu in the top, left hand corner of the app and selecting Emergency Contacts.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </OnboardingPage>
-
-        {/* Page 3: Community Feature */}
-        <OnboardingPage>
-          <View style={styles.pageContent}>
-            <View style={styles.diagramSection}>
-              {renderPanicDiagram('community')}
-            </View>
-            <View style={styles.infoBoxContainer}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Community allows you to create or be a part of a community. This is anywhere you work, live or play, and includes neighborhoods and work teams.
-                </Text>
-                <Text style={styles.infoText}>
-                  This feature allows you to send an emergency message to the members in your community or upload pictures, video and audio to share with your group.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </OnboardingPage>
-
-        {/* Page 4: Police Feature */}
-        <OnboardingPage>
-          <View style={styles.pageContent}>
-            <View style={styles.diagramSection}>
-              {renderPanicDiagram('police')}
-            </View>
-            <View style={styles.infoBoxContainer}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Police, Family, Community and Security are features in the app. They will show in blue when it is available.
-                </Text>
-                <Text style={styles.infoText}>
-                  If you downloaded the free version, only Police will be available. Police will contact 911 directly.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </OnboardingPage>
-
-        {/* Page 5: Security Feature */}
-        <OnboardingPage>
-          <View style={styles.pageContent}>
-            <View style={styles.diagramSection}>
-              {renderPanicDiagram('security')}
-            </View>
-            <View style={styles.infoBoxContainer}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  The Security feature will turn blue or be available when businesses*, schools and venues are a SafeTNet partner and have onsite security/law enforcement. By selecting this button, security will notified of your location and respond quickly to your request for help. This button will remain gray when security is not available.
-                </Text>
-                <Text style={styles.infoTextSmall}>*malls, apartment complexes, etc.</Text>
-              </View>
-            </View>
-          </View>
-        </OnboardingPage>
-
-        {/* Page 6: Panic Button + Get Started */}
-        <OnboardingPage>
-          <View style={styles.pageContent}>
-            <View style={styles.diagramSection}>
-              {renderPanicDiagram('police')}
-            </View>
-            <View style={styles.infoBoxContainer}>
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  Selecting the Panic button will activate all communications to Police, Family, Community and Security, if contacts have been set up and security is available.
-                </Text>
-              </View>
-              
-              <View style={styles.bottomSection}>
-              <TouchableOpacity
-                style={styles.videoButton}
-                onPress={() => {
-                  // TODO: Open video instructions
-                }}>
-                <Text style={styles.videoButtonText}>CLICK HERE TO OPEN VIDEO INSTRUCTIONS.</Text>
-              </TouchableOpacity>
-
-              <View style={styles.checkboxContainer}>
-                <TouchableOpacity
-                  onPress={() => setAgreeTerms(!agreeTerms)}
-                  style={styles.checkbox}>
-                  {agreeTerms ? (
-                    <MaterialIcons name="check-box" size={24} color="#FFFFFF" />
-                  ) : (
-                    <MaterialIcons name="check-box-outline-blank" size={24} color="#FFFFFF" />
-                  )}
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setAgreeTerms(!agreeTerms)}
-                  style={styles.checkboxLabel}>
-                  <Text style={styles.checkboxText}>
-                    I agree to the{' '}
-                    <Text style={styles.linkText}>Term of services</Text>
-                    {' '}and{' '}
-                    <Text style={styles.linkText}>Privacy Policy</Text>
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.getStartedButton,
-                  agreeTerms && styles.getStartedButtonActive,
-                  !agreeTerms && styles.getStartedButtonDisabled,
-                ]}
-                onPress={handleGetStarted}
-                disabled={!agreeTerms}>
-                <Text style={[styles.getStartedText, agreeTerms && styles.getStartedTextActive]}>GET STARTED</Text>
-              </TouchableOpacity>
-            </View>
-            </View>
-          </View>
-        </OnboardingPage>
-      </ScrollView>
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        getItemLayout={(_, index) => ({
+          length: SCREEN_WIDTH,
+          offset: SCREEN_WIDTH * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          const wait = new Promise((resolve) => setTimeout(resolve, 500));
+          wait.then(() => {
+            flatListRef.current?.scrollToIndex({index: info.index, animated: true});
+          });
+        }}
+      />
       
-      {renderPaginationDots()}
+      <View style={styles.paginationWrapper}>
+        {renderPaginationDots()}
+        {/* Terms and Service Text - Only on last page */}
+        {isLastPage && (
+          <View style={styles.termsTextContainer}>
+            <Text style={styles.termsServiceText}>
+              By clicking Get Started, you agree to our{' '}
+              <Text style={styles.termsServiceLink}>Terms of Service</Text>
+              {' '}and{' '}
+              <Text style={styles.termsServiceLink}>Privacy Policy</Text>
+            </Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={[
+        styles.navigationContainer,
+        steps[currentPage]?.isWelcome && styles.navigationContainerWelcome
+      ]}>
+        {isLastPage ? (
+          // Get Started Button - Always shown on last page
+          <TouchableOpacity
+            style={styles.continueButton}
+            onPress={handleGetStarted}
+            activeOpacity={0.8}>
+            <Text style={styles.continueButtonText}>Get Started</Text>
+            <MaterialIcons name="arrow-forward" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : (
+          // Next Button
+          <View style={styles.nextButtonContainer}>
+            <TouchableOpacity
+              style={[
+                styles.nextButton,
+                steps[currentPage]?.isWelcome && styles.nextButtonWelcome
+              ]}
+              onPress={goToNext}
+              activeOpacity={0.8}>
+              <Text style={[
+                styles.nextButtonText,
+                steps[currentPage]?.isWelcome && styles.nextButtonTextWelcome
+              ]}>Next</Text>
+              <MaterialIcons 
+                name="arrow-forward" 
+                size={24} 
+                color={steps[currentPage]?.isWelcome ? '#FFFFFF' : themeColors.primary} 
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#2563eb',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  page: {
-    width,
-    flex: 1,
-  },
-  welcomeContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingBottom: 60,
-  },
-  logoContainer: {
-    width: 140,
-    height: 140,
-    marginBottom: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  welcomeTitle: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  welcomeSubtitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 24,
-    lineHeight: 24,
-  },
-  pageContent: {
-    flex: 1,
-  },
-  infoBoxContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: height * 0.42,
-    justifyContent: 'center',
-    backgroundColor: '#2563eb',
-  },
-  diagramSection: {
-    backgroundColor: '#FFFFFF',
-    paddingTop: 50,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    height: height * 0.58,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  diagramContainer: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  circleOuter: {
-    width: width * 0.68,
-    height: width * 0.68,
-    borderRadius: (width * 0.68) / 2,
-    backgroundColor: '#E5E7EB',
-    position: 'relative',
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  segment: {
-    position: 'absolute',
-    width: '50%',
-    height: '50%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  segmentTopLeft: {
-    top: 0,
-    left: 0,
-    borderTopLeftRadius: width * 0.34,
-  },
-  segmentTopRight: {
-    top: 0,
-    right: 0,
-    borderTopRightRadius: width * 0.34,
-  },
-  segmentBottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomLeftRadius: width * 0.34,
-  },
-  segmentBottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomRightRadius: width * 0.34,
-  },
-  segmentText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  panicButton: {
-    position: 'absolute',
-    top: (width * 0.68) / 2 - 45,
-    left: (width * 0.68) / 2 - 45,
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  panicText: {
-    color: '#1E40AF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  infoBox: {
-    backgroundColor: '#1e40af',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 20,
-  },
-  bottomSection: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 50,
-  },
-  infoText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  infoTextSmall: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 8,
-  },
-  videoButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  videoButtonText: {
-    color: '#6B7280',
-    fontSize: 11,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  checkbox: {
-    marginRight: 8,
-  },
-  checkboxLabel: {
-    flex: 1,
-  },
-  checkboxText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  linkText: {
-    textDecorationLine: 'underline',
-    fontWeight: '600',
-  },
-  getStartedButton: {
-    backgroundColor: '#9CA3AF',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  getStartedButtonActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  getStartedButtonDisabled: {
-    backgroundColor: '#9CA3AF',
-    opacity: 0.5,
-  },
-  getStartedText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  getStartedTextActive: {
-    color: '#2563eb',
-  },
-  paginationContainer: {
-    position: 'absolute',
-    bottom: 30,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-  },
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    marginHorizontal: 4,
-  },
-  paginationDotActive: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FFFFFF',
-  },
-});
+const createStyles = (themeColors: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: themeColors.background,
+    },
+    pageContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    welcomeContainer: {
+      flex: 1,
+      width: '100%',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 40,
+      paddingBottom: 60,
+    },
+    logoContainer: {
+      width: 140,
+      height: 140,
+      marginBottom: 50,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    logoImage: {
+      width: '100%',
+      height: '100%',
+    },
+    welcomeTitle: {
+      color: '#FFFFFF',
+      fontSize: 32,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginBottom: 16,
+    },
+    welcomeSubtitle: {
+      color: '#FFFFFF',
+      fontSize: 18,
+      textAlign: 'center',
+      lineHeight: 26,
+      marginTop: 8,
+    },
+    contentContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 32,
+      paddingTop: 80,
+      paddingBottom: 120,
+    },
+    iconCircle: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 32,
+      shadowColor: themeColors.primary,
+      shadowOffset: {width: 0, height: 4},
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    stepNumber: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: themeColors.textMuted,
+      marginBottom: 16,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    stepTitle: {
+      fontSize: 28,
+      fontWeight: 'bold',
+      color: themeColors.text,
+      textAlign: 'center',
+      marginBottom: 16,
+    },
+    stepDescription: {
+      fontSize: 16,
+      color: themeColors.textMuted,
+      textAlign: 'center',
+      lineHeight: 24,
+      paddingHorizontal: 16,
+      marginBottom: 32,
+    },
+    paginationWrapper: {
+      position: 'absolute',
+      bottom: 100,
+      left: 0,
+      right: 0,
+      alignItems: 'center',
+    },
+    paginationContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 16,
+    },
+    paginationDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: themeColors.border,
+      marginHorizontal: 4,
+    },
+    paginationDotActive: {
+      width: 24,
+      backgroundColor: themeColors.primary,
+    },
+    termsTextContainer: {
+      paddingHorizontal: 32,
+      paddingBottom: 8,
+      alignItems: 'center',
+    },
+    termsServiceText: {
+      fontSize: 12,
+      color: themeColors.textMuted,
+      textAlign: 'center',
+      lineHeight: 16,
+    },
+    termsServiceLink: {
+      color: themeColors.primary,
+      fontWeight: '600',
+    },
+    navigationContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingBottom: 32,
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: themeColors.navigationBg,
+      minHeight: 70,
+    },
+    navigationContainerWelcome: {
+      backgroundColor: 'transparent',
+    },
+    nextButtonContainer: {
+      flex: 1,
+      alignItems: 'flex-end',
+    },
+    nextButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      backgroundColor: themeColors.card,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      gap: 8,
+    },
+    nextButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: themeColors.primary,
+    },
+    nextButtonWelcome: {
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    nextButtonTextWelcome: {
+      color: '#FFFFFF',
+    },
+    continueButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 32,
+      borderRadius: 12,
+      backgroundColor: themeColors.primary,
+      gap: 8,
+      shadowColor: themeColors.primary,
+      shadowOffset: {width: 0, height: 6},
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    continueButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+    skipButton: {
+      position: 'absolute',
+      top: 50,
+      right: 20,
+      zIndex: 1000,
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    skipButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+  });
 
 export default OnboardingScreen;
-

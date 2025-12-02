@@ -151,7 +151,7 @@ const {width} = Dimensions.get('window');
 
 // Live share base URL
 const getLiveShareBaseUrl = (): string => {
-  const base = 'https://safetnet.onrender.com/live-share';
+  const base = 'https://safetnet-backend.onrender.com/live-share';
   return base.endsWith('/') ? base.slice(0, -1) : base;
 };
 
@@ -181,6 +181,7 @@ const HomeScreen = ({navigation}: any) => {
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showShakeSOSModal, setShowShakeSOSModal] = useState(false);
+  const [isSendingSOSFromModal, setIsSendingSOSFromModal] = useState(false);
   const [alertState, setAlertState] = useState<{
     visible: boolean;
     title: string;
@@ -253,8 +254,8 @@ const HomeScreen = ({navigation}: any) => {
               console.log('[HomeScreen] SOS triggered from shake gesture');
               console.log('[HomeScreen] Intent received - navigating to Home and showing modal');
               
-              // Only show modal if we haven't already shown it and success screen is not showing
-              if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+              // Only show modal if we haven't already shown it, success screen is not showing, and not currently sending
+              if (!shakeSOSModalShownRef.current && !showSuccessScreen && !isSendingSOSFromModal) {
                 // Clear the intent to prevent re-triggering
                 IntentModule.clearIntent().catch(() => {});
                 // Navigate to Home screen if not already there
@@ -264,16 +265,16 @@ const HomeScreen = ({navigation}: any) => {
                 // Show modern SOS confirmation modal instead of directly sending
                 // Add small delay to ensure app is fully loaded and navigation completes
                 setTimeout(() => {
-                  // Double-check ref and success screen state before showing modal
-                  if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+                  // Double-check ref, success screen state, and sending state before showing modal
+                  if (!shakeSOSModalShownRef.current && !showSuccessScreen && !isSendingSOSFromModal) {
                     shakeSOSModalShownRef.current = true;
                     setShowShakeSOSModal(true);
                   }
                 }, 500);
               } else {
-                // Intent already processed or success screen is showing - just clear it
+                // Intent already processed, success screen is showing, or currently sending - just clear it
                 IntentModule.clearIntent().catch(() => {});
-                console.log('[HomeScreen] Intent received but modal already shown or success screen active - ignoring');
+                console.log('[HomeScreen] Intent received but modal already shown, success screen active, or sending - ignoring');
               }
             }
           }
@@ -582,8 +583,10 @@ const HomeScreen = ({navigation}: any) => {
         setActiveLiveShare(getActiveLiveShareSession());
       }
       
-      // Show success screen after alert is sent
-    setShowSuccess(true);
+      // Close modal and show success screen after alert is sent
+      setShowShakeSOSModal(false);
+      setIsSendingSOSFromModal(false);
+      setShowSuccess(true);
       setIsSendingAlert(false);
       setShowSuccessScreen(true);
     } catch (error) {
@@ -623,8 +626,10 @@ const HomeScreen = ({navigation}: any) => {
   };
 
   const handleBackFromSuccess = () => {
-    // Reset shake modal ref when success screen is dismissed
-    shakeSOSModalShownRef.current = false;
+    // Reset shake modal ref and state when success screen is dismissed
+    shakeSOSModalShownRef.current = true; // Keep it true so modal doesn't show again
+    setShowShakeSOSModal(false);
+    setIsSendingSOSFromModal(false);
     resetState();
   };
 
@@ -653,8 +658,8 @@ const HomeScreen = ({navigation}: any) => {
       shakeDetectionService.start(() => {
         // This callback is called when shake is detected
         console.log('[HomeScreen] Shake detected callback - navigating to Home and showing modal');
-        // Only show modal if we haven't already shown it and success screen is not showing
-        if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+        // Only show modal if we haven't already shown it, success screen is not showing, and not currently sending
+        if (!shakeSOSModalShownRef.current && !showSuccessScreen && !isSendingSOSFromModal) {
           // Navigate to Home screen if not already there (works when app is running on other pages)
           if (navigation) {
             navigation.navigate('Home');
@@ -662,14 +667,14 @@ const HomeScreen = ({navigation}: any) => {
           // Show modern SOS confirmation modal instead of directly sending
           // Only show if modal is not already visible (prevent duplicates)
           setTimeout(() => {
-            // Double-check ref and success screen state before showing modal
-            if (!shakeSOSModalShownRef.current && !showSuccessScreen) {
+            // Double-check ref, success screen state, and sending state before showing modal
+            if (!shakeSOSModalShownRef.current && !showSuccessScreen && !isSendingSOSFromModal) {
               shakeSOSModalShownRef.current = true;
               setShowShakeSOSModal(true);
             }
           }, 300);
         } else {
-          console.log('[HomeScreen] Shake detected but modal already shown or success screen active - ignoring');
+          console.log('[HomeScreen] Shake detected but modal already shown, success screen active, or sending - ignoring');
         }
       });
     } else {
@@ -1997,10 +2002,15 @@ const HomeScreen = ({navigation}: any) => {
 
       {/* Modern Shake SOS Confirmation Modal */}
       <Modal
-        visible={showShakeSOSModal}
+        visible={showShakeSOSModal && !showSuccessScreen}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowShakeSOSModal(false)}>
+        onRequestClose={() => {
+          if (!isSendingSOSFromModal) {
+            shakeSOSModalShownRef.current = true; // Mark as shown so it won't show again
+            setShowShakeSOSModal(false);
+          }
+        }}>
         <View style={[styles.modalOverlay, {backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.6)'}]}>
           <View style={[styles.modalContent, {backgroundColor: colors.card, borderColor: colors.border}]}>
             <View
@@ -2031,11 +2041,17 @@ const HomeScreen = ({navigation}: any) => {
                 <Text style={[styles.modalCancelText, {color: colors.text}]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSOSButton, {backgroundColor: '#B91C1C'}]}
+                style={[
+                  styles.modalSOSButton, 
+                  {backgroundColor: isSendingSOSFromModal ? '#9B1A1A' : '#B91C1C'},
+                  isSendingSOSFromModal && {opacity: 0.8}
+                ]}
                 onPress={async () => {
-                  shakeSOSModalShownRef.current = false;
-                  setShowShakeSOSModal(false);
-                  // Clear intent to prevent modal from showing again
+                  if (isSendingSOSFromModal) return; // Prevent multiple clicks
+                  
+                  setIsSendingSOSFromModal(true);
+                  // Clear intent and ref to prevent modal from showing again
+                  shakeSOSModalShownRef.current = true; // Mark as shown so it won't show again
                   try {
                     const {NativeModules} = require('react-native');
                     const IntentModule = NativeModules.IntentModule;
@@ -2047,10 +2063,21 @@ const HomeScreen = ({navigation}: any) => {
                   }
                   // Directly send SOS without countdown
                   await sendAlert();
+                  // Modal will be closed when success screen appears
                 }}
-                activeOpacity={0.8}>
-                <MaterialIcons name="send" size={20} color="#FFFFFF" style={{marginRight: 8}} />
-                <Text style={styles.modalSOSText}>Send SOS</Text>
+                activeOpacity={0.8}
+                disabled={isSendingSOSFromModal}>
+                {isSendingSOSFromModal ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFFFFF" style={{marginRight: 8}} />
+                    <Text style={styles.modalSOSText}>Sending...</Text>
+                  </>
+                ) : (
+                  <>
+                    <MaterialIcons name="send" size={20} color="#FFFFFF" style={{marginRight: 8}} />
+                    <Text style={styles.modalSOSText}>Send SOS</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>

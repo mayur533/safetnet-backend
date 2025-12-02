@@ -48,39 +48,46 @@ const HowItWorksScreen = () => {
 
   const steps: Step[] = [
     {
-      id: '1',
-      title: 'Create Your Profile',
-      description: 'Set up your account with personal information and emergency contacts. This helps us provide better safety services.',
-      icon: 'person',
-      color: '#2563EB',
-    },
-    {
-      id: '2',
-      title: 'Set Geofence Areas',
-      description: 'Define safe zones and areas you want to monitor for alerts. Get notified when entering or leaving these zones.',
-      icon: 'location-on',
-      color: '#10B981',
-    },
-    {
-      id: '3',
-      title: 'Enable Location Tracking',
-      description: 'Allow the app to track your location for safety and emergency purposes. Your privacy is always protected.',
-      icon: 'gps-fixed',
-      color: '#F59E0B',
-    },
-    {
-      id: '4',
-      title: 'Use Panic Button',
-      description: 'In case of emergency, press and hold the panic button for 3 seconds to alert all contacts instantly.',
+      id: 'sos',
+      title: 'SOS Emergency Button',
+      description: 'Press and hold the SOS button to instantly alert emergency services, your contacts, and share your live location. Works even when the app is closed.',
       icon: 'warning',
       color: '#EF4444',
     },
     {
-      id: '5',
-      title: 'Stay Connected',
-      description: 'Communicate with your safety network through reports, chat features, and community groups.',
-      icon: 'chat',
-      color: '#8B5CF6',
+      id: 'shake',
+      title: 'Shake to SOS',
+      description: 'Shake your device 3 times to trigger an SOS alert. Perfect for emergencies when you can\'t reach your phone. Enable this feature in settings.',
+      icon: 'phonelink-ring',
+      color: '#F59E0B',
+    },
+    {
+      id: 'contacts',
+      title: 'Emergency Contacts',
+      description: 'Add your family and friends as emergency contacts. They\'ll receive instant alerts, calls, and your live location when you send an SOS.',
+      icon: 'favorite',
+      color: '#7C3AED',
+    },
+    {
+      id: 'community',
+      title: 'Community Groups',
+      description: 'Create or join community groups for your neighborhood, workplace, or any group. Share safety alerts and communicate with members instantly.',
+      icon: 'groups',
+      color: '#B91C1C',
+    },
+    {
+      id: 'location',
+      title: 'Live Location Sharing',
+      description: 'Share your real-time location with trusted contacts. They can track your location and receive updates automatically during emergencies.',
+      icon: 'my-location',
+      color: '#0EA5E9',
+    },
+    {
+      id: 'geofence',
+      title: 'Geofencing (Premium)',
+      description: 'Get automatic alerts when entering or leaving designated safe zones. Premium users can view all geofences and receive location-based security assistance.',
+      icon: 'location-on',
+      color: '#10B981',
     },
   ];
 
@@ -125,7 +132,7 @@ const HowItWorksScreen = () => {
           <View style={[styles.iconCircle, {backgroundColor: item.color}]}>
             <MaterialIcons name={item.icon as any} size={64} color="#FFFFFF" />
           </View>
-          <Text style={styles.stepNumber}>Step {index + 1} of {steps.length}</Text>
+          <Text style={styles.stepNumber}>Feature {index + 1} of {steps.length}</Text>
           <Text style={styles.stepTitle}>{item.title}</Text>
           <Text style={styles.stepDescription}>{item.description}</Text>
         </View>

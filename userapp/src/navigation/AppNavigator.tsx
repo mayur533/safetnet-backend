@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
 import {useNavigation} from '@react-navigation/native';
 import CustomHeader from '../components/common/CustomHeader';
@@ -21,6 +21,7 @@ import CreateGroupScreen from '../screens/community/CreateGroupScreen';
 import GroupDetailsScreen from '../screens/community/GroupDetailsScreen';
 import AddMemberScreen from '../screens/community/AddMemberScreen';
 import BillingScreen from '../screens/billing/BillingScreen';
+import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 
 const Stack = createStackNavigator();
 
@@ -28,6 +29,20 @@ const AppNavigator = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const navigation = useNavigation<any>();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const showOnboarding = useAuthStore((state) => state.showOnboarding);
+  const clearOnboardingFlag = useAuthStore((state) => state.clearOnboardingFlag);
+
+  // Navigate to Onboarding when user logs in (fresh login, not restored session)
+  useEffect(() => {
+    if (isAuthenticated && showOnboarding) {
+      // Small delay to ensure navigation is ready
+      const timer = setTimeout(() => {
+        navigation.navigate('Onboarding');
+        clearOnboardingFlag(); // Clear flag after navigating
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, showOnboarding, navigation, clearOnboardingFlag]);
 
   const handleUpgradePress = () => {
     navigation.navigate('Billing');
@@ -165,6 +180,11 @@ const AppNavigator = () => {
           name="SupportContact"
           component={SupportContactScreen}
           options={{headerTitle: 'SUPPORT CONTACTS'}}
+        />
+        <Stack.Screen
+          name="Onboarding"
+          component={OnboardingScreen}
+          options={{headerShown: false}}
         />
       </Stack.Navigator>
       <CustomDrawer

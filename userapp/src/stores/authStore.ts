@@ -23,6 +23,8 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  showOnboarding: boolean;
+  clearOnboardingFlag: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string) => Promise<void>;
   loginAsTest: (plan: 'free' | 'premium') => Promise<void>;
@@ -54,6 +56,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true, // Start with loading true to prevent showing login screen before auth is checked
+  showOnboarding: false,
+  clearOnboardingFlag: () => set({showOnboarding: false}),
   login: async (email: string, password: string) => {
     try {
       const response = await apiService.login(email, password);
@@ -76,7 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           phone: response.user.phone || user.phone,
           plan: response.user.is_premium ? 'premium' : 'free',
             };
-        set({user: updatedUser, isAuthenticated: true, isLoading: false});
+        set({user: updatedUser, isAuthenticated: true, isLoading: false, showOnboarding: true});
         const storage = await getStorage();
         await storage.setItem('authState', JSON.stringify({user: updatedUser}));
         console.log('Auth state saved after login');
@@ -106,7 +110,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (response.data?.user) {
         resetUserScopedData();
         const user = convertApiUserToUser(response.data.user);
-        set({user, isAuthenticated: true});
+        set({user, isAuthenticated: true, showOnboarding: true});
         
         if (response.data.access && response.data.refresh) {
           await apiService.setTokens(response.data.access, response.data.refresh);
@@ -132,7 +136,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       phone: '+1234567890',
       plan,
     };
-    set({user: testUser, isAuthenticated: true, isLoading: false});
+    set({user: testUser, isAuthenticated: true, isLoading: false, showOnboarding: true});
     const storage = await getStorage();
     await storage.setItem('authState', JSON.stringify({user: testUser}));
     console.log('Auth state saved after test login');
@@ -149,7 +153,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     resetUserScopedData();
     await apiService.clearTokens();
-    set({user: null, isAuthenticated: false, isLoading: false});
+    set({user: null, isAuthenticated: false, isLoading: false, showOnboarding: false});
     const storage = await getStorage();
     await storage.removeItem('authState');
     console.log('Auth state cleared after logout');

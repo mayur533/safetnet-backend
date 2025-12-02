@@ -10,6 +10,7 @@ import {
   Alert,
   StatusBar,
   StyleSheet,
+  Image,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import {useAuthStore} from '../../stores/authStore';
@@ -46,6 +47,9 @@ const LoginScreen = () => {
     setLoading(true);
     try {
       await login(email, password);
+      // After login, isAuthenticated becomes true and App.tsx switches to AppStack
+      // We'll use useEffect in AppNavigator or navigate directly
+      // For now, navigation will happen automatically when stack switches
     } catch (error: any) {
       // Show the actual error message from the backend
       const errorMessage = error?.message || 'Login failed. Please check your credentials and try again.';
@@ -88,9 +92,13 @@ const LoginScreen = () => {
 
             {/* Logo Section */}
             <View style={styles.logoSection}>
-              {/* Shield Icon */}
+              {/* App Logo Image */}
               <View style={styles.logoImageContainer}>
-                <MaterialIcons name="security" size={100} color="#FFFFFF" />
+                <Image
+                  source={require('../../assets/images/app_logo.png')}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
 
               {/* Welcome Text */}

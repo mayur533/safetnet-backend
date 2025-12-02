@@ -122,10 +122,6 @@ const SafetyTipsScreen = () => {
         />
       }>
       <View style={{paddingHorizontal: 24, paddingVertical: 16}}>
-        <Text style={{fontSize: 24, fontWeight: 'bold', color: themeColors.text, marginBottom: 16}}>
-          Safety Tips
-        </Text>
-
         {tips.length === 0 ? (
           <View style={{padding: 32, alignItems: 'center'}}>
             <Text style={{color: themeColors.textMuted, fontSize: 16}}>No safety tips available</Text>
