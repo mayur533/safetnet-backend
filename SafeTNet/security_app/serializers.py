@@ -89,6 +89,8 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
     officer_name = serializers.CharField(source='officer.name', read_only=True)
     officer_phone = serializers.CharField(source='officer.contact', read_only=True)
     officer_geofence = serializers.CharField(source='officer.assigned_geofence.name', read_only=True)
+    geofence_id = serializers.SerializerMethodField()
+    assigned_geofence = serializers.SerializerMethodField()
 
     class Meta:
         model = OfficerProfile
@@ -97,6 +99,8 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
             'officer_name',
             'officer_phone',
             'officer_geofence',
+            'geofence_id',
+            'assigned_geofence',
             'on_duty',
             'last_latitude',
             'last_longitude',
@@ -109,9 +113,52 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
             'officer_name',
             'officer_phone',
             'officer_geofence',
+            'geofence_id',
+            'assigned_geofence',
             'last_seen_at',
             'updated_at',
         )
+    
+    def get_geofence_id(self, obj):
+        """Return the assigned geofence ID"""
+        geofence = obj.officer.assigned_geofence
+        return geofence.id if geofence else None
+    
+    def get_assigned_geofence(self, obj):
+        """Return full geofence details if assigned"""
+        geofence = obj.officer.assigned_geofence
+        if not geofence:
+            return None
+        
+        return {
+            'id': geofence.id,
+            'name': geofence.name,
+            'description': geofence.description,
+            'polygon_json': geofence.polygon_json,
+            'active': geofence.active,
+            'center_point': geofence.get_center_point(),
+            'organization': geofence.organization.name if geofence.organization else None,
+            'created_at': geofence.created_at.isoformat() if geofence.created_at else None,
+            'updated_at': geofence.updated_at.isoformat() if geofence.updated_at else None,
+        }
+    
+    def get_assigned_geofence(self, obj):
+        """Return full geofence details if assigned"""
+        geofence = obj.officer.assigned_geofence
+        if not geofence:
+            return None
+        
+        return {
+            'id': geofence.id,
+            'name': geofence.name,
+            'description': geofence.description,
+            'polygon_json': geofence.polygon_json,
+            'active': geofence.active,
+            'center_point': geofence.get_center_point(),
+            'organization': geofence.organization.name if geofence.organization else None,
+            'created_at': geofence.created_at.isoformat() if geofence.created_at else None,
+            'updated_at': geofence.updated_at.isoformat() if geofence.updated_at else None,
+        }
 
 
 class NotificationSerializer(serializers.ModelSerializer):

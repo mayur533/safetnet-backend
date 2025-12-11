@@ -12,6 +12,7 @@ urlpatterns = [
     path('incidents/', views.IncidentsView.as_view(), name='security-incidents'),
     path('login/', views.OfficerLoginView.as_view(), name='security-login'),
     path('profile/', views.OfficerProfileView.as_view(), name='security-profile'),
+    path('geofence/', views.OfficerAssignedGeofenceView.as_view(), name='security-geofence'),
     path('notifications/', views.NotificationView.as_view(), name='security-notifications'),
     path('notifications/acknowledge/', views.NotificationAcknowledgeView.as_view(), name='security-notifications-acknowledge'),
     path('dashboard/', views.DashboardView.as_view(), name='security-dashboard'),

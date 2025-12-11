@@ -373,6 +373,42 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         return Response(OfficerProfileSerializer(instance).data)
 
 
+class OfficerAssignedGeofenceView(OfficerOnlyMixin, APIView):
+    """
+    Get the assigned geofence details for the security officer.
+    Returns full geofence information including polygon coordinates.
+    """
+    def get(self, request):
+        """Get the assigned geofence details for the security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not officer.assigned_geofence:
+            return Response({
+                'detail': 'No geofence assigned to this officer.',
+                'assigned_geofence': None,
+                'geofence_id': None
+            })
+        
+        geofence = officer.assigned_geofence
+        return Response({
+            'geofence_id': geofence.id,
+            'assigned_geofence': {
+                'id': geofence.id,
+                'name': geofence.name,
+                'description': geofence.description,
+                'polygon_json': geofence.polygon_json,
+                'active': geofence.active,
+                'center_point': geofence.get_center_point(),
+                'organization': geofence.organization.name if geofence.organization else None,
+                'created_at': geofence.created_at.isoformat() if geofence.created_at else None,
+                'updated_at': geofence.updated_at.isoformat() if geofence.updated_at else None,
+            }
+        })
+
+
 class OfficerLoginView(APIView):
     """
     API endpoint for security officer login.
