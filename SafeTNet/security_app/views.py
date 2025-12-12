@@ -12,7 +12,8 @@ from datetime import timedelta
 import math
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
-from users.models import SecurityOfficer
+from users.models import SecurityOfficer, Geofence
+from django.shortcuts import get_object_or_404
 from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
 from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
 
@@ -27,6 +28,7 @@ from .serializers import (
     NotificationSerializer,
     NotificationAcknowledgeSerializer,
     OfficerLoginSerializer,
+    GeofenceSerializer,
 )
 
 
@@ -374,14 +376,13 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         return Response(OfficerProfileSerializer(instance).data)
 
 
-class OfficerAssignedGeofenceView(OfficerOnlyMixin, APIView):
+class GeofenceCurrentView(OfficerOnlyMixin, APIView):
     """
-    Get the assigned geofence details for the security officer.
-    Returns full geofence information including polygon coordinates.
+    Get current security officer's assigned geofence.
     GET /api/security/geofence/
     """
     def get(self, request):
-        """Get the assigned geofence details for the security officer"""
+        """Get the assigned geofence for the current security officer"""
         try:
             officer = SecurityOfficer.objects.get(email=request.user.email)
         except SecurityOfficer.DoesNotExist:
@@ -392,72 +393,41 @@ class OfficerAssignedGeofenceView(OfficerOnlyMixin, APIView):
         
         if not officer.assigned_geofence:
             return Response({
-                'error': 'No geofence assigned to this security officer',
-                'detail': 'This security officer does not have an assigned geofence area.',
-                'assigned_geofence': None
+                'error': 'No geofence assigned to this officer',
+                'detail': 'This security officer does not have an assigned geofence area.'
             }, status=status.HTTP_404_NOT_FOUND)
         
         geofence = officer.assigned_geofence
-        
-        # Convert GeoJSON polygon to simple array format [[lat, lng], [lat, lng], ...]
-        polygon_coordinates = geofence.get_polygon_coordinates()
-        polygon_array = []
-        
-        if polygon_coordinates and len(polygon_coordinates) > 0:
-            # GeoJSON format: coordinates[0] is the outer ring
-            ring = polygon_coordinates[0]
-            # GeoJSON stores as [lon, lat], convert to [lat, lon] for frontend
-            polygon_array = [[coord[1], coord[0]] for coord in ring]
-        
-        # Get center point
-        center_point = geofence.get_center_point()
-        
-        # Calculate area size (approximate) - area of polygon in square kilometers
-        area_size = None
-        if len(polygon_array) >= 3:
-            try:
-                # Simple shoelace formula for area calculation
-                area = 0.0
-                for i in range(len(polygon_array)):
-                    j = (i + 1) % len(polygon_array)
-                    area += polygon_array[i][1] * polygon_array[j][0]  # lat * lon
-                    area -= polygon_array[j][1] * polygon_array[i][0]  # lat * lon
-                area = abs(area) / 2.0
-                # Convert to square kilometers (rough approximation)
-                # 1 degree lat ≈ 111 km, 1 degree lon varies by lat
-                if center_point:
-                    avg_lat = center_point[0]
-                    km_per_deg_lat = 111.0
-                    km_per_deg_lon = 111.0 * abs(math.cos(math.radians(avg_lat)))
-                    area_size = area * km_per_deg_lat * km_per_deg_lon
-            except Exception:
-                area_size = None
-        
-        # Get active users count for this geofence
-        active_users_count = 0
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class GeofenceDetailView(OfficerOnlyMixin, APIView):
+    """
+    Get geofence details by ID.
+    Verifies that the geofence is assigned to the requesting security officer.
+    GET /api/security/geofence/{id}/
+    """
+    def get(self, request, geofence_id):
+        """Get specific geofence by ID (only if assigned to the officer)"""
         try:
-            from users.models import User
-            active_users_count = User.objects.filter(
-                geofences=geofence,
-                is_active=True
-            ).count()
-        except Exception:
-            pass
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({
+                'error': 'Security officer profile not found',
+                'detail': 'Officer not found for user.'
+            }, status=status.HTTP_404_NOT_FOUND)
         
-        return Response({
-            'assigned_geofence': {
-                'id': str(geofence.id),
-                'geofence_id': str(geofence.id),
-                'name': geofence.name,
-                'description': geofence.description or '',
-                'polygon_json': polygon_array if polygon_array else [],
-                'center_point': center_point if center_point else None,
-                'radius': None,  # Not used for polygon geofences
-                'area_size': round(area_size, 2) if area_size else None,
-                'active_users_count': active_users_count,
-                'active': geofence.active
-            }
-        }, status=status.HTTP_200_OK)
+        # Verify the requested geofence matches the officer's assignment
+        if not officer.assigned_geofence or str(officer.assigned_geofence.id) != str(geofence_id):
+            return Response({
+                'error': 'You are not authorized to access this geofence',
+                'detail': 'This geofence is not assigned to you.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        geofence = get_object_or_404(Geofence, id=geofence_id)
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class OfficerLoginView(APIView):
