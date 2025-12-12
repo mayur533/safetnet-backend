@@ -114,3 +114,4 @@ class Command(BaseCommand):
         self.stdout.write(f'Geofence ID: {geofence.id}')
         self.stdout.write('='*60 + '\n')
 
+

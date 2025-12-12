@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from users.models import User, Organization
+from django.utils import timezone
+from users.models import User, Organization, SecurityOfficer
+from security_app.models import OfficerProfile
 
 
 class Command(BaseCommand):
@@ -66,16 +68,63 @@ class Command(BaseCommand):
         user.set_password(password)
         user.save()
         
-        self.stdout.write(self.style.SUCCESS('\n' + '='*60))
+        # Create or get SecurityOfficer record
+        officer, officer_created = SecurityOfficer.objects.get_or_create(
+            username=username,
+            defaults={
+                'name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                'email': user.email,
+                'organization': user.organization,
+                'is_active': True
+            }
+        )
+        
+        if not officer_created:
+            self.stdout.write(
+                self.style.WARNING(f'⚠️  SecurityOfficer record already exists. Updating...')
+            )
+            officer.email = user.email
+            officer.is_active = True
+            officer.organization = user.organization
+            officer.save()
+        else:
+            self.stdout.write(self.style.SUCCESS(f'✅ Created SecurityOfficer record for {username}'))
+        
+        # Create or update OfficerProfile
+        profile, profile_created = OfficerProfile.objects.get_or_create(
+            officer=officer,
+            defaults={
+                'on_duty': True,
+                'last_seen_at': timezone.now(),
+                'battery_level': 100,
+            }
+        )
+        
+        if not profile_created:
+            self.stdout.write(
+                self.style.WARNING(f'⚠️  OfficerProfile already exists. Keeping existing profile.')
+            )
+        else:
+            self.stdout.write(self.style.SUCCESS(f'✅ Created OfficerProfile'))
+        
+        self.stdout.write(self.style.SUCCESS('\n' + '='*70))
         self.stdout.write(self.style.SUCCESS('SECURITY OFFICER CREATED SUCCESSFULLY!'))
-        self.stdout.write(self.style.SUCCESS('='*60))
+        self.stdout.write('='*70)
         self.stdout.write(f'Username: {username}')
         self.stdout.write(f'Password: {password}')
         self.stdout.write(f'Email: {email}')
         self.stdout.write(f'Role: security_officer')
         self.stdout.write(f'Organization: {organization.name}')
+        self.stdout.write(f'SecurityOfficer Profile: ✅ Created')
+        self.stdout.write(f'OfficerProfile: ✅ Created')
+        self.stdout.write(f'On Duty: {profile.on_duty}')
+        if officer.assigned_geofence:
+            self.stdout.write(f'Assigned Geofence: {officer.assigned_geofence.name} (ID: {officer.assigned_geofence.id})')
+        else:
+            self.stdout.write(f'Assigned Geofence: None (use assign_geofence_to_officer command to assign)')
         self.stdout.write(f'\nLogin API Endpoint: POST /api/security/login/')
         self.stdout.write(f'Request Body: {{"username": "{username}", "password": "{password}"}}')
-        self.stdout.write(self.style.SUCCESS('='*60))
+        self.stdout.write(self.style.SUCCESS('='*70 + '\n'))
+
 
 
