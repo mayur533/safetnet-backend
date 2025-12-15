@@ -385,16 +385,23 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
         # Use transaction to ensure all records are created atomically
         with transaction.atomic():
             # Create User record first (required for login)
+            # IMPORTANT: Always set role='security_officer' for users created by subadmins
+            # This ensures security officers can login via /api/security/login/
             user = User.objects.create_user(
                 username=username,
                 email=email,
                 first_name=first_name,
                 last_name=last_name,
                 password=password,
-                role='security_officer',
+                role='security_officer',  # Always set to 'security_officer' for security officers
                 organization=organization,
                 is_active=True
             )
+            
+            # Double-check: Ensure role is set correctly (safety check)
+            if user.role != 'security_officer':
+                user.role = 'security_officer'
+                user.save(update_fields=['role'])
             
             # Create SecurityOfficer record
             validated_data['created_by'] = created_by
