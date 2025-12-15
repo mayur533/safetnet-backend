@@ -338,16 +338,27 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         from django.contrib.auth import get_user_model
         from django.utils import timezone
+        from django.db import transaction
         from security_app.models import OfficerProfile
         from rest_framework.exceptions import PermissionDenied
         
         User = get_user_model()
         password = validated_data.pop('password')
         
-        # Get organization and created_by from request context (set by perform_create or available from request)
+        # Get organization and created_by
+        # When perform_create calls serializer.save(organization=..., created_by=...),
+        # DRF merges those kwargs into validated_data before calling create()
         request_user = self.context['request'].user
-        organization = validated_data.pop('organization', None) or request_user.organization
-        created_by = validated_data.pop('created_by', None) or request_user
+        
+        # Extract from validated_data (will be there if passed from perform_create)
+        organization = validated_data.pop('organization', None)
+        created_by = validated_data.pop('created_by', None)
+        
+        # Fallback to request user if not provided
+        if not organization:
+            organization = request_user.organization
+        if not created_by:
+            created_by = request_user
         
         # IMPORTANT: Only SUB_ADMIN or SUPER_ADMIN can create security officers with User records
         # This ensures security officers can only be created through the admin panel by authorized users
@@ -371,33 +382,34 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
         username = validated_data.get('username')
         email = validated_data.get('email')
         
-        # Create User record first (required for login)
-        # Only create User record if created by SUB_ADMIN or SUPER_ADMIN
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            password=password,
-            role='security_officer',
-            organization=organization,
-            is_active=True
-        )
-        
-        # Create SecurityOfficer record
-        validated_data['created_by'] = created_by
-        validated_data['organization'] = organization
-        officer = SecurityOfficer.objects.create(**validated_data)
-        officer.set_password(password)  # Also store password in SecurityOfficer for consistency
-        officer.save()
-        
-        # Create OfficerProfile (required for security_app APIs)
-        OfficerProfile.objects.create(
-            officer=officer,
-            on_duty=True,
-            last_seen_at=timezone.now(),
-            battery_level=100
-        )
+        # Use transaction to ensure all records are created atomically
+        with transaction.atomic():
+            # Create User record first (required for login)
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                password=password,
+                role='security_officer',
+                organization=organization,
+                is_active=True
+            )
+            
+            # Create SecurityOfficer record
+            validated_data['created_by'] = created_by
+            validated_data['organization'] = organization
+            officer = SecurityOfficer.objects.create(**validated_data)
+            officer.set_password(password)  # Also store password in SecurityOfficer for consistency
+            officer.save()
+            
+            # Create OfficerProfile (required for security_app APIs)
+            OfficerProfile.objects.create(
+                officer=officer,
+                on_duty=True,
+                last_seen_at=timezone.now(),
+                battery_level=100
+            )
         
         return officer
 
