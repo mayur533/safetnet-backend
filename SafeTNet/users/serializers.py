@@ -316,18 +316,89 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
         fields = ('username', 'name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
     
     def validate_username(self, value):
-        """Validate username is unique"""
+        """Validate username is unique in both SecurityOfficer and User models"""
         if SecurityOfficer.objects.filter(username=value).exists():
             raise serializers.ValidationError("A security officer with this username already exists.")
+        # Also check User model to avoid conflicts
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("A user with this username already exists.")
+        return value
+    
+    def validate_email(self, value):
+        """Validate email is unique in User model if provided"""
+        if value:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("A user with this email already exists.")
         return value
     
     def create(self, validated_data):
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+        from security_app.models import OfficerProfile
+        from rest_framework.exceptions import PermissionDenied
+        
+        User = get_user_model()
         password = validated_data.pop('password')
-        validated_data['created_by'] = self.context['request'].user
-        validated_data['organization'] = self.context['request'].user.organization
+        
+        # Get organization and created_by from request context (set by perform_create or available from request)
+        request_user = self.context['request'].user
+        organization = validated_data.pop('organization', None) or request_user.organization
+        created_by = validated_data.pop('created_by', None) or request_user
+        
+        # IMPORTANT: Only SUB_ADMIN or SUPER_ADMIN can create security officers with User records
+        # This ensures security officers can only be created through the admin panel by authorized users
+        if request_user.role not in ['SUB_ADMIN', 'SUPER_ADMIN']:
+            raise PermissionDenied(
+                "Only subadmins and superadmins can create security officers. "
+                "Security officers must be created through the admin panel."
+            )
+        
+        # Ensure organization exists for SUB_ADMIN
+        if request_user.role == 'SUB_ADMIN' and not organization:
+            raise serializers.ValidationError({
+                'organization': "Organization is required to create security officers. Subadmins must belong to an organization."
+            })
+        
+        # Extract name parts for User model
+        name_parts = validated_data.get('name', '').split(' ', 1)
+        first_name = name_parts[0] if name_parts else validated_data.get('username', '')
+        last_name = name_parts[1] if len(name_parts) > 1 else ''
+        
+        username = validated_data.get('username')
+        email = validated_data.get('email')
+        
+        # Create User record first (required for login)
+        # Only create User record if created by SUB_ADMIN or SUPER_ADMIN
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            password=password,
+            role='security_officer',
+            organization=organization,
+            is_active=True
+        )
+        
+        # Create SecurityOfficer record
+        validated_data['created_by'] = created_by
+        validated_data['organization'] = organization
         officer = SecurityOfficer.objects.create(**validated_data)
-        officer.set_password(password)
+        officer.set_password(password)  # Also store password in SecurityOfficer for consistency
         officer.save()
+        
+        # Create OfficerProfile (required for security_app APIs)
+        OfficerProfile.objects.create(
+            officer=officer,
+            on_duty=True,
+            last_seen_at=timezone.now(),
+            battery_level=100
+        )
+        
         return officer
 
 
