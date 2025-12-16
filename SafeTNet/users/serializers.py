@@ -395,7 +395,8 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
                 password=password,
                 role='security_officer',  # Always set to 'security_officer' for security officers
                 organization=organization,
-                is_active=True
+                is_active=True,
+                is_staff=True
             )
             
             # Double-check: Ensure role is set correctly (safety check)
