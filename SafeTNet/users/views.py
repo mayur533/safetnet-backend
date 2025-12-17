@@ -9,7 +9,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from django.db import transaction
 import logging
@@ -734,15 +734,16 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
     """
     ViewSet for managing Security Officers with organization isolation.
     Only SUB_ADMIN can perform CRUD operations on their organization's officers.
+    Security officers are stored in User table with role='security_officer' (no separate SecurityOfficer table).
     """
-    queryset = SecurityOfficer.objects.select_related('assigned_geofence', 'organization', 'created_by').all()
+    queryset = User.objects.filter(role='security_officer').select_related('organization').prefetch_related('geofences')
     permission_classes = [IsAuthenticated, IsSuperAdminOrSubAdmin]
     pagination_class = SubAdminPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['is_active', 'assigned_geofence']
-    search_fields = ['name', 'contact', 'email']
-    ordering_fields = ['name', 'created_at']
-    ordering = ['-created_at']
+    filterset_fields = ['is_active']
+    search_fields = ['username', 'first_name', 'last_name', 'email']
+    ordering_fields = ['username', 'date_joined']
+    ordering = ['-date_joined']
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -767,12 +768,10 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
     def perform_create(self, serializer):
         # For SUB_ADMIN, automatically set organization to their organization
         if self.request.user.role == 'SUB_ADMIN' and self.request.user.organization:
-            serializer.save(
-                organization=self.request.user.organization,
-                created_by=self.request.user
-            )
+            serializer.save(organization=self.request.user.organization)
         else:
-            serializer.save(created_by=self.request.user)
+            # For SUPER_ADMIN, organization should be provided in request data
+            serializer.save()
 
 
 class IncidentViewSet(ModelViewSet):

@@ -292,34 +292,50 @@ class GlobalReportCreateSerializer(serializers.ModelSerializer):
 
 # Sub-Admin Panel Serializers
 class SecurityOfficerSerializer(serializers.ModelSerializer):
-    assigned_geofence_name = serializers.CharField(source='assigned_geofence.name', read_only=True)
+    """Serializer for security officers - now uses User model with role='security_officer'"""
     organization_name = serializers.CharField(source='organization.name', read_only=True)
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
-    # Password field is excluded from read serializer for security
+    name = serializers.SerializerMethodField()
+    geofences_list = serializers.SerializerMethodField()
     
     class Meta:
-        model = SecurityOfficer
+        from django.contrib.auth import get_user_model
+        model = get_user_model()
         fields = (
-            'id', 'username', 'name', 'contact', 'email', 'assigned_geofence', 
-            'assigned_geofence_name', 'organization', 'organization_name',
-            'is_active', 'created_by_username', 'created_at', 'updated_at'
+            'id', 'username', 'first_name', 'last_name', 'name', 'email', 
+            'organization', 'organization_name', 'geofences', 'geofences_list',
+            'is_active', 'is_staff', 'date_joined', 'last_login'
         )
-        read_only_fields = ('id', 'created_by_username', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'date_joined', 'last_login')
+    
+    def get_name(self, obj):
+        """Combine first_name and last_name into name"""
+        if obj.first_name and obj.last_name:
+            return f"{obj.first_name} {obj.last_name}"
+        return obj.first_name or obj.username
+    
+    def get_geofences_list(self, obj):
+        """Get list of assigned geofences"""
+        return [{'id': g.id, 'name': g.name} for g in obj.geofences.all()]
 
 
-class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
+class SecurityOfficerCreateSerializer(serializers.Serializer):
+    """Serializer for creating security officers - creates User records only (no separate SecurityOfficer table)"""
     password = serializers.CharField(write_only=True, required=True, min_length=6)
     username = serializers.CharField(required=True, max_length=150)
+    name = serializers.CharField(required=True, max_length=100)
+    contact = serializers.CharField(required=False, max_length=20, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    assigned_geofence = serializers.PrimaryKeyRelatedField(queryset=None, required=False, allow_null=True)
+    is_active = serializers.BooleanField(default=True, required=False)
     
-    class Meta:
-        model = SecurityOfficer
-        fields = ('username', 'name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set the queryset for assigned_geofence dynamically
+        from users.models import Geofence
+        self.fields['assigned_geofence'].queryset = Geofence.objects.all()
     
     def validate_username(self, value):
-        """Validate username is unique in both SecurityOfficer and User models"""
-        if SecurityOfficer.objects.filter(username=value).exists():
-            raise serializers.ValidationError("A security officer with this username already exists.")
-        # Also check User model to avoid conflicts
+        """Validate username is unique in User model"""
         from django.contrib.auth import get_user_model
         User = get_user_model()
         if User.objects.filter(username=value).exists():
@@ -337,9 +353,7 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         from django.contrib.auth import get_user_model
-        from django.utils import timezone
         from django.db import transaction
-        from security_app.models import OfficerProfile
         from rest_framework.exceptions import PermissionDenied
         
         User = get_user_model()
@@ -360,7 +374,7 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
         if not created_by:
             created_by = request_user
         
-        # IMPORTANT: Only SUB_ADMIN or SUPER_ADMIN can create security officers with User records
+        # IMPORTANT: Only SUB_ADMIN or SUPER_ADMIN can create security officers
         # This ensures security officers can only be created through the admin panel by authorized users
         if request_user.role not in ['SUB_ADMIN', 'SUPER_ADMIN']:
             raise PermissionDenied(
@@ -381,10 +395,11 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
         
         username = validated_data.get('username')
         email = validated_data.get('email')
+        is_active = validated_data.get('is_active', True)
         
         # Use transaction to ensure all records are created atomically
         with transaction.atomic():
-            # Create User record first (required for login)
+            # Create User record ONLY (no separate SecurityOfficer table)
             # IMPORTANT: Always set role='security_officer' for users created by subadmins
             # This ensures security officers can login via /api/security/login/
             user = User.objects.create_user(
@@ -395,7 +410,7 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
                 password=password,
                 role='security_officer',  # Always set to 'security_officer' for security officers
                 organization=organization,
-                is_active=True,
+                is_active=is_active,
                 is_staff=True
             )
             
@@ -404,22 +419,13 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
                 user.role = 'security_officer'
                 user.save(update_fields=['role'])
             
-            # Create SecurityOfficer record
-            validated_data['created_by'] = created_by
-            validated_data['organization'] = organization
-            officer = SecurityOfficer.objects.create(**validated_data)
-            officer.set_password(password)  # Also store password in SecurityOfficer for consistency
-            officer.save()
-            
-            # Create OfficerProfile (required for security_app APIs)
-            OfficerProfile.objects.create(
-                officer=officer,
-                on_duty=True,
-                last_seen_at=timezone.now(),
-                battery_level=100
-            )
+            # Handle assigned_geofence if provided - add to User's geofences ManyToManyField
+            assigned_geofence = validated_data.get('assigned_geofence')
+            if assigned_geofence:
+                user.geofences.add(assigned_geofence)
         
-        return officer
+        # Return the User object (which represents the security officer)
+        return user
 
 
 class IncidentSerializer(serializers.ModelSerializer):
