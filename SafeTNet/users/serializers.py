@@ -325,14 +325,8 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
     name = serializers.CharField(required=True, max_length=100)
     contact = serializers.CharField(required=False, max_length=20, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
-    assigned_geofence = serializers.PrimaryKeyRelatedField(queryset=None, required=False, allow_null=True)
+    assigned_geofence = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     is_active = serializers.BooleanField(default=True, required=False)
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Set the queryset for assigned_geofence dynamically
-        from users.models import Geofence
-        self.fields['assigned_geofence'].queryset = Geofence.objects.all()
     
     def validate_username(self, value):
         """Validate username is unique in User model"""

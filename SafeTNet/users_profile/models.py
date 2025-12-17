@@ -267,7 +267,7 @@ class LiveLocationShare(models.Model):
     security_officer = models.ForeignKey(
         'users.User',
         on_delete=models.CASCADE,
-        related_name='live_location_sessions',
+        related_name='officer_live_location_sessions',
         null=True,
         blank=True,
         limit_choices_to={'role': 'security_officer'},
