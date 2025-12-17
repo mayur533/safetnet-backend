@@ -440,9 +440,14 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
                 user.save(update_fields=['role'])
             
             # Handle assigned_geofence if provided - add to User's geofences ManyToManyField
-            assigned_geofence = validated_data.get('assigned_geofence')
-            if assigned_geofence:
-                user.geofences.add(assigned_geofence)
+            assigned_geofence_id = validated_data.get('assigned_geofence')
+            if assigned_geofence_id:
+                try:
+                    from users.models import Geofence
+                    geofence = Geofence.objects.get(id=assigned_geofence_id)
+                    user.geofences.add(geofence)
+                except Geofence.DoesNotExist:
+                    pass  # Invalid geofence ID, skip it
             
             # IMPORTANT: Do NOT create SecurityOfficer or OfficerProfile records
             # Security officers are stored ONLY in users_user table with role='security_officer'
