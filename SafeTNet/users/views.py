@@ -12,6 +12,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from django.db import transaction
+from django.utils import timezone
+from datetime import timedelta, datetime, time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -744,19 +746,29 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
         return SecurityOfficerSerializer
     
     def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
-        
-        # SUPER_ADMIN can see all officers
-        if user.role == 'SUPER_ADMIN':
-            return queryset
-        
-        # SUB_ADMIN can only see officers from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            return queryset.filter(organization=user.organization)
-        
-        # Regular users see no data
-        return queryset.none()
+        """Get queryset with organization filtering and error handling"""
+        try:
+            queryset = super().get_queryset()
+            user = self.request.user
+            
+            # SUPER_ADMIN can see all officers
+            if user.role == 'SUPER_ADMIN':
+                return queryset
+            
+            # SUB_ADMIN can only see officers from their organization
+            if user.role == 'SUB_ADMIN' and user.organization:
+                return queryset.filter(organization=user.organization)
+            
+            # Regular users see no data
+            return queryset.none()
+        except Exception as e:
+            # Log error and return empty queryset to prevent 500 error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in SecurityOfficerViewSet.get_queryset: {e}", exc_info=True)
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            return User.objects.none()
     
     def perform_create(self, serializer):
         # For SUB_ADMIN, automatically set organization to their organization
@@ -832,19 +844,27 @@ class NotificationViewSet(OrganizationIsolationMixin, ModelViewSet):
         return NotificationSerializer
     
     def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
-        
-        # SUPER_ADMIN can see all notifications
-        if user.role == 'SUPER_ADMIN':
-            return queryset
-        
-        # SUB_ADMIN can only see notifications from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            return queryset.filter(organization=user.organization)
-        
-        # Regular users see no data
-        return queryset.none()
+        """Get queryset with organization filtering and error handling"""
+        try:
+            queryset = super().get_queryset()
+            user = self.request.user
+            
+            # SUPER_ADMIN can see all notifications
+            if user.role == 'SUPER_ADMIN':
+                return queryset
+            
+            # SUB_ADMIN can only see notifications from their organization
+            if user.role == 'SUB_ADMIN' and user.organization:
+                return queryset.filter(organization=user.organization)
+            
+            # Regular users see no data
+            return queryset.none()
+        except Exception as e:
+            # Log error and return empty queryset to prevent 500 error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in NotificationViewSet.get_queryset: {e}", exc_info=True)
+            return Notification.objects.none()
     
     def perform_create(self, serializer):
         # For SUB_ADMIN, automatically set organization to their organization
