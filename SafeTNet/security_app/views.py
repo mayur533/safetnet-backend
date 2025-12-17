@@ -50,8 +50,8 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         user = self.request.user
 
         # For Security Officers → show SOS alerts assigned to them or their geofence
-        if hasattr(user, 'securityofficerprofile'):
-            officer = user.securityofficerprofile
+        # Security officers are User records with role='security_officer'
+        if user.role == 'security_officer':
             return SOSAlert.objects.filter(
                 Q(is_deleted=False),
                 Q(assigned_officer=user) | Q(geofence__in=user.geofences.all())
