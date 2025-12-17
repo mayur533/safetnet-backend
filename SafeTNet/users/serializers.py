@@ -352,12 +352,20 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
         return value
     
     def create(self, validated_data):
+        """
+        Create a security officer by creating ONLY a User record in users_user table.
+        NO SecurityOfficer or OfficerProfile records are created.
+        """
         from django.contrib.auth import get_user_model
         from django.db import transaction
         from rest_framework.exceptions import PermissionDenied
         
         User = get_user_model()
         password = validated_data.pop('password')
+        
+        # IMPORTANT: Remove any fields that don't belong to User model
+        # This prevents any accidental SecurityOfficer creation
+        validated_data.pop('contact', None)  # Not stored in User model
         
         # Get organization and created_by
         # When perform_create calls serializer.save(organization=..., created_by=...),
@@ -402,6 +410,7 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
             # Create User record ONLY (no separate SecurityOfficer table)
             # IMPORTANT: Always set role='security_officer' for users created by subadmins
             # This ensures security officers can login via /api/security/login/
+            # NO SecurityOfficer.objects.create() is called - only User.objects.create_user()
             user = User.objects.create_user(
                 username=username,
                 email=email,
@@ -423,8 +432,12 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
             assigned_geofence = validated_data.get('assigned_geofence')
             if assigned_geofence:
                 user.geofences.add(assigned_geofence)
+            
+            # IMPORTANT: Do NOT create SecurityOfficer or OfficerProfile records
+            # Security officers are stored ONLY in users_user table with role='security_officer'
         
         # Return the User object (which represents the security officer)
+        # This User object will be serialized by SecurityOfficerSerializer for the response
         return user
 
 
