@@ -5,6 +5,13 @@ from .models import User, Organization, Geofence, Alert, GlobalReport, Incident,
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user registration.
+    
+    IMPORTANT: Creates users in users_user table ONLY.
+    Supports all user types: SUPER_ADMIN, SUB_ADMIN, USER, security_officer
+    All users are stored in the same users_user table, differentiated by the 'role' field.
+    """
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
     
@@ -22,6 +29,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
+        """
+        Create user in users_user table.
+        All user types (SUPER_ADMIN, SUB_ADMIN, USER, security_officer) are stored here.
+        """
         validated_data.pop('password_confirm')
         user = User.objects.create_user(**validated_data)
         return user
@@ -319,7 +330,13 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
 
 class SecurityOfficerCreateSerializer(serializers.Serializer):
-    """Serializer for creating security officers - creates User records only (no separate SecurityOfficer table)"""
+    """
+    Serializer for creating security officers.
+    
+    IMPORTANT: Creates users in users_user table ONLY with role='security_officer'.
+    Does NOT create records in users_securityofficer table or officer_profile table.
+    All security officers are stored in users_user table, same as all other user types.
+    """
     password = serializers.CharField(write_only=True, required=True, min_length=6)
     username = serializers.CharField(required=True, max_length=150)
     name = serializers.CharField(required=True, max_length=100)
