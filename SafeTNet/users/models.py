@@ -210,12 +210,12 @@ class SecurityOfficer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_officers'
+        related_name='legacy_assigned_officers'  # Changed to avoid conflicts - this model is deprecated
     )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name='security_officers'
+        related_name='legacy_security_officers'  # Changed to avoid conflicts - this model is deprecated
     )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
@@ -223,7 +223,7 @@ class SecurityOfficer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='created_officers',
+        related_name='legacy_created_officers',  # Changed to avoid conflicts - this model is deprecated
         limit_choices_to={'role': 'SUB_ADMIN'}
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -233,6 +233,8 @@ class SecurityOfficer(models.Model):
         verbose_name = 'Security Officer'
         verbose_name_plural = 'Security Officers'
         ordering = ['-created_at']
+        managed = False  # Table has been deleted - using User model with role='security_officer' instead
+        db_table = 'users_securityofficer'  # Legacy table name (no longer exists)
     
     def set_password(self, raw_password):
         """Hash and set password"""
