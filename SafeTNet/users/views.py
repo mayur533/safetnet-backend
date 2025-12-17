@@ -27,7 +27,7 @@ from .serializers import (
     DiscountEmailSerializer, DiscountEmailCreateSerializer,
     UserReplySerializer, UserDetailsSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
 from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
 
 
@@ -359,8 +359,11 @@ class GeofenceViewSet(OrganizationIsolationMixin, ModelViewSet):
         """Override destroy to handle related objects"""
         try:
             with transaction.atomic():
-                # Handle SecurityOfficer assignments - SET_NULL will handle this, but we do it explicitly first
-                instance.assigned_officers.all().update(assigned_geofence=None)
+                # Handle security officer geofence assignments - remove geofence from officers' geofences ManyToManyField
+                # Security officers are User records with role='security_officer', and geofences are stored via ManyToManyField
+                # Remove this geofence from all security officers' geofences
+                for officer in instance.associated_users.filter(role='security_officer'):
+                    officer.geofences.remove(instance)
                 
                 # Handle SOS alerts from security_app if it exists
                 try:
@@ -451,17 +454,7 @@ class AlertViewSet(ModelViewSet):
             org_geofences = Geofence.objects.filter(organization=user.organization)
             user_geofences.update(org_geofences)
         
-        # For security officers, add their assigned geofence
-        if user.role == 'security_officer':
-            try:
-                from .models import SecurityOfficer
-                officer = SecurityOfficer.objects.filter(
-                    username=user.username
-                ).first()
-                if officer and officer.assigned_geofence:
-                    user_geofences.add(officer.assigned_geofence)
-            except:
-                pass
+        # Note: Security officers' geofences are already included above via user.geofences.all()
         
         # If user has geofences, filter alerts that have any of those geofences
         if user_geofences:
@@ -894,24 +887,28 @@ def send_notification(request):
         )
         
         # Set target officers based on target_type
+        # Security officers are User records with role='security_officer'
         if data['target_type'] == 'ALL_OFFICERS':
-            officers = SecurityOfficer.objects.filter(
+            officers = User.objects.filter(
+                role='security_officer',
                 organization=request.user.organization,
                 is_active=True
             )
             notification.target_officers.set(officers)
         
         elif data['target_type'] == 'GEOFENCE_OFFICERS' and geofence_ids:
-            # Get officers from all selected geofences
-            officers = SecurityOfficer.objects.filter(
-                assigned_geofence_id__in=geofence_ids,
+            # Get officers from all selected geofences (using User.geofences ManyToManyField)
+            officers = User.objects.filter(
+                role='security_officer',
+                geofences__id__in=geofence_ids,
                 organization=request.user.organization,
                 is_active=True
-            )
+            ).distinct()
             notification.target_officers.set(officers)
         
         elif data['target_type'] == 'SPECIFIC_OFFICERS' and data.get('target_officer_ids'):
-            officers = SecurityOfficer.objects.filter(
+            officers = User.objects.filter(
+                role='security_officer',
                 id__in=data['target_officer_ids'],
                 organization=request.user.organization,
                 is_active=True
@@ -984,11 +981,13 @@ def subadmin_dashboard_kpis(request):
         organization=organization
     ).count()
     
-    total_officers = SecurityOfficer.objects.filter(
+    total_officers = User.objects.filter(
+        role='security_officer',
         organization=organization
     ).count()
     
-    active_officers = SecurityOfficer.objects.filter(
+    active_officers = User.objects.filter(
+        role='security_officer',
         organization=organization,
         is_active=True
     ).count()

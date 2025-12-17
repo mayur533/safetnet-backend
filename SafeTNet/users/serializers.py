@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -545,7 +545,10 @@ class NotificationSendSerializer(serializers.Serializer):
     
     def validate_target_officer_ids(self, value):
         if value:
-            officers = SecurityOfficer.objects.filter(
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            officers = User.objects.filter(
+                role='security_officer',
                 id__in=value,
                 organization=self.context['request'].user.organization
             )
