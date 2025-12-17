@@ -265,12 +265,13 @@ class LiveLocationShare(models.Model):
         help_text="User sharing their location (null if security_officer is set)"
     )
     security_officer = models.ForeignKey(
-        'users.SecurityOfficer',
+        'users.User',
         on_delete=models.CASCADE,
         related_name='live_location_sessions',
         null=True,
         blank=True,
-        help_text="Security officer sharing their location (null if user is set)"
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer sharing their location (User with role='security_officer', null if user is set)"
     )
     shared_with = models.ManyToManyField(
         User,
@@ -332,7 +333,8 @@ class LiveLocationShare(models.Model):
             user_email = self.user.email if hasattr(self.user, 'email') else 'User'
             return f"Live Share - {user_email}"
         elif self.security_officer:
-            return f"Live Share - {self.security_officer.name}"
+            officer_name = f"{self.security_officer.first_name} {self.security_officer.last_name}".strip() or self.security_officer.username
+            return f"Live Share - {officer_name}"
         return "Live Share - Unknown"
 
 

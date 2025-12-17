@@ -443,7 +443,13 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
 class IncidentSerializer(serializers.ModelSerializer):
     geofence_name = serializers.CharField(source='geofence.name', read_only=True)
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
     resolved_by_username = serializers.CharField(source='resolved_by.username', read_only=True)
     
     class Meta:

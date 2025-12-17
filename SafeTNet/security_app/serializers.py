@@ -9,7 +9,13 @@ class SOSAlertSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source='user.username', read_only=True)
     user_email = serializers.CharField(source='user.email', read_only=True)
     geofence_name = serializers.CharField(source='geofence.name', read_only=True)
-    assigned_officer_name = serializers.CharField(source='assigned_officer.name', read_only=True)
+    assigned_officer_name = serializers.SerializerMethodField()
+    
+    def get_assigned_officer_name(self, obj):
+        if obj.assigned_officer:
+            name = f"{obj.assigned_officer.first_name} {obj.assigned_officer.last_name}".strip()
+            return name or obj.assigned_officer.username
+        return None
 
     class Meta:
         model = SOSAlert
@@ -33,7 +39,13 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
 
 class CaseSerializer(serializers.ModelSerializer):
     sos_user_username = serializers.CharField(source='sos_alert.user.username', read_only=True)
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
     sos_alert_status = serializers.CharField(source='sos_alert.status', read_only=True)
 
     class Meta:
@@ -51,13 +63,10 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         fields = ('sos_alert', 'description')
 
     def create(self, validated_data):
-        # Auto-assign the current officer
-        try:
-            from users.models import SecurityOfficer
-            officer = SecurityOfficer.objects.get(email=self.context['request'].user.email)
-            validated_data['officer'] = officer
-        except SecurityOfficer.DoesNotExist:
-            pass
+        # Auto-assign the current user (who must be a security officer)
+        request_user = self.context['request'].user
+        if request_user.role == 'security_officer':
+            validated_data['officer'] = request_user
         return super().create(validated_data)
 
 
@@ -73,7 +82,13 @@ class CaseUpdateStatusSerializer(serializers.ModelSerializer):
 
 
 class IncidentSerializer(serializers.ModelSerializer):
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
     sos_status = serializers.CharField(source='sos_alert.status', read_only=True)
 
     class Meta:
@@ -86,9 +101,25 @@ class IncidentSerializer(serializers.ModelSerializer):
 
 
 class OfficerProfileSerializer(serializers.ModelSerializer):
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
-    officer_phone = serializers.CharField(source='officer.contact', read_only=True)
-    officer_geofence = serializers.CharField(source='officer.assigned_geofence.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
+    officer_phone = serializers.SerializerMethodField()
+    officer_geofence = serializers.SerializerMethodField()
+    
+    def get_officer_phone(self, obj):
+        # Contact/phone is not stored in User model, return email instead
+        return obj.officer.email if obj.officer else None
+    
+    def get_officer_geofence(self, obj):
+        # Get the first geofence from User.geofences ManyToManyField
+        if obj.officer and obj.officer.geofences.exists():
+            return obj.officer.geofences.first().name
+        return None
 
     class Meta:
         model = OfficerProfile
@@ -115,7 +146,13 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
     sos_alert_id = serializers.IntegerField(source='sos_alert.id', read_only=True)
     case_id = serializers.IntegerField(source='case.id', read_only=True)
 

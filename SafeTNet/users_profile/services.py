@@ -219,7 +219,7 @@ class EmergencyService:
         """
         try:
             from security_app.models import SOSAlert as SecuritySOSAlert, Notification as OfficerNotification
-            from users.models import SecurityOfficer
+            from django.contrib.auth import get_user_model
         except Exception as import_error:
             logger.warning("Security app dependencies missing: %s", import_error)
             return None
@@ -249,11 +249,12 @@ class EmergencyService:
             logger.error("Failed to create security SOS alert: %s", create_error)
             return None
 
-        officers_qs = SecurityOfficer.objects.filter(is_active=True)
+        User = get_user_model()
+        officers_qs = User.objects.filter(role='security_officer', is_active=True)
         if user.organization:
             officers_qs = officers_qs.filter(organization=user.organization)
         if primary_geofence:
-            officers_qs = officers_qs.filter(Q(assigned_geofence=primary_geofence) | Q(assigned_geofence__isnull=True))
+            officers_qs = officers_qs.filter(geofences=primary_geofence)
 
         notified = 0
         message = self._build_officer_message(user, latitude, longitude, primary_geofence)

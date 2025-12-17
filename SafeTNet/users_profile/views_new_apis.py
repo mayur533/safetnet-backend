@@ -9,7 +9,8 @@ from django.utils import timezone
 from math import radians, sin, cos, sqrt, atan2
 from .views import _is_user_premium
 from .models import LiveLocationShare
-from users.models import SecurityOfficer
+from django.contrib.auth import get_user_model
+User = get_user_model()
 from security_app.models import OfficerProfile
 from django.utils import timezone
 
@@ -149,8 +150,9 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
                 battery = profile.battery_level
 
         # Fall back to geofence center if still no location
-        if location is None and officer.assigned_geofence:
-            center = officer.assigned_geofence.get_center_point()
+        if location is None and officer.geofences.exists():
+            first_geofence = officer.geofences.first()
+            center = first_geofence.get_center_point()
             if center:
                 location = {
                     'latitude': center[0],
@@ -166,15 +168,18 @@ def _build_security_officer_payload(officers, ref_lat=None, ref_lon=None):
         if ref_lat is not None and ref_lon is not None:
             distance_km = round(_haversine_km(ref_lat, ref_lon, location['latitude'], location['longitude']), 2)
 
+        officer_name = f"{officer.first_name} {officer.last_name}".strip() or officer.username
+        first_geofence = officer.geofences.first() if officer.geofences.exists() else None
+        
         payload.append({
             'id': officer.id,
-            'name': officer.name,
-            'contact': officer.contact,
+            'name': officer_name,
+            'contact': officer.email,  # Contact field doesn't exist in User, using email instead
             'email': officer.email,
             'organization': officer.organization.name if officer.organization else None,
             'geofence': {
-                'id': officer.assigned_geofence_id,
-                'name': officer.assigned_geofence.name if officer.assigned_geofence else None,
+                'id': first_geofence.id if first_geofence else None,
+                'name': first_geofence.name if first_geofence else None,
             },
             'location': location,
             'location_source': source,
@@ -207,11 +212,11 @@ def security_officer_locations(request):
 
     geofence_ids = list(user.geofences.values_list('id', flat=True))
 
-    officers = SecurityOfficer.objects.filter(is_active=True)
+    officers = User.objects.filter(role='security_officer', is_active=True)
     if user.organization_id:
         officers = officers.filter(organization=user.organization)
     if geofence_ids:
-        officers = officers.filter(assigned_geofence_id__in=geofence_ids)
+        officers = officers.filter(geofences__id__in=geofence_ids).distinct()
 
     officers = officers.select_related('organization', 'assigned_geofence')
 
@@ -245,11 +250,11 @@ def public_security_officer_locations(request):
     if ref_lat is None or ref_lon is None:
         return Response({'error': 'latitude and longitude are required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    officers = SecurityOfficer.objects.filter(is_active=True).select_related('organization', 'assigned_geofence')
+    officers = User.objects.filter(role='security_officer', is_active=True).select_related('organization').prefetch_related('geofences')
     if org_qs:
         officers = officers.filter(organization_id=org_qs)
     if geofence_qs:
-        officers = officers.filter(assigned_geofence_id=geofence_qs)
+        officers = officers.filter(geofences__id=geofence_qs).distinct()
 
     payload = _build_security_officer_payload(officers, ref_lat, ref_lon)
     return Response({'count': len(payload), 'officers': payload})
@@ -490,7 +495,7 @@ class PublicLiveLocationShareView(APIView):
             if 'help' in include_parts:
                 payload['nearby_help'] = _build_nearby_help_payload(lat, lon)
             if 'security' in include_parts:
-                officers = SecurityOfficer.objects.filter(is_active=True).select_related('organization', 'assigned_geofence')
+                officers = User.objects.filter(role='security_officer', is_active=True).select_related('organization').prefetch_related('geofences')
                 payload['security_officers'] = _build_security_officer_payload(officers, lat, lon)
 
         status_code = status.HTTP_200_OK if is_active else status.HTTP_410_GONE

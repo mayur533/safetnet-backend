@@ -271,11 +271,13 @@ class Incident(models.Model):
         related_name='incidents'
     )
     officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='reported_incidents'
+        related_name='reported_incidents',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer who reported this incident (User with role='security_officer')"
     )
     incident_type = models.CharField(
         max_length=20,
@@ -359,9 +361,11 @@ class Notification(models.Model):
         help_text='List of geofence IDs for multi-geofence notifications'
     )
     target_officers = models.ManyToManyField(
-        SecurityOfficer,
+        User,
         blank=True,
-        related_name='received_notifications'
+        related_name='received_notifications',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officers who should receive this notification (Users with role='security_officer')"
     )
     read_users = models.ManyToManyField(
         User,
