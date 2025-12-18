@@ -125,17 +125,9 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Render production: DATABASE_URL is automatically set when database is linked
 #   If not set, falls back to the hardcoded Render database URL below
 
-# Database configuration
-# Use the new database URL provided
-# External URL for connections from outside Render network
-# external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
-# # Internal URL for connections from within Render network
-# internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
-
-
 DATABASES = {
     "default": dj_database_url.config(
-        default="postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg",
+        default="postgresql://safetnet_63jm_user:vz0wo2xtYsRP8pMfymBBuDjId2L6eLHU@dpg-d51f30umcj7s73c23bf0-a.oregon-postgres.render.com/safetnet_63jm",
         conn_max_age=600,
         ssl_require=True,
     )
