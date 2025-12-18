@@ -35,31 +35,47 @@ from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsola
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
-        serializer = UserLoginSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            refresh = RefreshToken.for_user(user)
+        try:
+            serializer = UserLoginSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.validated_data['user']
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': UserSerializer(user).data
+                })
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            import traceback
+            logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
             return Response({
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-                'user': UserSerializer(user).data
-            })
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                'error': 'Login failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
-    serializer = UserRegistrationSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        refresh = RefreshToken.for_user(user)
+    try:
+        serializer = UserRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        import traceback
+        logger.error(f"Registration error: {str(e)}\n{traceback.format_exc()}")
         return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            'error': 'Registration failed',
+            'detail': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
