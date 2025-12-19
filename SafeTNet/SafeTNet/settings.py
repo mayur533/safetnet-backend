@@ -253,14 +253,14 @@ else:
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "https://security-frontend-website.onrender.com",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
     "https://safetnet-backend.onrender.com",
-        # Allow same-origin requests for live-share pages
-        "https://safetnet-backend.onrender.com",
-        "http://safetnet-backend.onrender.com",
+    # Allow same-origin requests for live-share pages
+    "http://safetnet-backend.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -302,6 +302,7 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://security-frontend-website.onrender.com",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
     "https://safetnet-backend.onrender.com",
