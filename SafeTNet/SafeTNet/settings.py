@@ -123,13 +123,17 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 #   Example: DATABASE_URL=postgresql://postgres:Rsl@2015@localhost:5432/SafeTNet
 #
 # Render production: DATABASE_URL is automatically set when database is linked
-#   If not set, falls back to the hardcoded Render database URL below
+#   Internal URL is used when services are linked (no SSL required)
+#   External URL fallback is only used if DATABASE_URL is not set
 
+# dj_database_url.config() automatically checks DATABASE_URL environment variable first
+# Only use the default if DATABASE_URL is not set
 DATABASES = {
     "default": dj_database_url.config(
         default="postgresql://safetnet_63jm_user:vz0wo2xtYsRP8pMfymBBuDjId2L6eLHU@dpg-d51f30umcj7s73c23bf0-a.oregon-postgres.render.com/safetnet_63jm",
         conn_max_age=600,
-        ssl_require=True,
+        # Only require SSL if using external URL (dj_database_url will handle this based on the URL)
+        ssl_require=False,  # Let the connection string determine SSL requirements
     )
 }
 
