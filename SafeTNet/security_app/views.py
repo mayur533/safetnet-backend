@@ -729,14 +729,18 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
         officer = request.user
         
         try:
-            # Only allow access to geofences assigned to this officer
-            geofence = Geofence.objects.get(
-                id=geofence_id,
-                associated_users=officer  # Use the reverse relation from ManyToManyField
-            )
+            # Get the geofence by ID
+            geofence = Geofence.objects.get(id=geofence_id)
+            
+            # Check if this geofence is assigned to the officer
+            if officer not in geofence.associated_users.all():
+                return Response(
+                    {'error': 'Geofence not assigned to this officer'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
         except Geofence.DoesNotExist:
             return Response(
-                {'error': 'Geofence not found or not assigned to this officer'},
+                {'error': 'Geofence not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
