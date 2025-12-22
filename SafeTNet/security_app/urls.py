@@ -17,5 +17,7 @@ urlpatterns = [
     path('dashboard/', views.DashboardView.as_view(), name='security-dashboard'),
     path('live_location/', views.OfficerLiveLocationShareView.as_view(), name='security-live-location'),
     path('live_location/<int:session_id>/', views.OfficerLiveLocationShareDetailView.as_view(), name='security-live-location-detail'),
+    path('geofence/', views.GeofenceCurrentView.as_view(), name='security-geofence-current'),
+    path('geofence/<int:geofence_id>/', views.GeofenceDetailView.as_view(), name='security-geofence-detail'),
 ]
 

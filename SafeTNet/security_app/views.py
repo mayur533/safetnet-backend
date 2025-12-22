@@ -14,6 +14,8 @@ from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 # SecurityOfficer model removed - using User with role='security_officer' instead
 from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
 from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
+from users.models import Geofence
+from users.serializers import GeofenceSerializer
 
 from .permissions import IsSecurityOfficer
 from .serializers import (
@@ -694,4 +696,50 @@ class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
         live_share.stop_reason = 'user'
         live_share.save(update_fields=['is_active', 'expires_at', 'current_location', 'stop_reason'])
         return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
+
+
+class GeofenceCurrentView(OfficerOnlyMixin, APIView):
+    """
+    Get the current geofence assigned to the logged-in security officer.
+    """
+    def get(self, request):
+        officer = request.user
+        
+        # Get the first geofence assigned to the officer
+        geofences = officer.geofences.all()
+        
+        if not geofences.exists():
+            return Response(
+                {'error': 'No geofence assigned to this officer'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Return the first geofence (you can modify this logic if officers have multiple geofences)
+        geofence = geofences.first()
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class GeofenceDetailView(OfficerOnlyMixin, APIView):
+    """
+    Get geofence details by ID.
+    Only returns geofences that are assigned to the logged-in security officer.
+    """
+    def get(self, request, geofence_id):
+        officer = request.user
+        
+        try:
+            # Only allow access to geofences assigned to this officer
+            geofence = Geofence.objects.get(
+                id=geofence_id,
+                associated_users=officer  # Use the reverse relation from ManyToManyField
+            )
+        except Geofence.DoesNotExist:
+            return Response(
+                {'error': 'Geofence not found or not assigned to this officer'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
