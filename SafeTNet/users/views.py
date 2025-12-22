@@ -15,6 +15,8 @@ from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta, datetime, time
 import logging
+from rest_framework import status
+from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -793,6 +795,25 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
         else:
             # For SUPER_ADMIN, organization should be provided in request data
             serializer.save()
+    
+
+def create(self, request, *args, **kwargs):
+    serializer = self.get_serializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = serializer.save()
+
+    # IMPORTANT: use OUTPUT serializer for response
+    response_serializer = SecurityOfficerSerializer(
+        user,
+        context={'request': request}
+    )
+
+    return Response(
+        response_serializer.data,
+        status=status.HTTP_201_CREATED
+    )
+
 
 
 class IncidentViewSet(ModelViewSet):

@@ -62,7 +62,7 @@ class UserLoginSerializer(serializers.Serializer):
         elif email:
             # Try email - need to find user by email first
             try:
-                user_obj = User.objects.get(email=email, is_active=True)
+                user_obj = User.objects.get(email=email, is_active=True, is_staff=True)
                 user = authenticate(username=user_obj.username, password=password)
             except User.DoesNotExist:
                 user = None
@@ -339,7 +339,7 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
     """
     password = serializers.CharField(write_only=True, required=True, min_length=6)
     username = serializers.CharField(required=True, max_length=150)
-    name = serializers.CharField(required=True, max_length=100)
+    name = serializers.CharField(write_only=True, required=True, max_length=100)
     contact = serializers.CharField(required=False, max_length=20, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
     assigned_geofence = serializers.IntegerField(required=False, allow_null=True, write_only=True)
