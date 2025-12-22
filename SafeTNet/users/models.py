@@ -48,6 +48,12 @@ class User(AbstractUser):
         related_name='associated_users',
         help_text='Geofences associated with this user for alert notifications'
     )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text='Phone number or contact information'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

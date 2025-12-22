@@ -312,7 +312,7 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
         from django.contrib.auth import get_user_model
         model = get_user_model()
         fields = (
-            'id', 'username', 'first_name', 'last_name', 'name', 'email', 
+            'id', 'username', 'first_name', 'last_name', 'name', 'email', 'phone',
             'organization', 'organization_name', 'geofences', 'geofences_list',
             'is_active', 'is_staff', 'date_joined', 'last_login'
         )
@@ -340,7 +340,8 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, required=True, min_length=6)
     username = serializers.CharField(required=True, max_length=150)
     name = serializers.CharField(write_only=True, required=True, max_length=100)
-    contact = serializers.CharField(required=False, max_length=20, allow_blank=True)
+    contact = serializers.CharField(required=False, max_length=20, allow_blank=True, help_text='Phone number or contact information')
+    phone = serializers.CharField(required=False, max_length=20, allow_blank=True, write_only=True, help_text='Alias for contact field')
     email = serializers.EmailField(required=False, allow_blank=True)
     assigned_geofence = serializers.IntegerField(required=False, allow_null=True, write_only=True)
     is_active = serializers.BooleanField(default=True, required=False)
@@ -374,9 +375,8 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
         User = get_user_model()
         password = validated_data.pop('password')
         
-        # IMPORTANT: Remove any fields that don't belong to User model
-        # This prevents any accidental SecurityOfficer creation
-        validated_data.pop('contact', None)  # Not stored in User model
+        # Extract contact/phone before removing from validated_data
+        contact = validated_data.pop('contact', None) or validated_data.pop('phone', None)
         
         # Get organization and created_by
         # When perform_create calls serializer.save(organization=..., created_by=...),
@@ -431,7 +431,8 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
                 role='security_officer',  # Always set to 'security_officer' for security officers
                 organization=organization,
                 is_active=is_active,
-                is_staff=True
+                is_staff=True,
+                phone=contact  # Store phone/contact number
             )
             
             # Double-check: Ensure role is set correctly (safety check)
