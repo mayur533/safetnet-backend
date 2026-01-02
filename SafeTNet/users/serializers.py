@@ -306,17 +306,21 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
     """Serializer for security officers - now uses User model with role='security_officer'"""
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     name = serializers.SerializerMethodField()
+    contact = serializers.SerializerMethodField()
     geofences_list = serializers.SerializerMethodField()
     
     class Meta:
         from django.contrib.auth import get_user_model
         model = get_user_model()
         fields = (
-            'id', 'username', 'first_name', 'last_name', 'name', 'email', 'phone',
+            'id', 'username', 'first_name', 'last_name', 'name', 'email', 'phone', 'contact',
             'organization', 'organization_name', 'geofences', 'geofences_list',
             'is_active', 'is_staff', 'date_joined', 'last_login'
         )
-        read_only_fields = ('id', 'date_joined', 'last_login')
+        read_only_fields = ('id', 'date_joined', 'last_login', 'contact')
+        extra_kwargs = {
+            'phone': {'required': False, 'allow_blank': True}
+        }
     
     def get_name(self, obj):
         """Combine first_name and last_name into name"""
@@ -324,9 +328,31 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
             return f"{obj.first_name} {obj.last_name}"
         return obj.first_name or obj.username
     
+    def get_contact(self, obj):
+        """
+        Return phone number from user.phone if available, otherwise return email.
+        This ensures contact field shows phone number instead of email when phone is available.
+        """
+        # Return phone if it exists and is not empty
+        if obj.phone and obj.phone.strip() and '@' not in obj.phone:
+            return obj.phone.strip()
+        # Fallback to email only if phone is not available
+        return obj.email if obj.email else None
+    
     def get_geofences_list(self, obj):
         """Get list of assigned geofences"""
         return [{'id': g.id, 'name': g.name} for g in obj.geofences.all()]
+    
+    def to_internal_value(self, data):
+        """
+        Map 'contact' field to 'phone' field if 'contact' is provided.
+        This allows frontend to send 'contact' and it will be saved to 'phone'.
+        """
+        # If 'contact' is in data but 'phone' is not, map contact to phone
+        if 'contact' in data and 'phone' not in data:
+            data = data.copy()
+            data['phone'] = data['contact']
+        return super().to_internal_value(data)
 
 
 class SecurityOfficerCreateSerializer(serializers.Serializer):
