@@ -117,24 +117,19 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 # Database configuration
-# Uses DATABASE_URL environment variable (automatically different for local vs production)
-# 
-# Local development: Set DATABASE_URL in .env file
-#   Example: DATABASE_URL=postgresql://postgres:Rsl@2015@localhost:5432/SafeTNet
-#
-# Render production: DATABASE_URL is automatically set when database is linked
-#   Internal URL is used when services are linked (no SSL required)
-#   External URL fallback is only used if DATABASE_URL is not set
-
-# dj_database_url.config() automatically checks DATABASE_URL environment variable first
-# Only use the default if DATABASE_URL is not set
 DATABASES = {
-    "default": dj_database_url.config(
-        default="postgresql://safetnet_63jm_user:vz0wo2xtYsRP8pMfymBBuDjId2L6eLHU@dpg-d51f30umcj7s73c23bf0-a.oregon-postgres.render.com/safetnet_63jm",
-        conn_max_age=600,
-        # Only require SSL if using external URL (dj_database_url will handle this based on the URL)
-        ssl_require=False,  # Let the connection string determine SSL requirements
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'safetnet_63jm'),
+        'USER': os.environ.get('DB_USER', 'safetnet_63jm_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'vz0wo2xtYsRP8pMfymBBuDjId2L6eLHU'),
+        'HOST': os.environ.get('DB_HOST', 'dpg-d51f30umcj7s73c23bf0-a.oregon-postgres.render.com'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+        'CONN_MAX_AGE': 60,  # ⭐ VERY IMPORTANT
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
+    }
 }
 
 
