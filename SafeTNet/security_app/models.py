@@ -102,6 +102,12 @@ class OfficerProfile(models.Model):
         limit_choices_to={'role': 'security_officer'},
         help_text="Security officer user (User with role='security_officer')"
     )
+    phone_number = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text='Phone number or mobile phone for the security officer'
+    )
     on_duty = models.BooleanField(default=True)
     last_latitude = models.FloatField(null=True, blank=True)
     last_longitude = models.FloatField(null=True, blank=True)
