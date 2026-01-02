@@ -112,8 +112,34 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
     officer_geofence = serializers.SerializerMethodField()
     
     def get_officer_phone(self, obj):
-        # Contact/phone is not stored in User model, return email instead
-        return obj.officer.email if obj.officer else None
+        """
+        Return phone number from user.mobile or user.phone if available.
+        Priority: user.mobile > user.phone > OfficerProfile.phone_number > email
+        Only return email if no phone number exists or if the phone field contains an email.
+        """
+        if not obj.officer:
+            return None
+        
+        # Priority 1: Check if user has mobile field (if it exists)
+        mobile = getattr(obj.officer, 'mobile', None)
+        if mobile and mobile.strip() and '@' not in mobile:
+            return mobile.strip()
+        
+        # Priority 2: Check user.phone field
+        phone = getattr(obj.officer, 'phone', None)
+        if phone and phone.strip():
+            # Check if phone is actually an email (contains @)
+            if '@' not in phone:
+                return phone.strip()
+        
+        # Priority 3: Check OfficerProfile.phone_number
+        if hasattr(obj, 'phone_number') and obj.phone_number:
+            phone_num = obj.phone_number.strip()
+            if phone_num and '@' not in phone_num:
+                return phone_num
+        
+        # Fallback to email if no valid phone number found
+        return obj.officer.email if obj.officer.email else None
     
     def get_officer_geofence(self, obj):
         # Get the first geofence from User.geofences ManyToManyField

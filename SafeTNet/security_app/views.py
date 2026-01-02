@@ -342,7 +342,7 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can view profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.get_or_create(officer=request.user)
+        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
         from .serializers import OfficerProfileSerializer
         return Response(OfficerProfileSerializer(profile).data)
 
@@ -350,7 +350,7 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can update profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.get_or_create(officer=request.user)
+        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
         from .serializers import OfficerProfileSerializer
         serializer = OfficerProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
