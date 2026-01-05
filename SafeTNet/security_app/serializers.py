@@ -102,6 +102,37 @@ class IncidentSerializer(serializers.ModelSerializer):
 
 class OfficerProfileSerializer(serializers.ModelSerializer):
     officer_name = serializers.SerializerMethodField()
+    # Writable fields that map to User model
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=20,
+        write_only=True,
+        help_text='Phone number (updates User.phone field)'
+    )
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
+        help_text='Full name (will split into first_name and last_name)'
+    )
+    first_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        write_only=True
+    )
+    last_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        write_only=True
+    )
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        write_only=True
+    )
     
     def get_officer_name(self, obj):
         if obj.officer:
@@ -146,6 +177,65 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
         if obj.officer and obj.officer.geofences.exists():
             return obj.officer.geofences.first().name
         return None
+    
+    def validate_phone(self, value):
+        """Validate phone number - must be non-empty string"""
+        if value is not None:
+            value = value.strip()
+            if value == '':
+                raise serializers.ValidationError("Phone number cannot be empty.")
+        return value
+    
+    def update(self, instance, validated_data):
+        """
+        Update both OfficerProfile and User model.
+        User model fields (phone, first_name, last_name, email) are updated directly.
+        """
+        # Extract User model fields from validated_data
+        phone = validated_data.pop('phone', None)
+        name = validated_data.pop('name', None)
+        first_name = validated_data.pop('first_name', None)
+        last_name = validated_data.pop('last_name', None)
+        email = validated_data.pop('email', None)
+        
+        # Handle 'name' field - split into first_name and last_name if provided
+        if name is not None:
+            name = name.strip()
+            if name:
+                name_parts = name.split(' ', 1)
+                first_name = name_parts[0]
+                last_name = name_parts[1] if len(name_parts) > 1 else ''
+        
+        # Update OfficerProfile fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update User model fields
+        if instance.officer:
+            user = instance.officer
+            update_fields = []
+            
+            if phone is not None:
+                user.phone = phone
+                update_fields.append('phone')
+            
+            if first_name is not None:
+                user.first_name = first_name
+                update_fields.append('first_name')
+            
+            if last_name is not None:
+                user.last_name = last_name
+                update_fields.append('last_name')
+            
+            if email is not None:
+                user.email = email
+                update_fields.append('email')
+            
+            if update_fields:
+                user.save(update_fields=update_fields)
+        
+        return instance
 
     class Meta:
         model = OfficerProfile
@@ -154,6 +244,11 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
             'officer_name',
             'officer_phone',
             'officer_geofence',
+            'phone',
+            'name',
+            'first_name',
+            'last_name',
+            'email',
             'on_duty',
             'last_latitude',
             'last_longitude',
@@ -164,7 +259,6 @@ class OfficerProfileSerializer(serializers.ModelSerializer):
         read_only_fields = (
             'officer',
             'officer_name',
-            'officer_phone',
             'officer_geofence',
             'last_seen_at',
             'updated_at',
