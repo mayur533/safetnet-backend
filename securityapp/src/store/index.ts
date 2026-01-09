@@ -1,23 +1,16 @@
-/**
- * Store Directory (State Management)
- *
- * Migration Guide:
- * - Move state management from reference project src/redux/ here
- * - Implement Redux Toolkit, Zustand, or Context API
- * - Create slices/stores for different app sections (auth, incidents, user, etc.)
- * - Define actions, reducers, and selectors
- *
- * Example structure (Redux Toolkit):
- * export { store } from './store';
- * export * from './slices/authSlice';
- * export * from './slices/incidentSlice';
- * export * from './slices/userSlice';
- *
- * Example structure (Zustand):
- * export { useAuthStore } from './stores/authStore';
- * export { useIncidentStore } from './stores/incidentStore';
- * export { useUserStore } from './stores/userStore';
- */
+// Redux store exports
+export { store, persistor } from './store';
+export type { RootState, AppDispatch } from './store';
+export { useAppDispatch, useAppSelector } from './hooks';
 
-// Placeholder - state management will be migrated from reference project
-export {};
+// Slice exports
+export { default as authReducer } from './slices/authSlice';
+export { default as alertsReducer } from './slices/alertsSlice';
+export { default as locationReducer } from './slices/locationSlice';
+export { default as settingsReducer } from './slices/settingsSlice';
+
+// Action exports
+export * from './slices/authSlice';
+export * from './slices/alertsSlice';
+export * from './slices/locationSlice';
+export * from './slices/settingsSlice';
