@@ -7,7 +7,7 @@ export interface Alert {
   user_phone: string;
   user_image?: string;
   alert_type: 'emergency' | 'normal' | 'security';
-  original_alert_type?: 'general' | 'warning' | 'emergency'; // Original type selected by user ('general' = General Notice)
+  original_alert_type?: 'general' | 'warning' | 'emergency';
   priority: 'high' | 'medium' | 'low';
   message: string;
   location: {
@@ -15,7 +15,7 @@ export interface Alert {
     longitude: number;
     address: string;
   };
-  distance?: number; // in miles/km
+  distance?: number;
   timestamp: string;
   status: 'pending' | 'accepted' | 'completed' | 'cancelled';
   geofence_id: string;
@@ -32,7 +32,7 @@ export interface AlertResponse {
 export interface AcceptAlertPayload {
   log_id: string;
   security_id: string;
-  estimated_arrival?: number; // in minutes
+  estimated_arrival?: number;
 }
 
 export interface BroadcastAlertPayload {

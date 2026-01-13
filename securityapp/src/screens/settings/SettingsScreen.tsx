@@ -10,16 +10,28 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { toggleNotifications, toggleLocationTracking, toggleDarkMode } from '../../store/slices/settingsSlice';
+import { toggleNotifications, toggleLocationTracking } from '../../store/slices/settingsSlice';
+
+interface SettingItem {
+  title: string;
+  subtitle?: string;
+  type: 'toggle' | 'navigation' | 'action' | 'info';
+  value?: boolean;
+  onToggle?: (value: boolean) => void;
+  onPress?: () => void;
+  loading?: boolean;
+}
 import { logout } from '../../store/slices/authSlice';
 import { authService } from '../../api/services';
-import { colors, typography, spacing } from '../../utils';
+import { useColors } from '../../utils/colors';
+import { typography, spacing } from '../../utils';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const SettingsScreen = ({ navigation }: any) => {
   const dispatch = useAppDispatch();
   const settings = useAppSelector((state) => state.settings);
   const officer = useAppSelector((state) => state.auth.officer);
+  const colors = useColors();
   const [isTestingConnection, setIsTestingConnection] = useState(false);
 
   const handleLogout = () => {
@@ -53,7 +65,7 @@ export const SettingsScreen = ({ navigation }: any) => {
     setIsTestingConnection(true);
     try {
       // Simulate API test
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
       Alert.alert('Success', 'Connection to server is working!');
     } catch (error) {
       Alert.alert('Error', 'Unable to connect to server');
@@ -71,7 +83,15 @@ export const SettingsScreen = ({ navigation }: any) => {
           subtitle: 'Receive alerts and updates',
           type: 'toggle' as const,
           value: settings.notificationsEnabled,
-          onToggle: () => dispatch(toggleNotifications()),
+          onToggle: (_value: boolean) => {
+            dispatch(toggleNotifications());
+          },
+        },
+        {
+          title: 'Notification Settings',
+          subtitle: 'Customize alert preferences',
+          type: 'navigation' as const,
+          onPress: () => navigation.navigate('NotificationSettings'),
         },
       ],
     },
@@ -83,14 +103,15 @@ export const SettingsScreen = ({ navigation }: any) => {
           subtitle: 'Allow location tracking for alerts',
           type: 'toggle' as const,
           value: settings.locationTrackingEnabled,
-          onToggle: () => dispatch(toggleLocationTracking()),
+          onToggle: (_value: boolean) => {
+            dispatch(toggleLocationTracking());
+          },
         },
         {
-          title: 'Dark Mode',
-          subtitle: 'Switch to dark theme',
-          type: 'toggle' as const,
-          value: settings.isDarkMode,
-          onToggle: () => dispatch(toggleDarkMode()),
+          title: 'Privacy Settings',
+          subtitle: 'Manage data and permissions',
+          type: 'navigation' as const,
+          onPress: () => navigation.navigate('Privacy'),
         },
       ],
     },
@@ -124,22 +145,22 @@ export const SettingsScreen = ({ navigation }: any) => {
     },
   ];
 
-  const renderSettingItem = (item: typeof settingsSections[0]['items'][0], index: number) => {
+  const renderSettingItem = (item: SettingItem, index: number) => {
     return (
-      <View key={index} style={styles.settingItem}>
+      <View key={index} style={[styles.settingItem, { borderBottomColor: colors.border }]}>
         <View style={styles.settingContent}>
-          <Text style={styles.settingTitle}>{item.title}</Text>
+          <Text style={[styles.settingTitle, { color: colors.darkText }]}>{item.title}</Text>
           {item.subtitle && (
-            <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
+            <Text style={[styles.settingSubtitle, { color: colors.mediumText }]}>{item.subtitle}</Text>
           )}
         </View>
 
-        {item.type === 'toggle' && (
+        {item.type === 'toggle' && item.onToggle && (
           <Switch
-            value={item.value}
+            value={item.value as boolean}
             onValueChange={item.onToggle}
             trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor={item.value ? colors.white : colors.mediumGray}
+            thumbColor={(item.value as boolean) ? colors.white : colors.mediumGray}
           />
         )}
 
@@ -151,24 +172,25 @@ export const SettingsScreen = ({ navigation }: any) => {
 
         {item.type === 'action' && (
           <TouchableOpacity
-            style={[styles.actionButton, item.loading && styles.actionButtonDisabled]}
+            style={[styles.actionButton, { backgroundColor: colors.primary }, item.loading && styles.actionButtonDisabled]}
             onPress={item.onPress}
             disabled={item.loading}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionButtonText}>
+            <Text style={[styles.actionButtonText, { color: colors.textOnPrimary }]}>
               {item.loading ? 'Testing...' : 'Test'}
             </Text>
           </TouchableOpacity>
         )}
+
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -176,7 +198,7 @@ export const SettingsScreen = ({ navigation }: any) => {
         >
           <Icon name="arrow-back" size={24} color={colors.darkText} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
+        <Text style={[styles.headerTitle, { color: colors.darkText }]}>Settings</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -184,7 +206,7 @@ export const SettingsScreen = ({ navigation }: any) => {
         {settingsSections.map((section, sectionIndex) => (
           <View key={sectionIndex} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
-            <View style={styles.sectionContent}>
+            <View style={[styles.sectionContent, { backgroundColor: colors.white, borderColor: colors.border }]}>
               {section.items.map((item, itemIndex) => renderSettingItem(item, itemIndex))}
             </View>
           </View>
@@ -192,12 +214,12 @@ export const SettingsScreen = ({ navigation }: any) => {
 
         {/* Logout Button */}
         <TouchableOpacity
-          style={styles.logoutButton}
+          style={[styles.logoutButton, { backgroundColor: colors.white, borderColor: colors.emergencyRed }]}
           onPress={handleLogout}
           activeOpacity={0.8}
         >
           <Icon name="logout" size={20} color={colors.emergencyRed} />
-          <Text style={styles.logoutButtonText}>Logout</Text>
+          <Text style={[styles.logoutButtonText, { color: colors.emergencyRed }]}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -207,7 +229,7 @@ export const SettingsScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: useColors().white,
   },
   header: {
     flexDirection: 'row',
@@ -216,9 +238,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     paddingTop: 50,
     paddingBottom: spacing.md,
-    backgroundColor: colors.white,
+    backgroundColor: useColors().white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: useColors().border,
   },
   backButton: {
     width: 40,
@@ -228,7 +250,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typography.screenHeader,
-    color: colors.darkText,
+    color: useColors().darkText,
     fontSize: 18,
   },
   placeholder: {
@@ -243,17 +265,15 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.cardTitle,
-    color: colors.primary,
+    color: useColors().primary,
     marginBottom: spacing.md,
     textTransform: 'uppercase',
     fontSize: 12,
     letterSpacing: 1,
   },
   sectionContent: {
-    backgroundColor: colors.white,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   settingItem: {
     flexDirection: 'row',
@@ -261,23 +281,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   settingContent: {
     flex: 1,
   },
   settingTitle: {
     ...typography.body,
-    color: colors.darkText,
     fontWeight: '500',
   },
   settingSubtitle: {
     ...typography.caption,
-    color: colors.mediumGray,
     marginTop: 2,
   },
   actionButton: {
-    backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 6,
@@ -287,15 +303,12 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     ...typography.buttonSmall,
-    color: colors.white,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
     borderWidth: 2,
-    borderColor: colors.emergencyRed,
     margin: spacing.base,
     padding: spacing.md,
     borderRadius: 8,
@@ -303,7 +316,6 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     ...typography.buttonMedium,
-    color: colors.emergencyRed,
     marginLeft: spacing.sm,
     fontWeight: '600',
   },

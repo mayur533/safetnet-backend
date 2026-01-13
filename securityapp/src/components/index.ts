@@ -12,5 +12,12 @@
  * export { default as UserAvatar } from './UserAvatar';
  */
 
-// Placeholder - components will be migrated from reference project
-export {};
+// Common UI Components
+export { Button } from './common/Button';
+export { Card } from './common/Card';
+export { Input } from './common/Input';
+export { LoadingSpinner } from './common/LoadingSpinner';
+export { EmptyState } from './common/EmptyState';
+
+// Alert Components
+export { AlertCard } from './alerts/AlertCard';

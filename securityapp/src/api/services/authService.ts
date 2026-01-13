@@ -119,7 +119,7 @@ export const authService = {
   forgotPassword: async (email: string) => {
     if (USE_MOCK_DATA) {
       // Mock forgot password
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(() => resolve(undefined), 1000));
       return {
         result: 'success',
         msg: 'Password reset link sent to your email (mock)',

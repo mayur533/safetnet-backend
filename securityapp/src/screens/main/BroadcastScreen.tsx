@@ -5,24 +5,39 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Switch,
   ScrollView,
-  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { useAppSelector } from '../../store/hooks';
-import { colors, spacing, typography } from '../../utils';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useAppSelector } from '../../store/hooks';
+import { Button } from '../../components/common/Button';
+import { BroadcastProgressModal } from '../../components/modals/BroadcastProgressModal';
+import { broadcastService } from '../../api/services/broadcastService';
+import { profileService } from '../../api/services/profileService';
+import { geofenceService } from '../../api/services/geofenceService';
+import { requestLocationPermission } from '../../utils/permissions';
+import { useAlerts } from '../../hooks/useAlerts';
+import { colors } from '../../utils/colors';
+import { typography, spacing } from '../../utils';
+import Toast from 'react-native-toast-message';
 
 export const BroadcastScreen = ({ navigation }: any) => {
   const officer = useAppSelector((state) => state.auth.officer);
-  const [message, setMessage] = useState('I need help, someone following me');
+  const { refreshAlerts } = useAlerts();
+  const [message, setMessage] = useState('I need help, some one following me');
   const [alertType, setAlertType] = useState<'general' | 'warning' | 'emergency'>('general');
-  const [isLoading, setIsLoading] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+  const [broadcastProgress, setBroadcastProgress] = useState(0);
+  const [totalUsers] = useState(24);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Automatically set high priority for emergency alerts
+  const highPriority = alertType === 'emergency';
 
   const alertTypes = [
-    { key: 'general' as const, label: 'General Notice', icon: 'notifications', color: colors.infoBlue },
-    { key: 'warning' as const, label: 'Warning', icon: 'warning', color: colors.warningOrange },
-    { key: 'emergency' as const, label: 'Emergency', icon: 'emergency', color: colors.emergencyRed },
+    { key: 'general' as const, label: 'General Notice', icon: 'notifications' },
+    { key: 'warning' as const, label: 'Warning', icon: 'warning' },
+    { key: 'emergency' as const, label: 'Emergency', icon: 'emergency' },
   ];
 
   const quickTemplates = [
@@ -43,139 +58,276 @@ export const BroadcastScreen = ({ navigation }: any) => {
     },
   ];
 
-  const handleTemplateSelect = (template: typeof quickTemplates[0]) => {
-    setMessage(template.message);
-    setSelectedTemplate(template.id);
-  };
-
   const handleSend = async () => {
     if (!message.trim()) {
-      Alert.alert('Error', 'Please enter a message');
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Please enter a message',
+      });
       return;
     }
 
-    if (!officer) {
-      Alert.alert('Error', 'Officer information not found');
-      return;
-    }
+    if (!officer) return;
 
-    setIsLoading(true);
+    setShowProgress(true);
+    setBroadcastProgress(0);
+
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      setBroadcastProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(progressInterval);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Request location permission first
+      const hasPermission = await requestLocationPermission();
+      
+      if (!hasPermission) {
+        Toast.show({
+          type: 'error',
+          text1: 'Permission Required',
+          text2: 'Location permission is required to send alerts',
+        });
+        clearInterval(progressInterval);
+        setShowProgress(false);
+        setBroadcastProgress(0);
+        return;
+      }
 
-      Alert.alert(
-        'Success',
-        'Broadcast message sent successfully!',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send broadcast message');
-    } finally {
-      setIsLoading(false);
+      // Get geofence_id - use from officer or fetch from profile/geofence service if empty
+      // IMPORTANT: Backend expects numeric geofence_id, not name string
+      let geofenceId = officer.geofence_id;
+      
+      // Check if geofence_id is empty or not numeric
+      if (!geofenceId || geofenceId === '' || geofenceId === '0' || isNaN(Number(geofenceId))) {
+        console.log('[BroadcastScreen] geofence_id is empty or not numeric, fetching geofence details...');
+        try {
+          // First try to get geofence name from profile
+          const profile = await profileService.getProfile(officer.security_id);
+          console.log('[BroadcastScreen] Profile data:', JSON.stringify(profile, null, 2));
+          
+          const geofenceName = (profile && profile.officer_geofence) ||
+                              (profile && profile.geofence_name) ||
+                              (profile && profile.assigned_geofence && profile.assigned_geofence.name) ||
+                              '';
+
+          // Try to get numeric ID from assigned_geofence object (if profile has it)
+          const assignedGeofence = (profile && profile.assigned_geofence);
+          if (assignedGeofence && assignedGeofence.id) {
+            geofenceId = String(assignedGeofence.id);
+            console.log('[BroadcastScreen] ✅ Got numeric geofence_id from assigned_geofence.id:', geofenceId);
+          } else if (geofenceName) {
+            // If we have geofence name but not ID, fetch geofence details to get the ID
+            console.log('[BroadcastScreen] Found geofence name:', geofenceName, '- fetching details to get ID...');
+            try {
+              const geofenceDetails = await geofenceService.getGeofenceDetails(geofenceName);
+              // Extract ID from geofence_id field (should be numeric)
+              if (geofenceDetails.geofence_id && !isNaN(Number(geofenceDetails.geofence_id))) {
+                geofenceId = String(geofenceDetails.geofence_id);
+                console.log('[BroadcastScreen] ✅ Got numeric geofence_id from geofence details:', geofenceId);
+              } else {
+                console.warn('[BroadcastScreen] ⚠️ Geofence details returned non-numeric ID:', geofenceDetails.geofence_id);
+              }
+            } catch (geofenceError: any) {
+              console.warn('[BroadcastScreen] Failed to fetch geofence details:', geofenceError.message);
+              // Check if geofenceService returned data with assigned_geofence
+              if (geofenceError && geofenceError.response && geofenceError.response.data && geofenceError.response.data.assigned_geofence && geofenceError.response.data.assigned_geofence.id) {
+                geofenceId = String(geofenceError.response.data.assigned_geofence.id);
+                console.log('[BroadcastScreen] ✅ Got numeric geofence_id from error response:', geofenceId);
+              }
+            }
+          } else {
+            console.warn('[BroadcastScreen] No geofence name found in profile');
+          }
+        } catch (profileError) {
+          console.warn('[BroadcastScreen] Failed to fetch profile for geofence_id:', profileError);
+        }
+      }
+      
+      // Final validation
+      if (geofenceId && isNaN(Number(geofenceId))) {
+        console.warn('[BroadcastScreen] ⚠️ WARNING: geofence_id is still not numeric:', geofenceId);
+        console.warn('[BroadcastScreen] Backend might reject this or set geofence to null');
+        // Try to extract ID from geofence name by fetching geofence details one more time
+        try {
+          const geofenceDetails = await geofenceService.getGeofenceDetails(geofenceId);
+          if (geofenceDetails.geofence_id && !isNaN(Number(geofenceDetails.geofence_id))) {
+            geofenceId = String(geofenceDetails.geofence_id);
+            console.log('[BroadcastScreen] ✅ Finally got numeric geofence_id:', geofenceId);
+          }
+        } catch (finalError) {
+          console.error('[BroadcastScreen] Could not convert geofence name to ID:', finalError);
+        }
+      }
+      
+      console.log('[BroadcastScreen] Final geofence_id to send:', geofenceId, '(type:', typeof geofenceId, ', isNumeric:', !isNaN(Number(geofenceId)), ')');
+
+      // Send broadcast - location will be fetched by broadcastService if not provided
+      const broadcastResult = await broadcastService.sendBroadcast({
+        security_id: officer.security_id,
+        geofence_id: geofenceId || '',
+        message: message.trim(),
+        alert_type: alertType,
+        priority: highPriority,
+        // location_lat and location_long will be fetched by service if not provided
+      });
+
+      console.log('[BroadcastScreen] Broadcast sent successfully:', broadcastResult);
+
+      clearInterval(progressInterval);
+      setBroadcastProgress(100);
+
+      // Refresh alerts after successful broadcast
+      try {
+        console.log('[BroadcastScreen] Refreshing alerts after broadcast...');
+        await refreshAlerts();
+        console.log('[BroadcastScreen] Alerts refreshed');
+      } catch (refreshError) {
+        console.warn('[BroadcastScreen] Failed to refresh alerts:', refreshError);
+        // Don't fail the broadcast if refresh fails
+      }
+
+      setTimeout(() => {
+        setShowProgress(false);
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Broadcast sent successfully',
+        });
+        navigation.goBack();
+      }, 500);
+    } catch (error: any) {
+      clearInterval(progressInterval);
+      setShowProgress(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error.message || 'Failed to send broadcast',
+      });
     }
   };
 
-  const selectedAlertType = alertTypes.find(type => type.key === alertType);
-
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
-        >
-          <Icon name="arrow-back" size={24} color={colors.darkText} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <BroadcastProgressModal
+        visible={showProgress}
+        progress={broadcastProgress}
+        totalUsers={totalUsers}
+        onCancel={() => {
+          setShowProgress(false);
+          setBroadcastProgress(0);
+        }}
+      />
+      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Broadcast Alert</Text>
-        <View style={styles.placeholder} />
+        <Text style={[styles.title, { color: colors.darkText }]}>SEND ALERT</Text>
+        <TouchableOpacity>
+          <Text style={styles.infoIcon}>ℹ️</Text>
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Alert Type Selection */}
+      <ScrollView style={styles.content}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Alert Type</Text>
-          <View style={styles.alertTypeContainer}>
+          <Text style={styles.sectionTitle}>ALERT TYPE</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {alertTypes.map((type) => (
               <TouchableOpacity
                 key={type.key}
                 style={[
-                  styles.alertTypeButton,
-                  alertType === type.key && { backgroundColor: type.color, borderColor: type.color }
+                  styles.alertTypePill,
+                  alertType === type.key && styles.selectedPill,
                 ]}
                 onPress={() => setAlertType(type.key)}
-                activeOpacity={0.7}
               >
                 <Icon
                   name={type.icon}
                   size={20}
-                  color={alertType === type.key ? colors.white : type.color}
+                  color={alertType === type.key ? colors.white : colors.darkText}
+                  style={styles.alertTypeIcon}
                 />
                 <Text
                   style={[
                     styles.alertTypeText,
-                    alertType === type.key && styles.alertTypeTextSelected
+                    alertType === type.key && styles.selectedPillText,
                   ]}
                 >
                   {type.label}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
-        {/* Quick Templates */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Templates</Text>
-          <View style={styles.templatesContainer}>
+          <Text style={styles.sectionTitle}>MESSAGE</Text>
+          <TextInput
+            style={[styles.messageInput, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
+            placeholder="Type your message"
+            placeholderTextColor={colors.inputPlaceholder}
+            multiline
+            numberOfLines={8}
+            value={message}
+            onChangeText={(text) => {
+              setMessage(text);
+              // Clear selected template if user manually edits the message
+              if (selectedTemplate && text !== (quickTemplates.find(t => t.id === selectedTemplate) || {}).message) {
+                setSelectedTemplate(null);
+              }
+            }}
+            maxLength={500}
+          />
+          <Text style={styles.charCount}>{message.length} / 500</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>QUICK TEMPLATES</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {quickTemplates.map((template) => (
               <TouchableOpacity
                 key={template.id}
-                style={styles.templateButton}
-                onPress={() => setMessage(template.message)}
-                activeOpacity={0.7}
+                style={[
+                  styles.templatePill,
+                  selectedTemplate === template.id && styles.selectedTemplatePill,
+                ]}
+                onPress={() => {
+                  setMessage(template.message);
+                  setSelectedTemplate(template.id);
+                }}
               >
-                <Text style={styles.templateLabel}>{template.label}</Text>
-                <Icon name="chevron-right" size={20} color={colors.mediumGray} />
+                <Text
+                  style={[
+                    styles.templateText,
+                    selectedTemplate === template.id && styles.selectedTemplateText,
+                  ]}
+                >
+                  {template.label}
+                </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
-
-        {/* Message Input */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Message</Text>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="Enter your broadcast message..."
-            placeholderTextColor={colors.mediumGray}
-            value={message}
-            onChangeText={setMessage}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-          <Text style={styles.charCount}>
-            {message.length}/500 characters
-          </Text>
-        </View>
-
-        {/* Send Button */}
-        <TouchableOpacity
-          style={[styles.sendButton, isLoading && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={isLoading}
-          activeOpacity={0.8}
-        >
-          <Icon name="send" size={20} color={colors.white} />
-          <Text style={styles.sendButtonText}>
-            {isLoading ? 'Sending...' : 'Send Broadcast'}
-          </Text>
-        </TouchableOpacity>
       </ScrollView>
+
+      <View style={styles.footer}>
+        <Button
+          title="SEND BROADCAST"
+          onPress={handleSend}
+          variant="primary"
+          style={styles.sendButton}
+          icon={<Text style={styles.sendIcon}>✈️</Text>}
+        />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.footerCancel}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -187,113 +339,174 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.base,
-    paddingTop: 50,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderGray,
   },
-  headerTitle: {
-    ...typography.screenHeader,
-    color: colors.darkText,
-    fontSize: 18,
+  cancelText: {
+    ...typography.secondary,
+    color: colors.primary,
   },
-  placeholder: {
-    width: 40,
+  title: {
+    ...typography.sectionHeader,
   },
-  scrollView: {
+  infoIcon: {
+    fontSize: 20,
+    color: colors.primary,
+  },
+  content: {
     flex: 1,
     padding: spacing.base,
   },
+  infoBanner: {
+    backgroundColor: colors.badgeBlueBg,
+    padding: spacing.md,
+    borderRadius: 10,
+    marginBottom: spacing.lg,
+  },
+  infoText: {
+    ...typography.secondary,
+    color: colors.secondary,
+  },
   section: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
-    ...typography.cardTitle,
+    ...typography.caption,
+    color: colors.lightText,
+    textTransform: 'uppercase',
     marginBottom: spacing.md,
+    fontWeight: '600',
   },
-  alertTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  alertTypeButton: {
-    flex: 1,
+  alertTypePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    marginHorizontal: 2,
-    borderRadius: 8,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderRadius: 18,
     borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
+    borderColor: colors.borderGray,
+    marginRight: spacing.sm,
+  },
+  selectedPill: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  alertTypeIcon: {
+    marginRight: spacing.xs,
   },
   alertTypeText: {
-    ...typography.buttonMedium,
+    ...typography.buttonLarge,
     color: colors.darkText,
-    marginLeft: spacing.xs,
   },
-  alertTypeTextSelected: {
+  selectedPillText: {
     color: colors.white,
   },
-  templatesContainer: {
-    backgroundColor: colors.lightGrayBg,
-    borderRadius: 8,
-  },
-  templateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  templateLabel: {
-    ...typography.body,
-    color: colors.darkText,
-    flex: 1,
-  },
   messageInput: {
-    backgroundColor: colors.lightGrayBg,
-    borderRadius: 8,
-    padding: spacing.md,
-    fontSize: 16,
-    color: colors.darkText,
     borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 100,
+    borderColor: colors.borderGray,
+    borderRadius: 12,
+    padding: spacing.base,
+    minHeight: 180,
+    ...typography.body,
+    textAlignVertical: 'top',
   },
   charCount: {
     ...typography.caption,
     textAlign: 'right',
     marginTop: spacing.xs,
   },
-  sendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  requiredText: {
+    ...typography.caption,
+    color: colors.emergencyRed || '#FF0000',
+    marginTop: spacing.xs,
+    fontSize: 12,
+  },
+  templatePill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.borderGray,
+    backgroundColor: colors.white,
+    marginRight: spacing.sm,
+  },
+  selectedTemplatePill: {
     backgroundColor: colors.primary,
-    paddingVertical: spacing.lg,
-    borderRadius: 8,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
+    borderColor: colors.primary,
   },
-  sendButtonDisabled: {
-    opacity: 0.6,
+  templateText: {
+    ...typography.secondary,
+    color: colors.darkText,
   },
-  sendButtonText: {
-    ...typography.buttonLarge,
+  selectedTemplateText: {
     color: colors.white,
-    marginLeft: spacing.sm,
+    fontWeight: '600',
+  },
+  recipientsCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.white,
+    padding: spacing.base,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.borderGray,
+    marginBottom: spacing.md,
+  },
+  recipientsIcon: {
+    fontSize: 32,
+    marginRight: spacing.md,
+  },
+  recipientsInfo: {
+    flex: 1,
+  },
+  recipientsTitle: {
+    ...typography.cardTitle,
+    marginBottom: spacing.xs,
+  },
+  recipientsSubtitle: {
+    ...typography.caption,
+    color: colors.lightText,
+  },
+  priorityCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    padding: spacing.base,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.borderGray,
+  },
+  priorityLeft: {
+    flex: 1,
+  },
+  priorityTitle: {
+    ...typography.secondary,
+    marginBottom: spacing.xs,
+  },
+  prioritySubtitle: {
+    ...typography.caption,
+    color: colors.lightText,
+  },
+  footer: {
+    padding: spacing.base,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderGray,
+  },
+  sendButton: {
+    width: '100%',
+    marginBottom: spacing.sm,
+  },
+  sendIcon: {
+    fontSize: 18,
+  },
+  footerCancel: {
+    ...typography.secondary,
+    textAlign: 'center',
+    color: colors.lightText,
   },
 });
+

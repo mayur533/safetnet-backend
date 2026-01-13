@@ -7,7 +7,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { colors, typography, spacing } from '../../utils';
+import { colors } from '../../utils/colors';
+import { typography, spacing } from '../../utils';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const OfflineScreen = ({ navigation }: any) => {
@@ -17,7 +18,7 @@ export const OfflineScreen = ({ navigation }: any) => {
     setIsRetrying(true);
 
     // Simulate connection test
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
 
     // For demo purposes, assume connection is restored
     setIsRetrying(false);

@@ -9,13 +9,20 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAppSelector } from '../../store/hooks';
-import { colors, typography, spacing } from '../../utils';
+import { colors } from '../../utils/colors';
+import { typography, spacing } from '../../utils';
 import { authService } from '../../api/services';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 interface TestResult {
   endpoint: string;
   status: 'success' | 'error' | 'testing';
+  message: string;
+  responseTime?: number;
+}
+
+interface TestFunctionResult {
+  success: boolean;
   message: string;
   responseTime?: number;
 }
@@ -29,7 +36,7 @@ export const APITestScreen = ({ navigation }: any) => {
     {
       name: 'Authentication Status',
       endpoint: 'auth-check',
-      test: async () => {
+      test: async (): Promise<TestFunctionResult> => {
         // Check if user is authenticated
         return { success: !!officer, message: officer ? 'Authenticated' : 'Not authenticated' };
       },
@@ -37,7 +44,7 @@ export const APITestScreen = ({ navigation }: any) => {
     {
       name: 'Profile API',
       endpoint: 'profile',
-      test: async () => {
+      test: async (): Promise<TestFunctionResult> => {
         if (!officer?.security_id) {
           throw new Error('No officer ID available');
         }
@@ -50,7 +57,7 @@ export const APITestScreen = ({ navigation }: any) => {
     {
       name: 'Backend Connectivity',
       endpoint: 'connectivity',
-      test: async () => {
+      test: async (): Promise<TestFunctionResult> => {
         const startTime = Date.now();
         // Simple connectivity test - try to make a request
         try {
@@ -124,7 +131,7 @@ export const APITestScreen = ({ navigation }: any) => {
     for (const testConfig of testEndpoints) {
       await runTest(testConfig);
       // Small delay between tests
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(() => resolve(undefined), 500));
     }
 
     setIsRunningTests(false);

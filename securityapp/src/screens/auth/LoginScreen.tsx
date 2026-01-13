@@ -1,75 +1,192 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  Image,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
-import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
 import { authService } from '../../api/services';
+import { useAppDispatch } from '../../store/hooks';
+import { loginSuccess } from '../../store/slices/authSlice';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../../utils/colors';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import type { SecurityOfficer } from '../../types/user.types';
+
+type AuthStackParamList = {
+  Splash: undefined;
+  Login: undefined;
+  ForgotPassword: undefined;
+};
+
+type AuthNavigationProp = NativeStackNavigationProp<AuthStackParamList>;
+
+// Safe logo loading - will use image if file exists, otherwise fallback to emoji
+const LOGO_PATH = '../../assets/images/safetnet-logo.png';
+let logoSource = null;
+try {
+  logoSource = require(LOGO_PATH);
+} catch (e) {
+  logoSource = null;
+}
 
 export const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const navigation = useNavigation<any>();
+  const [rememberMe, setRememberMe] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
   const dispatch = useAppDispatch();
-  const { isLoading, error } = useAppSelector((state) => state.auth);
+  const navigation = useNavigation<AuthNavigationProp>();
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both email and password');
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter email and password');
       return;
     }
 
-    dispatch(loginStart());
-
     try {
-      const response = await authService.login({
-        email: email.trim(),
-        password,
-        device_type: 'android',
+      setIsLoading(true);
+      
+      // Make login request
+      const res = await authService.login({ 
+        email, 
+        password, 
+        device_type: Platform.OS === 'ios' ? 'ios' : 'android' 
       });
-
-      if (response.result === 'success' && response.security_id) {
-        // Convert legacy response to Redux format
-        dispatch(loginSuccess({
-          token: response.access || 'mock_token',
-          officer: {
-            security_id: response.security_id,
-            name: response.name || 'Officer',
-            email_id: response.email_id || email,
-            mobile: response.mobile || '',
-            security_role: response.security_role || 'guard',
-            geofence_id: response.geofence_id || 'GEO001',
-            status: response.status || 'active',
-          },
-        }));
-        navigation.replace('Dashboard');
-      } else {
-        dispatch(loginFailure(response.msg || 'Login failed'));
+      
+      // Extract tokens and user data (optimized - minimal processing)
+      const accessToken = res.access;
+      const user = res.user || { 
+        id: 0, 
+        username: '', 
+        email: '', 
+        role: '',
+        first_name: '',
+        last_name: '',
+        mobile: '',
+        geofence_id: '',
+        user_image: '',
+        status: ''
+      };
+      
+      if (!accessToken) {
+        throw new Error("Access token not received from server");
       }
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.detail ||
-                          error.response?.data?.message ||
-                          error.message ||
-                          'Login failed';
-      dispatch(loginFailure(errorMessage));
-      Alert.alert('Login Failed', errorMessage);
-    }
-  };
 
-  const handleForgotPassword = () => {
-    navigation.navigate('ForgotPassword');
+      const normalizedRole: SecurityOfficer['security_role'] = (() => {
+        switch ((user.role || '').toLowerCase()) {
+          case 'admin':
+            return 'admin';
+          case 'supervisor':
+            return 'supervisor';
+          case 'guard':
+            return 'guard';
+          case 'security_officer':
+          case 'security':
+          default:
+            return 'guard';
+        }
+      })();
+
+      const normalizedStatus: SecurityOfficer['status'] =
+        (user.status || '').toLowerCase() === 'inactive' ? 'inactive' : 'active';
+
+      const officer: SecurityOfficer = {
+        security_id: String(user.id || ''),
+        name: (user.first_name && user.last_name)
+          ? `${user.first_name} ${user.last_name}`.trim()
+          : (user.first_name || user.username || email),
+        email_id: user.email || user.username || email,
+        mobile: user.mobile || '',
+        security_role: normalizedRole,
+        geofence_id: user.geofence_id || '',
+        user_image: user.user_image || '',
+        status: normalizedStatus,
+      };
+
+      // Dispatch login success immediately - navigation happens automatically
+      dispatch(loginSuccess({ token: accessToken, officer, navigateToSOS: false }));
+      setIsLoading(false); // Clear loading state immediately
+    } catch (err: any) {
+      setIsLoading(false); // Clear loading state on error
+      console.error("Login error:", err);
+      console.error("Error response:", err.response && err.response.data ? err.response.data : 'unknown');
+      console.error("Error status:", err.response && err.response.status ? err.response.status : 'unknown');
+      
+      const status = err.response && err.response.status ? err.response.status : undefined;
+      const isNetworkError = err.code === 'ERR_NETWORK' || err.message === 'Network Error' || !err.response;
+      let errorMessage = 'Invalid Credentials';
+      
+      // Handle network errors (no response from server)
+      if (isNetworkError) {
+        errorMessage = 'Cannot reach server. The backend service may be sleeping (Render free tier takes 30-90 seconds to wake up). Please wait 1-2 minutes and try again.';
+      } else if (status === 502) {
+        // Bad Gateway - Render service is down or sleeping
+        errorMessage = 'Backend service is not responding. The service may be sleeping (Render free tier takes 30-90 seconds to wake up). Please wait and try again, or check Render dashboard.';
+      } else if (status === 503) {
+        errorMessage = 'Service temporarily unavailable. The server is starting up or overloaded. Please wait 1-2 minutes and try again.';
+      } else if (status === 400) {
+        // 400 Bad Request - show backend's specific error message
+        // Handle Django REST Framework error formats
+        const backendError = err.response && err.response.data ? err.response.data : null;
+        
+        if (backendError) {
+          // Format: { "non_field_errors": ["Invalid credentials."] }
+          if (backendError.non_field_errors && Array.isArray(backendError.non_field_errors)) {
+            errorMessage = backendError.non_field_errors[0];
+          }
+          // Format: { "message": "Invalid credentials" }
+          else if (backendError.message) {
+            errorMessage = backendError.message;
+          }
+          // Format: { "error": "Invalid credentials" }
+          else if (backendError.error) {
+            errorMessage = backendError.error;
+          }
+          // Format: { "detail": "Invalid credentials" }
+          else if (backendError.detail) {
+            errorMessage = backendError.detail;
+          }
+          // Format: string
+          else if (typeof backendError === 'string') {
+            errorMessage = backendError;
+          }
+          // Fallback
+          else {
+            errorMessage = err.message || 'Invalid credentials. Please check your username and password.';
+          }
+        } else {
+          errorMessage = err.message || 'Invalid credentials. Please check your username and password.';
+        }
+        
+        // Log full error details for debugging
+        console.error("400 Error Details:", JSON.stringify(backendError, null, 2));
+      } else if (status === 401) {
+        errorMessage = 'Invalid username or password. Please try again.';
+      } else if (status === 503) {
+        errorMessage = 'Service temporarily unavailable. The server is down or overloaded. Please try again later.';
+      } else if (status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (!err.response) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else {
+        errorMessage = (err.response && err.response.data && err.response.data.message) || (err.response && err.response.data && err.response.data.error) || err.message || 'Invalid Credentials';
+      }
+      
+      Alert.alert('Login Failed', errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -77,75 +194,95 @@ export const LoginScreen = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>SafeTNet</Text>
-          <Text style={styles.subtitleText}>Security Officer Login</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Header Section (40% of screen) */}
+        <View style={styles.header}>
+          <View style={styles.logoContainer}>
+            {logoSource ? (
+              <Image
+                source={logoSource}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={styles.logoFallback}>🛡️</Text>
+            )}
+          </View>
+          <Text style={styles.appName}>SafeTNet Security</Text>
+          <Text style={styles.subtitle}>Officer Portal</Text>
         </View>
 
-        <View style={styles.formContainer}>
-          <Text style={styles.label}>Email or Badge ID</Text>
+        {/* Form Section (60% of screen) */}
+        <View style={styles.form}>
+          <Text style={styles.welcomeText}>Welcome Back</Text>
+          <Text style={styles.welcomeSubtext}>Sign in to continue monitoring</Text>
+
+          <Text style={styles.inputLabel}>Badge ID or Email</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, emailFocused && styles.inputFocused]}
+            placeholder="Enter your badge ID or email"
             value={email}
             onChangeText={setEmail}
-            placeholder="Enter email or badge ID"
-            placeholderTextColor={colors.mediumGray}
+            onFocus={() => setEmailFocused(true)}
+            onBlur={() => setEmailFocused(false)}
             autoCapitalize="none"
-            autoCorrect={false}
+            keyboardType="email-address"
+            placeholderTextColor={colors.mediumGray}
+            returnKeyType="next"
+            onSubmitEditing={() => {
+              // Focus password field when Enter is pressed on email field
+              if (passwordInputRef.current) {
+                passwordInputRef.current.focus();
+              }
+            }}
           />
 
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordInputContainer}>
+          <Text style={styles.inputLabel}>Password</Text>
+          <View style={styles.passwordContainer}>
             <TextInput
-              style={styles.passwordInput}
+              ref={passwordInputRef}
+              style={[
+                styles.input,
+                styles.passwordInput,
+                passwordFocused && styles.inputFocused,
+              ]}
+              placeholder="Enter your password"
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter password"
-              placeholderTextColor={colors.mediumGray}
+              onFocus={() => setPasswordFocused(true)}
+              onBlur={() => setPasswordFocused(false)}
               secureTextEntry={!showPassword}
-              autoCapitalize="none"
+              placeholderTextColor={colors.mediumGray}
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
+              blurOnSubmit={false}
             />
             <TouchableOpacity
               style={styles.eyeIcon}
               onPress={() => setShowPassword(!showPassword)}
-              activeOpacity={0.7}
             >
-              <Icon
-                name={showPassword ? 'visibility' : 'visibility-off'}
-                size={24}
-                color={colors.darkText}
-              />
+              <Text style={styles.eyeIconText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
             </TouchableOpacity>
           </View>
 
-          {error && (
-            <Text style={styles.errorText}>{error}</Text>
-          )}
+          <TouchableOpacity
+            style={styles.forgotPasswordContainer}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotPassword}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+            style={styles.loginButton}
             onPress={handleLogin}
             disabled={isLoading}
           >
             <Text style={styles.loginButtonText}>
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'LOGGING IN...' : 'LOGIN'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.forgotPasswordButton}
-            onPress={handleForgotPassword}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.demoContainer}>
-          <Text style={styles.demoTitle}>Demo Credentials:</Text>
-          <Text style={styles.demoText}>Email: officer@safetnet.com</Text>
-          <Text style={styles.demoText}>Password: securepass456</Text>
-          <Text style={styles.demoText}>Or Badge ID: BADGE001, Password: officer123</Text>
+          <Text style={styles.versionText}>v2.2.0</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -157,110 +294,138 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  scrollContainer: {
+  scrollContent: {
     flexGrow: 1,
-    padding: 20,
-    justifyContent: 'center',
+  },
+  // Header Section (40% of screen)
+  header: {
+    backgroundColor: colors.secondary, // #1E3A8A
+    paddingTop: 80, // Account for status bar
+    paddingBottom: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
   },
   logoContainer: {
+    width: 200,
+    height: 120,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 12,
   },
-  logoText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginBottom: 8,
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
-  subtitleText: {
-    fontSize: 16,
-    color: colors.mediumGray,
+  logoFallback: {
+    fontSize: 80,
+    color: colors.white,
   },
-  formContainer: {
-    marginBottom: 30,
+  appName: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: -0.5,
   },
-  label: {
-    fontSize: 16,
+  subtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: colors.white,
+    opacity: 0.7,
+    marginTop: 4,
+  },
+  // Form Section (60% of screen)
+  form: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    marginTop: -24, // Overlap with header
+    flex: 1,
+  },
+  welcomeText: {
+    fontSize: 24,
     fontWeight: '600',
     color: colors.darkText,
+    letterSpacing: -0.5,
+  },
+  welcomeSubtext: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: colors.lightText,
+    marginTop: 4,
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.lightText,
     marginBottom: 8,
   },
   input: {
+    height: 52,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.borderGray,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 16,
-    backgroundColor: colors.lightGrayBg,
+    borderColor: colors.border, // #E2E8F0
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    fontWeight: '400',
     color: colors.darkText,
-  },
-  passwordInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderGray,
-    borderRadius: 8,
-    backgroundColor: colors.lightGrayBg,
     marginBottom: 16,
+  },
+  inputFocused: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+  },
+  passwordContainer: {
+    position: 'relative',
   },
   passwordInput: {
-    flex: 1,
-    padding: 12,
-    fontSize: 16,
-    color: colors.darkText,
-    paddingRight: 0, // Remove right padding since icon is outside
+    paddingRight: 50,
   },
   eyeIcon: {
-    padding: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 40,
-    minHeight: 40,
+    position: 'absolute',
+    right: 16,
+    top: 14,
+    padding: 4,
+    zIndex: 1,
   },
-  errorText: {
-    color: colors.emergencyRed,
+  eyeIconText: {
+    fontSize: 20,
+    color: colors.mediumGray,
+  },
+  forgotPasswordContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 24,
+  },
+  forgotPassword: {
     fontSize: 14,
-    marginBottom: 16,
-    textAlign: 'center',
+    fontWeight: '400',
+    color: colors.primary,
+    textAlign: 'right',
   },
   loginButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: 16,
+    height: 52,
+    backgroundColor: colors.primary, // #2563EB
+    borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  loginButtonDisabled: {
-    backgroundColor: colors.mediumGray,
+    marginTop: 8,
   },
   loginButtonText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  forgotPasswordButton: {
-    alignItems: 'center',
-  },
-  forgotPasswordText: {
-    color: colors.primary,
     fontSize: 16,
-  },
-  demoContainer: {
-    backgroundColor: colors.lightGrayBg,
-    padding: 16,
-    borderRadius: 8,
-    marginTop: 20,
-  },
-  demoTitle: {
-    fontSize: 14,
     fontWeight: '600',
-    color: colors.darkText,
-    marginBottom: 8,
+    color: colors.white,
+    letterSpacing: 0.5,
   },
-  demoText: {
+  versionText: {
     fontSize: 12,
-    color: colors.mediumGray,
-    marginBottom: 4,
+    fontWeight: '400',
+    color: colors.captionText,
+    textAlign: 'center',
+    position: 'absolute',
+    bottom: 16,
+    alignSelf: 'center',
   },
 });

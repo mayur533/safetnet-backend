@@ -30,19 +30,19 @@ export const API_ENDPOINTS = {
   ACCEPT_ALERT: '/alerts/{id}/accept/',
   CLOSE_ALERT: '/alerts/{id}/close/',
 
-  // ==================== CASES ====================
-  LIST_CASES: '/case/',
-  GET_CASE: '/case/{id}/',
-  CREATE_CASE: '/case/', // POST
-  UPDATE_CASE: '/case/{id}/', // PATCH/PUT
-  UPDATE_CASE_STATUS: '/case/{id}/update_status/', // PATCH
-  ACCEPT_CASE: '/case/{id}/accept/', // POST
-  REJECT_CASE: '/case/{id}/reject/', // POST
-  RESOLVE_CASE: '/case/{id}/resolve/', // POST
+  // // ==================== CASES ====================
+  // LIST_CASES: '/case/',
+  // GET_CASE: '/case/{id}/',
+  // CREATE_CASE: '/case/', // POST
+  // UPDATE_CASE: '/case/{id}/', // PATCH/PUT
+  // UPDATE_CASE_STATUS: '/case/{id}/update_status/', // PATCH
+  // ACCEPT_CASE: '/case/{id}/accept/', // POST
+  // REJECT_CASE: '/case/{id}/reject/', // POST
+  // RESOLVE_CASE: '/case/{id}/resolve/', // POST
 
-  // ==================== INCIDENTS ====================
-  LIST_INCIDENTS: '/incidents/',
-  CREATE_INCIDENT: '/incidents/', // POST
+  // // ==================== INCIDENTS ====================
+  // LIST_INCIDENTS: '/incidents/',
+  // CREATE_INCIDENT: '/incidents/', // POST
 
   // ==================== NOTIFICATIONS ====================
   LIST_NOTIFICATIONS: '/notifications/',

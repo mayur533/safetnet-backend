@@ -1,4 +1,5 @@
 import { LoginResponse } from '../types/user.types';
+import { Alert } from '../types/alert.types';
 
 // Mock officer credentials database
 export const MOCK_OFFICERS = {
@@ -15,6 +16,13 @@ export const MOCK_OFFICERS = {
       user_image: undefined,
       status: 'active' as const,
       badge_number: 'BADGE001',
+      shift_schedule: 'Day Shift',
+      geofence_name: 'Main Building',
+      stats: {
+        total_responses: 47,
+        avg_response_time: 3.2, // in minutes
+        active_hours: 168, // hours this week
+      },
     },
   },
   // Email: officer@safetnet.com
@@ -30,6 +38,13 @@ export const MOCK_OFFICERS = {
       user_image: undefined,
       status: 'active' as const,
       badge_number: 'BADGE002',
+      shift_schedule: 'Night Shift',
+      geofence_name: 'Parking Area',
+      stats: {
+        total_responses: 89,
+        avg_response_time: 2.8, // in minutes
+        active_hours: 192, // hours this week
+      },
     },
   },
 };
@@ -80,3 +95,73 @@ export const mockLogin = async (
     status: officerData.officer.status,
   };
 };
+
+// Mock alert data
+export const MOCK_ALERTS: Alert[] = [
+  {
+    id: 'alert_001',
+    log_id: 'log_001',
+    user_id: 'user_001',
+    user_name: 'Alice Johnson',
+    user_email: 'alice.johnson@email.com',
+    user_phone: '+1234567890',
+    alert_type: 'emergency',
+    original_alert_type: 'emergency',
+    priority: 'high',
+    message: 'Medical emergency - person collapsed in lobby',
+    location: {
+      latitude: 37.7749,
+      longitude: -122.4194,
+      address: '123 Main Street, Downtown',
+    },
+    distance: 0.5,
+    timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
+    status: 'pending',
+    geofence_id: 'GEO001',
+    created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'alert_002',
+    log_id: 'log_002',
+    user_id: 'user_002',
+    user_name: 'Bob Wilson',
+    user_email: 'bob.wilson@email.com',
+    user_phone: '+1234567891',
+    alert_type: 'security',
+    original_alert_type: 'warning',
+    priority: 'medium',
+    message: 'Suspicious person loitering near entrance',
+    location: {
+      latitude: 37.7749,
+      longitude: -122.4194,
+      address: '456 Oak Avenue, Midtown',
+    },
+    distance: 1.2,
+    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 minutes ago
+    status: 'accepted',
+    geofence_id: 'GEO001',
+    created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'alert_003',
+    log_id: 'log_003',
+    user_id: 'user_003',
+    user_name: 'Carol Davis',
+    user_email: 'carol.davis@email.com',
+    user_phone: '+1234567892',
+    alert_type: 'normal',
+    original_alert_type: 'general',
+    priority: 'low',
+    message: 'Maintenance request - elevator out of service',
+    location: {
+      latitude: 37.7749,
+      longitude: -122.4194,
+      address: '789 Pine Street, Uptown',
+    },
+    distance: 2.1,
+    timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1 hour ago
+    status: 'completed',
+    geofence_id: 'GEO001',
+    created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+  },
+];

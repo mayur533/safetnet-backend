@@ -1,24 +1,37 @@
-import moment from 'moment';
-
 /**
  * Format timestamp to relative time (e.g., "2m ago", "1h ago")
  */
 export const formatRelativeTime = (timestamp: string | Date): string => {
-  return moment(timestamp).fromNow();
+  const now = new Date();
+  const time = new Date(timestamp);
+  const diffMs = now.getTime() - time.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 60) {
+    return diffMins <= 1 ? '1m ago' : `${diffMins}m ago`;
+  } else if (diffHours < 24) {
+    return diffHours === 1 ? '1h ago' : `${diffHours}h ago`;
+  } else {
+    return diffDays === 1 ? '1d ago' : `${diffDays}d ago`;
+  }
 };
 
 /**
  * Format timestamp to exact date and time (e.g., "Dec 22, 2025 11:30 AM")
  */
 export const formatExactTime = (timestamp: string | Date): string => {
-  return moment(timestamp).format('MMM DD, YYYY hh:mm A');
+  const date = new Date(timestamp);
+  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 };
 
 /**
  * Format timestamp to exact time only (e.g., "11:30 AM")
  */
 export const formatExactTimeOnly = (timestamp: string | Date): string => {
-  return moment(timestamp).format('hh:mm A');
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 };
 
 /**
@@ -46,72 +59,4 @@ export const calculateDistance = (
 
 const toRad = (degrees: number): number => {
   return degrees * (Math.PI / 180);
-};
-
-/**
- * Format phone number
- */
-export const formatPhoneNumber = (phone: string): string => {
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 10) {
-    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
-  }
-  return phone;
-};
-
-/**
- * Truncate text with ellipsis
- */
-export const truncateText = (text: string, maxLength: number): string => {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + '...';
-};
-
-/**
- * Get alert type color
- */
-export const getAlertTypeColor = (type: string): string => {
-  switch (type) {
-    case 'emergency':
-      return '#DC2626';
-    case 'normal':
-      return '#3B82F6';
-    case 'security':
-      return '#F97316';
-    default:
-      return '#94A3B8';
-  }
-};
-
-/**
- * Check if a point is inside a polygon using ray casting algorithm
- * @param point - The point to check { latitude, longitude }
- * @param polygon - Array of polygon vertices [{ latitude, longitude }, ...]
- * @returns true if point is inside polygon, false otherwise
- */
-export const isPointInPolygon = (
-  point: { latitude: number; longitude: number },
-  polygon: Array<{ latitude: number; longitude: number }>
-): boolean => {
-  if (!polygon || polygon.length < 3) {
-    return false;
-  }
-
-  let inside = false;
-  const { latitude: lat, longitude: lng } = point;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].longitude;
-    const yi = polygon[i].latitude;
-    const xj = polygon[j].longitude;
-    const yj = polygon[j].latitude;
-
-    const intersect =
-      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-    if (intersect) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
 };

@@ -10,11 +10,12 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { updateOfficerProfile } from '../../store/slices/authSlice';
-import { profileService } from '../../api/services';
-import { colors, shadows, spacing, typography } from '../../utils';
+import { profileService } from '../../api/services/profileService';
+import { colors } from '../../utils/colors';
+import { shadows, spacing, typography } from '../../utils';
+import Toast from 'react-native-toast-message';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const UpdateProfileScreen = ({ navigation, route }: any) => {
@@ -22,7 +23,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
   const dispatch = useAppDispatch();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
+  
   // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -38,22 +39,22 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
       try {
         setIsLoading(true);
         const profile: any = await profileService.getProfile(officer.security_id);
-
+        
         // Extract and set form values
         setName(
           profile.officer_name ||
           profile.name ||
-          (profile.first_name && profile.last_name
-            ? `${profile.first_name} ${profile.last_name}`.trim()
+          (profile.first_name && profile.last_name 
+            ? `${profile.first_name} ${profile.last_name}`.trim() 
             : '') ||
           profile.first_name ||
           officer.name ||
           ''
         );
         setEmail(profile.email_id || profile.email || profile.officer_email || officer.email_id || '');
-
-        // Extract phone number from all possible backend fields
-        const phoneNumber =
+        
+        // Extract phone number from all possible backend fields (same as ProfileScreen)
+        const phoneNumber = 
           // Direct profile fields
           profile.mobile ||
           profile.phone ||
@@ -77,7 +78,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           // Fallback to Redux officer data
           officer.mobile ||
           '';
-
+        
         console.log('[UpdateProfileScreen] Phone number extraction:', {
           'profile.mobile': profile.mobile,
           'profile.user.mobile': profile.user && profile.user.mobile,
@@ -85,7 +86,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           'officer.mobile': officer.mobile,
           'extracted_phone': phoneNumber,
         });
-
+        
         setMobile(phoneNumber);
         setBadgeNumber(profile.badge_number || profile.badge_id || officer.badge_number || '');
         setShiftSchedule(profile.shift_schedule || profile.shift || officer.shift_schedule || '');
@@ -107,25 +108,41 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
   const handleSave = async () => {
     if (!(officer && officer.security_id)) {
-      Alert.alert('Error', 'Officer ID not found');
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Officer ID not found',
+      });
       return;
     }
 
     // Basic validation
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Name is required');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Name is required',
+      });
       return;
     }
 
     if (!email.trim()) {
-      Alert.alert('Validation Error', 'Email is required');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Email is required',
+      });
       return;
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Alert.alert('Validation Error', 'Please enter a valid email address');
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter a valid email address',
+      });
       return;
     }
 
@@ -158,7 +175,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
       // Call update API
       const response = await profileService.updateProfile(officer.security_id, updateData);
-
+      
       console.log('[UpdateProfileScreen] Profile update response:', response);
 
       // Update Redux store with the new profile data
@@ -170,9 +187,13 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
         shift_schedule: shiftSchedule.trim() || '',
       }));
 
-      Alert.alert('Success', 'Profile updated successfully');
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Profile updated successfully',
+      });
 
-      // Navigate back after a short delay
+      // Navigate back after a short delay to allow toast to show
       setTimeout(() => {
         navigation.goBack();
       }, 1000);
@@ -182,8 +203,12 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
                           (error.response && error.response.data && error.response.data.error) ||
                           error.message ||
                           'Failed to update profile';
-
-      Alert.alert('Update Failed', errorMessage);
+      
+      Toast.show({
+        type: 'error',
+        text1: 'Update Failed',
+        text2: errorMessage,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -200,11 +225,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -212,7 +237,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
         >
           <Icon name="arrow-back" size={24} color={colors.darkText} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Update Profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.darkText }]}>Update Profile</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -223,11 +248,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
       >
         {/* Name Field */}
         <View style={styles.section}>
-          <Text style={styles.label}>Full Name *</Text>
+          <Text style={[styles.label, { color: colors.darkText }]}>Full Name *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
             placeholder="Enter your full name"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor={colors.inputPlaceholder}
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
@@ -236,11 +261,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Email Field */}
         <View style={styles.section}>
-          <Text style={styles.label}>Email *</Text>
+          <Text style={[styles.label, { color: colors.darkText }]}>Email *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
             placeholder="Enter your email"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor={colors.inputPlaceholder}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -291,15 +316,15 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+          style={[styles.saveButton, { backgroundColor: isSaving ? colors.buttonDisabled : colors.buttonPrimary }, isSaving && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={isSaving}
           activeOpacity={0.8}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={colors.white} />
+            <ActivityIndicator size="small" color={colors.textOnPrimary} />
           ) : (
-            <Text style={styles.saveButtonText}>SAVE CHANGES</Text>
+            <Text style={[styles.saveButtonText, { color: colors.textOnPrimary }]}>SAVE CHANGES</Text>
           )}
         </TouchableOpacity>
 
@@ -420,3 +445,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
+

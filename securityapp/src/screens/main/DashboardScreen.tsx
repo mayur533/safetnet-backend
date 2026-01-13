@@ -1,130 +1,122 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   View,
-  Text,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
+  Text,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { logout } from '../../store/slices/authSlice';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import { AlertCard } from '../../components/alerts/AlertCard';
+import { Alert } from '../../types/alert.types';
+import { MOCK_ALERTS } from '../../utils/mockData';
 import { colors } from '../../utils/colors';
-import { authService } from '../../api/services';
-
+import { typography, spacing } from '../../utils';
 export const DashboardScreen = () => {
-  const navigation = useNavigation<any>();
-  const dispatch = useAppDispatch();
-  const { officer, isAuthenticated } = useAppSelector((state) => state.auth);
+  const navigation = useNavigation();
+  const alerts = MOCK_ALERTS.slice(0, 2); // Show first 2 alerts on dashboard
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await authService.logout(officer?.security_id || '', officer?.security_role || '');
-              dispatch(logout());
-              navigation.replace('Login');
-            } catch (error) {
-              console.error('Logout error:', error);
-              dispatch(logout());
-              navigation.replace('Login');
-            }
-          },
-        },
-      ]
-    );
+  const handleRespond = (alert: Alert) => {
+    // Handle alert response locally
+    console.log('Responding to alert:', alert.id);
   };
 
-  if (!isAuthenticated || !officer) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Not authenticated</Text>
-      </View>
-    );
-  }
+  const handleSettingsPress = () => {
+    navigation.navigate('Settings' as never);
+  };
+
+  // Calculate stats from mock data
+  const stats = {
+    active: MOCK_ALERTS.filter((a) => a.status === 'pending' || a.status === 'accepted').length,
+    pending: MOCK_ALERTS.filter((a) => a.status === 'pending').length,
+    resolved: MOCK_ALERTS.filter((a) => a.status === 'completed').length,
+  };
+
+  // Get 4 most recent alerts
+  const recentAlerts = alerts.slice(0, 2); // Show 2 recent alerts
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.welcomeText}>Welcome,</Text>
-        <Text style={styles.nameText}>{officer.name}</Text>
-        <Text style={styles.roleText}>
-          {officer.security_role} • ID: {officer.security_id}
-        </Text>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={handleSettingsPress}
+          activeOpacity={0.7}
+        >
+          <Icon name="settings" size={24} color={colors.darkText} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Home</Text>
+        <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
-          <Text style={styles.statLabel}>Active Alerts</Text>
+      {/* Stats Section */}
+        <View style={styles.statsSection}>
+          <View style={styles.statsCard}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{stats.active}</Text>
+              <Text style={styles.statLabel}>Active</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, styles.pendingValue]}>{stats.pending}</Text>
+              <Text style={styles.statLabel}>Pending</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, styles.resolvedValue]}>{stats.resolved}</Text>
+              <Text style={styles.statLabel}>Resolved</Text>
+            </View>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
-          <Text style={styles.statLabel}>Total Cases</Text>
+
+        {/* Recent Alerts Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderContainer}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <View style={[styles.iconContainer, styles.alertsIconContainer]}>
+                  <Icon name="notifications" size={24} color={colors.emergencyRed} />
+                </View>
+                <View>
+                  <Text style={styles.sectionTitle}>Recent Alerts</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {recentAlerts.length > 0 ? `${recentAlerts.length} active` : 'No alerts'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.seeAllButton}
+                onPress={() => {
+                  // Navigate to Alerts tab
+                  (navigation as any).navigate('MainTabs', { screen: 'AlertsTab' });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.seeAllText}>See All</Text>
+                <Text style={styles.seeAllArrow}>→</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.cardsContainer}>
+            {recentAlerts.length > 0 ? (
+              recentAlerts.map((alert) => (
+                <AlertCard key={alert.id} alert={alert} onRespond={handleRespond} />
+              ))
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyIcon}>🛡️</Text>
+                <Text style={styles.emptyText}>No recent alerts</Text>
+                <Text style={styles.emptySubtext}>All clear! No new alerts at the moment.</Text>
+              </View>
+            )}
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
-          <Text style={styles.statLabel}>Response Time</Text>
-        </View>
-      </View>
-
-      <View style={styles.menuContainer}>
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Alerts')}
-        >
-          <Text style={styles.menuItemText}>📢 View Alerts</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Profile')}
-        >
-          <Text style={styles.menuItemText}>👤 My Profile</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('GeofenceArea')}
-        >
-          <Text style={styles.menuItemText}>🗺️ Geofence Map</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Broadcast')}
-        >
-          <Text style={styles.menuItemText}>📡 Broadcast Alert</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Text style={styles.menuItemText}>⚙️ Settings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => navigation.navigate('SOS')}
-        >
-          <Text style={styles.menuItemText}>🚨 SOS Emergency</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.logoutContainer}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
     </ScrollView>
   );
 };
@@ -132,93 +124,207 @@ export const DashboardScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.white,
-  },
-  errorText: {
-    fontSize: 18,
-    color: colors.emergencyRed,
+    backgroundColor: colors.lightGrayBg,
   },
   header: {
-    backgroundColor: colors.primary,
-    padding: 20,
-    paddingTop: 40,
-    alignItems: 'center',
-  },
-  welcomeText: {
-    fontSize: 18,
-    color: colors.white,
-    opacity: 0.8,
-  },
-  nameText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginTop: 4,
-  },
-  roleText: {
-    fontSize: 14,
-    color: colors.white,
-    opacity: 0.9,
-    marginTop: 4,
-  },
-  statsContainer: {
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     flexDirection: 'row',
-    padding: 20,
-    justifyContent: 'space-around',
-  },
-  statCard: {
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.lightGrayBg,
-    padding: 16,
-    borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  statNumber: {
-    fontSize: 24,
+  headerTitle: {
+    ...typography.sectionHeader,
+    color: colors.darkText,
+    fontSize: 20,
     fontWeight: 'bold',
+  },
+  settingsButton: {
+    padding: spacing.xs,
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  menuIcon: {
+    fontSize: 24,
+    color: colors.darkText,
+  },
+  title: {
+    ...typography.screenHeader,
+    color: colors.darkText,
+  },
+  bellIcon: {
+    fontSize: 24,
+    color: colors.darkText,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing.lg,
+  },
+  statsSection: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.md,
+  },
+  statsCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800',
     color: colors.primary,
+    letterSpacing: -0.5,
+    marginBottom: spacing.xs,
+  },
+  pendingValue: {
+    color: colors.warningOrange,
+  },
+  resolvedValue: {
+    color: colors.successGreen,
   },
   statLabel: {
-    fontSize: 12,
-    color: colors.mediumGray,
-    marginTop: 4,
-    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.lightText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  menuContainer: {
-    padding: 20,
+  statDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.sm,
   },
-  menuItem: {
-    backgroundColor: colors.lightGrayBg,
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
+  section: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    marginHorizontal: spacing.md,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  menuItemText: {
-    fontSize: 16,
-    color: colors.darkText,
-    fontWeight: '500',
+  sectionHeaderContainer: {
+    backgroundColor: colors.white,
   },
-  logoutContainer: {
-    padding: 20,
-  },
-  logoutButton: {
-    backgroundColor: colors.emergencyRed,
-    padding: 16,
-    borderRadius: 8,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  logoutButtonText: {
-    color: colors.white,
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  alertsIconContainer: {
+    backgroundColor: '#FEE2E2',
+  },
+  sectionIcon: {
+    fontSize: 24,
+  },
+  sectionTitle: {
+    ...typography.sectionHeader,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.darkText,
+    marginBottom: 2,
+  },
+  sectionSubtitle: {
+    ...typography.caption,
+    fontSize: 12,
+    color: colors.lightText,
+    fontWeight: '400',
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 20,
+    backgroundColor: colors.lightGrayBg,
+  },
+  seeAllText: {
+    ...typography.buttonSmall,
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  seeAllArrow: {
     fontSize: 16,
+    color: colors.primary,
     fontWeight: '600',
   },
+  cardsContainer: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  emptyCard: {
+    backgroundColor: colors.lightGrayBg,
+    borderRadius: 12,
+    padding: spacing.xl,
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.sm,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: spacing.md,
+    opacity: 0.5,
+  },
+  emptyText: {
+    ...typography.body,
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.darkText,
+    marginBottom: spacing.xs,
+  },
+  emptySubtext: {
+    ...typography.caption,
+    fontSize: 13,
+    color: colors.lightText,
+    textAlign: 'center',
+  },
 });
+
+// Export with bottom nav wrapper
