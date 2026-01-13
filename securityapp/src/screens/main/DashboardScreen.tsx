@@ -26,16 +26,75 @@ export const DashboardScreen = () => {
     fetchDashboardData();
   }, []);
 
+  // Test network connectivity
+  const testNetworkConnectivity = async () => {
+    try {
+      console.log('Testing network connectivity to Render...');
+      // Try to reach Render's general endpoint (not our API)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      try {
+        await fetch('https://safetnet.onrender.com/', {
+          method: 'HEAD',
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        console.log('Network test successful');
+        return true;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
+      }
+    } catch (networkError) {
+      console.error('Network connectivity test failed:', networkError);
+      return false;
+    }
+  };
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await alertService.getDashboardData();
-      setDashboardData(data);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setError('Failed to load dashboard data');
-      // Fallback to mock data if API fails
+
+      // Fetch alerts data from backend and derive dashboard stats
+      console.log('Fetching alerts data for dashboard...');
+      const alerts = await alertService.getAlerts();
+
+      // alerts is now guaranteed to be an array from alertService
+      console.log('Alerts data received:', alerts.length, 'alerts');
+
+      // Calculate dashboard stats from alerts data
+      const active = alerts.filter(alert => alert.status === 'pending' || alert.status === 'accepted').length;
+      const pending = alerts.filter(alert => alert.status === 'pending').length;
+      const resolved = alerts.filter(alert => alert.status === 'completed').length;
+
+      // Get recent alerts (last 2 alerts, sorted by timestamp)
+      const recentAlerts = alerts
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 2);
+
+      const dashboardData = {
+        stats: {
+          active,
+          pending,
+          resolved,
+          total: active + pending + resolved
+        },
+        recent_alerts: recentAlerts
+      };
+
+      console.log('Dashboard data calculated from alerts:', dashboardData);
+      setDashboardData(dashboardData);
+
+      // Since alertService now handles all errors gracefully,
+      // we should always succeed here. But keep basic error handling just in case.
+    } catch (error: any) {
+      console.error('Unexpected error in dashboard data processing:', error);
+      // This should rarely happen now that alertService handles errors
+      setError('Unexpected error occurred. Please try again.');
+
+      // Fallback to empty data
       setDashboardData({
         stats: { active: 0, pending: 0, resolved: 0, total: 0 },
         recent_alerts: []
@@ -71,6 +130,9 @@ export const DashboardScreen = () => {
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
+        <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7 }]}>
+          Fetching alerts data from SafeTNet backend
+        </Text>
       </View>
     );
   }
@@ -81,13 +143,31 @@ export const DashboardScreen = () => {
       <View style={[styles.container, styles.centered]}>
         <Icon name="error" size={48} color={colors.emergencyRed} />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={fetchDashboardData}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
+        <View style={styles.errorActions}>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={fetchDashboardData}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retryButton, styles.secondaryButton]}
+            onPress={() => {
+              console.log('Opening troubleshooting guide...');
+              console.log('1. Check browser: https://safetnet.onrender.com');
+              console.log('2. Check Render dashboard for service status');
+              console.log('3. Wait 30-60 seconds for backend to wake up');
+              console.log('4. Check device network connection');
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.secondaryButtonText}>Troubleshoot</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.helpText}>
+          If issues persist, check the console logs for detailed error information.
+        </Text>
       </View>
     );
   }
@@ -142,7 +222,7 @@ export const DashboardScreen = () => {
                 <View>
                   <Text style={styles.sectionTitle}>Recent Alerts</Text>
                   <Text style={styles.sectionSubtitle}>
-                    {recentAlerts.length > 0 ? `${recentAlerts.length} active` : 'No alerts'}
+                    {recentAlerts.length > 0 ? `${recentAlerts.length} active` : '0 active'}
                   </Text>
                 </View>
               </View>
@@ -165,11 +245,31 @@ export const DashboardScreen = () => {
                 <AlertCard key={alert.id} alert={alert} onRespond={handleRespond} />
               ))
             ) : (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyIcon}>🛡️</Text>
-                <Text style={styles.emptyText}>No recent alerts</Text>
-                <Text style={styles.emptySubtext}>All clear! No new alerts at the moment.</Text>
-              </View>
+              // Show empty alert card placeholders
+              Array.from({ length: 2 }).map((_, index) => (
+                <View key={`empty-${index}`} style={styles.emptyAlertCard}>
+                  <View style={styles.emptyCardContent}>
+                    <View style={styles.emptyCardLeftAccent} />
+                    <View style={styles.emptyCardBody}>
+                      <View style={styles.emptyBadge} />
+                      <View style={styles.emptyContent}>
+                        <View style={styles.emptyAlertTypeRow}>
+                          <View style={styles.emptyIconPlaceholder} />
+                          <View style={styles.emptyTextPlaceholder} />
+                          <View style={styles.emptyBadgePlaceholder} />
+                        </View>
+                        <View style={styles.emptyTextPlaceholderLarge} />
+                        <View style={styles.emptyTextPlaceholderMedium} />
+                        <View style={styles.emptyTextPlaceholderSmall} />
+                        <View style={styles.emptyTextPlaceholderSmall} />
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.emptyCardActions}>
+                    <View style={styles.emptyButtonPlaceholder} />
+                  </View>
+                </View>
+              ))
             )}
           </View>
         </View>
@@ -404,9 +504,133 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: {
-    ...typography.button,
+    ...typography.buttonSmall,
     color: colors.white,
     fontWeight: '600',
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+  },
+  secondaryButton: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  secondaryButtonText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  helpText: {
+    ...typography.caption,
+    color: colors.mediumText,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    lineHeight: 16,
+  },
+  emptyAlertCard: {
+    backgroundColor: colors.lightGrayBg,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    opacity: 0.6,
+  },
+  emptyCardContent: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  emptyCardLeftAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    backgroundColor: colors.border,
+  },
+  emptyCardBody: {
+    flex: 1,
+    paddingLeft: 4,
+  },
+  emptyBadge: {
+    alignSelf: 'flex-start',
+    height: 20,
+    width: 80,
+    backgroundColor: colors.border,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  emptyContent: {
+    flex: 1,
+  },
+  emptyAlertTypeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  emptyIconPlaceholder: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.border,
+    marginRight: 6,
+  },
+  emptyTextPlaceholder: {
+    flex: 1,
+    height: 12,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+  },
+  emptyBadgePlaceholder: {
+    width: 50,
+    height: 18,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  emptyTextPlaceholderLarge: {
+    height: 16,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+    marginBottom: 4,
+    width: '80%',
+  },
+  emptyTextPlaceholderMedium: {
+    height: 14,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+    marginBottom: 6,
+    width: '60%',
+  },
+  emptyTextPlaceholderSmall: {
+    height: 12,
+    backgroundColor: colors.border,
+    borderRadius: 6,
+    marginBottom: 2,
+    width: '40%',
+  },
+  emptyCardActions: {
+    flexDirection: 'row',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  emptyButtonPlaceholder: {
+    flex: 1,
+    height: 44,
+    backgroundColor: colors.border,
+    borderRadius: 8,
+    marginRight: 12,
   },
 });
 

@@ -55,7 +55,7 @@ export const mockLogin = async (
   password: string
 ): Promise<LoginResponse> => {
   // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await new Promise((resolve) => setTimeout(() => resolve(undefined), 1000));
 
   // Normalize email/badge ID (case insensitive)
   const normalizedKey = email.trim().toUpperCase();

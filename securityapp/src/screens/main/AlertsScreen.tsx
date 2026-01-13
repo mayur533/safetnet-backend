@@ -26,10 +26,33 @@ export const AlertsScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch alerts on component mount
+  // Fetch alerts on component mount with retry logic
   useEffect(() => {
-    fetchAlerts();
+    fetchAlertsWithRetry();
   }, []);
+
+  // Aggressive retry logic to fetch real data
+  const fetchAlertsWithRetry = async (retryCount = 0) => {
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
+
+    try {
+      await fetchAlerts();
+    } catch (error) {
+      if (retryCount < maxRetries) {
+        console.log(`Alerts fetch failed (attempt ${retryCount + 1}/${maxRetries + 1}), retrying in ${retryDelay}ms...`);
+        setTimeout(() => {
+          fetchAlertsWithRetry(retryCount + 1);
+        }, retryDelay);
+      } else {
+        console.log('All retry attempts failed, showing empty state');
+        // No fallback data - show empty alerts list
+        setAlerts([]);
+        setError('Unable to load alerts. Backend connection failed. Alerts list will be empty.');
+        setLoading(false);
+      }
+    }
+  };
 
   const fetchAlerts = async () => {
     try {
@@ -115,6 +138,26 @@ export const AlertsScreen = () => {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.darkText }]}>Loading alerts...</Text>
+        <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7, color: colors.darkText }]}>
+          Connecting to SafeTNet backend
+        </Text>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error && alerts.length === 0) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
+        <Icon name="error" size={48} color={colors.emergencyRed} />
+        <Text style={[styles.errorText, { color: colors.emergencyRed }]}>{error}</Text>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.primary }]}
+          onPress={() => fetchAlertsWithRetry()}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.retryButtonText, { color: colors.white }]}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -192,6 +235,21 @@ const styles = StyleSheet.create({
   loadingText: {
     ...typography.body,
     marginTop: spacing.md,
+  },
+  errorText: {
+    ...typography.body,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  retryButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    ...typography.buttonSmall,
+    fontWeight: '600',
   },
 });
 
