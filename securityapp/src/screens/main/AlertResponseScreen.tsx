@@ -72,15 +72,15 @@ export const AlertResponseScreen = ({ route }: any) => {
 
   const handleAccept = async () => {
     RNAlert.alert(
-      'Accept Alert',
-      'Are you sure you want to accept this alert?',
+      'Respond to Alert',
+      'Are you sure you want to respond to this alert?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Accept',
+          text: 'Respond',
           onPress: () => {
-            RNAlert.alert('Success', 'Alert accepted! You will be contacted shortly.');
-            navigation.goBack();
+            // Navigate to alerts map to show locations
+            (navigation as any).navigate('AlertsMap', { alert });
           }
         }
       ]
@@ -258,7 +258,7 @@ export const AlertResponseScreen = ({ route }: any) => {
               onPress={handleAccept}
             >
               <Icon name="check" size={20} color={colors.white} />
-              <Text style={styles.buttonText}>Accept Alert</Text>
+              <Text style={styles.buttonText}>Respond</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

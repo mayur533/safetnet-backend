@@ -112,7 +112,7 @@ export const MOCK_ALERTS: Alert[] = [
     location: {
       latitude: 37.7749,
       longitude: -122.4194,
-      address: '123 Main Street, Downtown',
+      address: '123 Main Street, Downtown San Francisco',
     },
     distance: 0.5,
     timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
@@ -132,9 +132,9 @@ export const MOCK_ALERTS: Alert[] = [
     priority: 'medium',
     message: 'Suspicious person loitering near entrance',
     location: {
-      latitude: 37.7749,
-      longitude: -122.4194,
-      address: '456 Oak Avenue, Midtown',
+      latitude: 37.7849,
+      longitude: -122.4094,
+      address: '456 Oak Avenue, Mission District',
     },
     distance: 1.2,
     timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 minutes ago
@@ -154,9 +154,9 @@ export const MOCK_ALERTS: Alert[] = [
     priority: 'low',
     message: 'Maintenance request - elevator out of service',
     location: {
-      latitude: 37.7749,
-      longitude: -122.4194,
-      address: '789 Pine Street, Uptown',
+      latitude: 37.7649,
+      longitude: -122.4294,
+      address: '789 Pine Street, Richmond District',
     },
     distance: 2.1,
     timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1 hour ago

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useColors } from '../../utils/colors';
+import { useColors, colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 
 interface TabItem {
@@ -13,11 +13,10 @@ interface TabItem {
 }
 
 const tabs: TabItem[] = [
-  { name: 'DashboardTab', label: 'Dashboard', icon: 'dashboard', activeIcon: 'dashboard' },
-  { name: 'AlertsTab', label: 'Alerts', icon: 'notifications-none', activeIcon: 'notifications' },
-  { name: 'GeofenceTab', label: 'Geofence', icon: 'location-on', activeIcon: 'location-on' },
-  { name: 'ProfileTab', label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
-  { name: 'SettingsTab', label: 'Settings', icon: 'settings', activeIcon: 'settings' },
+  { name: 'Home', label: 'Dashboard', icon: 'dashboard', activeIcon: 'dashboard' },
+  { name: 'Alerts', label: 'Alerts', icon: 'notifications-none', activeIcon: 'notifications' },
+  { name: 'GeofenceArea', label: 'Geofence', icon: 'location-on', activeIcon: 'location-on' },
+  { name: 'Profile', label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
 ];
 
 export const BottomTabNavigator = () => {
@@ -26,19 +25,6 @@ export const BottomTabNavigator = () => {
   const colors = useColors();
 
   const getActiveRouteName = () => {
-    const state = navigation.getState();
-    if (!state || !state.routes) return '';
-
-    const route = state.routes[state.index];
-    if (!route) return '';
-
-    // Check if route has nested state
-    if (route.state) {
-      const nestedState = route.state;
-      if (nestedState.routes && nestedState.index !== undefined && nestedState.routes[nestedState.index]) {
-        return nestedState.routes[nestedState.index].name;
-      }
-    }
     return route.name || '';
   };
 
@@ -46,8 +32,8 @@ export const BottomTabNavigator = () => {
 
   const handleTabPress = (tabName: string) => {
     try {
-      // Navigate to the specific tab
-      (navigation as any).navigate('MainTabs', { screen: tabName });
+      // Navigate to the specific screen
+      (navigation as any).navigate(tabName);
     } catch (error) {
       console.error('Navigation error:', error);
     }

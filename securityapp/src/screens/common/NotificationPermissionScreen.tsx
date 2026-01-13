@@ -48,7 +48,7 @@ export const NotificationPermissionScreen = () => {
         // Android permission request
         // For Android 13+, we'd use PermissionsAndroid
         // For now, we'll assume permission is granted
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate permission request
+        await new Promise(resolve => setTimeout(() => resolve(undefined), 1000)); // Simulate permission request
         dispatch(setNotificationPermissionGranted(true));
         navigation.navigate('Home' as never);
       }

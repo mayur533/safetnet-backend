@@ -1,14 +1,23 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { LeafletMap } from '../components/maps/LeafletMap';
 import { colors } from '../utils/colors';
 import { typography, spacing } from '../utils';
 
+type LeafletMapScreenParams = {
+  latitude?: number;
+  longitude?: number;
+  zoom?: number;
+  markerTitle?: string;
+};
+
+type LeafletMapScreenRouteProp = RouteProp<Record<string, LeafletMapScreenParams>, string>;
+
 const LeafletMapScreen = () => {
   const navigation = useNavigation();
-  const route = useRoute();
+  const route = useRoute<LeafletMapScreenRouteProp>();
 
   // Get coordinates from route params or use defaults
   const latitude = route.params?.latitude || 37.7749; // San Francisco

@@ -194,7 +194,9 @@ export const NotificationSettingsScreen = () => {
             <View style={styles.permissionItem}>
               <View style={styles.permissionInfo}>
                 <Text style={styles.permissionTitle}>Notification Permission</Text>
-                <Text style={styles.permissionStatus}>
+                <Text style={[styles.permissionStatus, {
+                  color: settings.notificationPermissionGranted ? colors.successGreen : colors.emergencyRed
+                }]}>
                   {settings.notificationPermissionGranted ? 'Granted' : 'Not Granted'}
                 </Text>
               </View>
@@ -300,7 +302,6 @@ const styles = StyleSheet.create({
   },
   permissionStatus: {
     ...typography.caption,
-    color: settings?.notificationPermissionGranted ? colors.successGreen : colors.emergencyRed,
     marginTop: 2,
   },
   grantButton: {

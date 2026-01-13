@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   FlatList,
@@ -7,26 +7,53 @@ import {
   Text,
   TouchableOpacity,
   Alert as RNAlert,
+  ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
 import { Alert } from '../../types/alert.types';
-import { MOCK_ALERTS } from '../../utils/mockData';
+import { alertService } from '../../api/services/alertService';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 
 export const AlertsScreen = () => {
+  const navigation = useNavigation();
   const colors = useColors();
-  const [alerts, setAlerts] = useState<Alert[]>(MOCK_ALERTS);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onRefresh = useCallback(() => {
+  // Fetch alerts on component mount
+  useEffect(() => {
+    fetchAlerts();
+  }, []);
+
+  const fetchAlerts = async () => {
+    try {
+      setError(null);
+      const alertsData = await alertService.getAlerts();
+      setAlerts(alertsData);
+    } catch (error) {
+      console.error('Error fetching alerts:', error);
+      setError('Failed to load alerts');
+      // Could show a toast or fallback to mock data here if needed
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Simulate API call delay
-    setTimeout(() => {
+    try {
+      await fetchAlerts();
+    } catch (error) {
+      console.error('Error refreshing alerts:', error);
+    } finally {
       setRefreshing(false);
-    }, 1000);
+    }
   }, []);
 
   const handleRespond = (alert: Alert) => {
@@ -38,13 +65,8 @@ export const AlertsScreen = () => {
         {
           text: 'Accept',
           onPress: () => {
-            // Update alert status to accepted
-            setAlerts(prevAlerts =>
-              prevAlerts.map(a =>
-                a.id === alert.id ? { ...a, status: 'accepted' as const } : a
-              )
-            );
-            RNAlert.alert('Success', 'Alert response accepted!');
+            // Navigate to alerts map to show locations
+            (navigation as any).navigate('AlertsMap', { alert });
           },
         },
       ]
@@ -86,6 +108,16 @@ export const AlertsScreen = () => {
       onSolve={handleSolve}
     />
   );
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.darkText }]}>Loading alerts...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGrayBg }]}>
@@ -152,6 +184,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...typography.body,
+    marginTop: spacing.md,
   },
 });
 

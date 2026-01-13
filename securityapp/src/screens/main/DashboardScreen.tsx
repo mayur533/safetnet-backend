@@ -1,40 +1,96 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  ActivityIndicator,
+  Alert as RNAlert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { Alert } from '../../types/alert.types';
-import { MOCK_ALERTS } from '../../utils/mockData';
+import { alertService, DashboardData } from '../../api/services/alertService';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 export const DashboardScreen = () => {
   const navigation = useNavigation();
-  const alerts = MOCK_ALERTS.slice(0, 2); // Show first 2 alerts on dashboard
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch dashboard data on component mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await alertService.getDashboardData();
+      setDashboardData(data);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError('Failed to load dashboard data');
+      // Fallback to mock data if API fails
+      setDashboardData({
+        stats: { active: 0, pending: 0, resolved: 0, total: 0 },
+        recent_alerts: []
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRespond = (alert: Alert) => {
-    // Handle alert response locally
-    console.log('Responding to alert:', alert.id);
+    // Navigate to alerts map to show locations
+    (navigation as any).navigate('AlertsMap', { alert });
   };
 
   const handleSettingsPress = () => {
-    navigation.navigate('Settings' as never);
+    (navigation as any).navigate('Settings');
   };
 
-  // Calculate stats from mock data
-  const stats = {
-    active: MOCK_ALERTS.filter((a) => a.status === 'pending' || a.status === 'accepted').length,
-    pending: MOCK_ALERTS.filter((a) => a.status === 'pending').length,
-    resolved: MOCK_ALERTS.filter((a) => a.status === 'completed').length,
+  // Calculate stats from real data or fallback
+  const stats = dashboardData?.stats || {
+    active: 0,
+    pending: 0,
+    resolved: 0,
+    total: 0
   };
 
-  // Get 4 most recent alerts
-  const recentAlerts = alerts.slice(0, 2); // Show 2 recent alerts
+  // Get recent alerts from real data or fallback to empty array
+  const recentAlerts = dashboardData?.recent_alerts?.slice(0, 2) || []; // Show 2 recent alerts
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Icon name="error" size={48} color={colors.emergencyRed} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={fetchDashboardData}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -324,6 +380,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.lightText,
     textAlign: 'center',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.darkText,
+    marginTop: spacing.md,
+  },
+  errorText: {
+    ...typography.body,
+    color: colors.emergencyRed,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    ...typography.button,
+    color: colors.white,
+    fontWeight: '600',
   },
 });
 

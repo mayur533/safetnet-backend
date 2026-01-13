@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+// import { WebView } from 'react-native-webview';
 import { colors } from '../../utils/colors';
 
 interface LeafletMapProps {
@@ -108,27 +108,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
   return (
     <View style={[styles.container, { height }]}>
-      <WebView
-        source={{ html: generateMapHTML() }}
-        style={styles.webview}
-        onMessage={handleMessage}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        renderLoading={() => (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        )}
-        onError={(syntheticEvent) => {
-          const { nativeEvent } = syntheticEvent;
-          console.warn('WebView error: ', nativeEvent);
-        }}
-        onHttpError={(syntheticEvent) => {
-          const { nativeEvent } = syntheticEvent;
-          console.warn('WebView HTTP error: ', nativeEvent.statusCode);
-        }}
-      />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.placeholderText}>Map Loading...</Text>
+        <Text style={styles.placeholderSubtext}>
+          Coordinates: {latitude.toFixed(6)}, {longitude.toFixed(6)}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -147,5 +133,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.lightGrayBg,
+  },
+  placeholderText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.darkText,
+  },
+  placeholderSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: colors.mediumText,
+    textAlign: 'center',
+    fontFamily: 'monospace',
   },
 });
