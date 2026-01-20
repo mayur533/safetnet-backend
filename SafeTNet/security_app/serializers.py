@@ -1,3 +1,4 @@
+import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification  # new models for security_app
@@ -302,30 +303,56 @@ class OfficerLoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'})
 
     def validate(self, attrs):
+        import logging
+        logger = logging.getLogger(__name__)
+
         username = attrs.get("username")
         password = attrs.get("password")
 
+        logger.info(f"OfficerLoginSerializer - Received username: '{username}', password provided: {bool(password)}")
+        print(f"🔍 SERIALIZER INPUT: username='{username}', password_provided={bool(password)}")
+
         if not username:
+            logger.warning("OfficerLoginSerializer - Username is required")
+            print("❌ VALIDATION: Username is required")
             raise serializers.ValidationError({"username": "Username is required."})
-        
+
         if not password:
+            logger.warning("OfficerLoginSerializer - Password is required")
+            print("❌ VALIDATION: Password is required")
             raise serializers.ValidationError({"password": "Password is required."})
 
         # Authenticate user
+        logger.info(f"OfficerLoginSerializer - Looking up user: '{username}'")
+        print(f"🔍 USER LOOKUP: Searching for username '{username}'")
         try:
             user = User.objects.get(username=username, is_active=True)
+            logger.info(f"OfficerLoginSerializer - User found: {user.username}, is_active: {user.is_active}")
+            print(f"✅ USER FOUND: {user.username}, active: {user.is_active}, role: {user.role}")
         except User.DoesNotExist:
+            logger.warning(f"OfficerLoginSerializer - User '{username}' not found or not active")
+            print(f"❌ USER LOOKUP FAILED: User '{username}' not found or inactive")
             raise serializers.ValidationError({"non_field_errors": "Invalid credentials."})
 
         # Check password
+        logger.info(f"OfficerLoginSerializer - Checking password for user: {user.username}")
+        print(f"🔍 PASSWORD CHECK: Verifying password for {user.username}")
         if not user.check_password(password):
+            logger.warning(f"OfficerLoginSerializer - Invalid password for user: {user.username}")
+            print(f"❌ PASSWORD CHECK FAILED: Invalid password for {user.username}")
             raise serializers.ValidationError({"non_field_errors": "Invalid credentials."})
 
         # Check role - must be security_officer
+        logger.info(f"OfficerLoginSerializer - Checking role for user: {user.username}, role: {user.role}")
+        print(f"🔍 ROLE CHECK: User {user.username} has role '{user.role}'")
         if user.role != "security_officer":
+            logger.warning(f"OfficerLoginSerializer - Invalid role for user: {user.username}, role: {user.role}")
+            print(f"❌ ROLE CHECK FAILED: User {user.username} has role '{user.role}', need 'security_officer'")
             raise serializers.ValidationError({"non_field_errors": "This account is not a security officer."})
 
         # Return authenticated user
+        logger.info(f"OfficerLoginSerializer - Authentication successful for user: {user.username}")
+        print(f"✅ AUTHENTICATION SUCCESS: User {user.username} validated")
         attrs["user"] = user
         return attrs
 

@@ -42,10 +42,22 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             if serializer.is_valid():
                 user = serializer.validated_data['user']
                 refresh = RefreshToken.for_user(user)
+                # Use simplified user data for login (no geofences to avoid performance issues)
+                user_data = {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': user.role,
+                    'is_active': user.is_active,
+                    'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                }
+
                 return Response({
                     'access': str(refresh.access_token),
                     'refresh': str(refresh),
-                    'user': UserSerializer(user).data
+                    'user': user_data
                 })
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:

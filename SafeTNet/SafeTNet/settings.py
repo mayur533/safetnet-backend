@@ -27,9 +27,8 @@ except ModuleNotFoundError:
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Check DATABASE_URL after load_dotenv() (it might be set in .env file)
-database_url = os.environ.get('DATABASE_URL', '').strip()
-is_render_service = os.environ.get('RENDER') == 'true'  # Render sets this automatically
+# REMOVED: Unused database_url variable
+# Database configuration is handled below using dj_database_url
 
 
 # Quick-start development settings - unsuitable for production
@@ -103,16 +102,8 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'SafeTNet',
-#         'USER': 'postgres',
-#         'PASSWORD': 'Rsl@2015',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
+# REMOVED: Old hardcoded database configuration
+# All database configuration now uses DATABASE_URL environment variable only
 
 
 
@@ -126,6 +117,18 @@ DATABASES = {
         conn_max_age=600
     )
 }
+
+# Print database connection details for debugging (only in production/Render)
+if os.getenv('RENDER'):
+    db_config = DATABASES['default']
+    print("=== DATABASE CONFIGURATION ===")
+    print(f"Database Engine: {db_config.get('ENGINE', 'Unknown')}")
+    print(f"Database Name: {db_config.get('NAME', 'Unknown')}")
+    print(f"Database Host: {db_config.get('HOST', 'Unknown')}")
+    print(f"Database Port: {db_config.get('PORT', 'Unknown')}")
+    print(f"Database User: {db_config.get('USER', 'Unknown')}")
+    print(f"SSL Mode: {db_config.get('OPTIONS', {}).get('sslmode', 'Unknown')}")
+    print("================================")
 
 
 

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, serializers
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -426,27 +426,52 @@ class OfficerLoginView(APIView):
 
     def post(self, request):
         from rest_framework_simplejwt.tokens import RefreshToken
+        import logging
 
-        # Validate input and authenticate using serializer
-        serializer = OfficerLoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        # Get authenticated user from serializer
-        user = serializer.validated_data['user']
-        
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        
-        return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'role': user.role,
+        logger = logging.getLogger(__name__)
+
+        # Log incoming request data (for debugging)
+        logger.info(f"Officer login attempt - Request data: {request.data}")
+        print(f"🔍 LOGIN REQUEST: {request.data}")
+
+        try:
+            # Validate input and authenticate using serializer
+            serializer = OfficerLoginSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            # Get authenticated user from serializer
+            user = serializer.validated_data['user']
+            logger.info(f"Officer login success - User: {user.username}, Role: {user.role}")
+            print(f"✅ LOGIN SUCCESS: User {user.username} authenticated")
+
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+
+            response_data = {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'role': user.role,
+                }
             }
-        }, status=status.HTTP_200_OK)
+
+            print(f"✅ LOGIN RESPONSE: Tokens generated for {user.username}")
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except serializers.ValidationError as e:
+            logger.warning(f"Officer login validation error: {e.detail}")
+            print(f"❌ LOGIN VALIDATION ERROR: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Officer login unexpected error: {str(e)}")
+            print(f"❌ LOGIN UNEXPECTED ERROR: {str(e)}")
+            return Response({
+                'error': 'Login failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):
