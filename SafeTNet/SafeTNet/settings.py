@@ -119,10 +119,14 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Database configuration - Now using environment variable from .env file
 DATABASES = {
     'default': dj_database_url.parse(
-        os.getenv('DATABASE_URL', 'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'),
+        os.getenv(
+            'DATABASE_URL',
+            'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require'
+        ),
         conn_max_age=600
     )
 }
+
 
 
 
