@@ -20,10 +20,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.0
       - key: DATABASE_URL
-        value: postgresql://safetnet_user:DENcxAFMheNUNIIlqQIPUijBc7NvpdZT@dpg-d3jks395pdvs73eh0500-a.oregon-postgres.render.com:5432/safetnet
-        # Using External Database URL with explicit port
-        # If internal URL doesn't work, external URL should resolve properly
-        # Ensure SSL is enabled for external connections (handled in settings.py)
+        value: postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+        # Using Neon PostgreSQL database instead of Render's PostgreSQL
+        # SSL is required and properly configured in settings.py
     autoDeploy: true
     healthCheckPath: /api/auth/test-auth/
 

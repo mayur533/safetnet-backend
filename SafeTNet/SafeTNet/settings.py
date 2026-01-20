@@ -116,20 +116,12 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 
-# Database configuration
+# Database configuration - Now using environment variable from .env file
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'safetnet_63jm'),
-        'USER': os.environ.get('DB_USER', 'safetnet_63jm_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'vz0wo2xtYsRP8pMfymBBuDjId2L6eLHU'),
-        'HOST': os.environ.get('DB_HOST', 'dpg-d51f30umcj7s73c23bf0-a.oregon-postgres.render.com'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-        'CONN_MAX_AGE': 60,  # ⭐ VERY IMPORTANT
-        'OPTIONS': {
-            'sslmode': 'require',
-        },
-    }
+    'default': dj_database_url.parse(
+        os.getenv('DATABASE_URL', 'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'),
+        conn_max_age=600
+    )
 }
 
 

@@ -62,7 +62,7 @@ class UserLoginSerializer(serializers.Serializer):
         elif email:
             # Try email - need to find user by email first
             try:
-                user_obj = User.objects.get(email=email, is_active=True, is_staff=True)
+                user_obj = User.objects.get(email=email, is_active=True)
                 user = authenticate(username=user_obj.username, password=password)
             except User.DoesNotExist:
                 user = None
