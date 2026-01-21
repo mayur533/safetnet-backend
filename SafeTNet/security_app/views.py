@@ -1,3 +1,9 @@
+import logging
+import traceback
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
 from rest_framework import viewsets, status, serializers
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -726,23 +732,38 @@ class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
 class GeofenceCurrentView(OfficerOnlyMixin, APIView):
     """
     Get the current geofence assigned to the logged-in security officer.
+    Returns empty data if no geofence is assigned (200 status, not 404).
     """
     def get(self, request):
-        officer = request.user
-        
-        # Get the first geofence assigned to the officer
-        geofences = officer.geofences.all()
-        
-        if not geofences.exists():
-            return Response(
-                {'error': 'No geofence assigned to this officer'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Return the first geofence (you can modify this logic if officers have multiple geofences)
-        geofence = geofences.first()
-        serializer = GeofenceSerializer(geofence)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            officer = request.user
+            logger.info(f"Geofence request for officer: {officer.username} (ID: {officer.id})")
+
+            # Get the most recently created geofence assigned to the officer
+            geofences = officer.geofences.all()
+            logger.info(f"Found {geofences.count()} geofences for officer {officer.username}")
+
+            if not geofences.exists():
+                logger.info(f"No geofence assigned to officer {officer.username}")
+                return Response({
+                    'data': None,
+                    'message': 'No geofence assigned to this officer'
+                }, status=status.HTTP_200_OK)
+
+            # Return the most recently created geofence (ordered by creation date)
+            geofence = geofences.order_by('-created_at').first()
+            logger.info(f"Returning geofence: {geofence.name} (ID: {geofence.id}) for officer {officer.username}")
+
+            serializer = GeofenceSerializer(geofence)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error in GeofenceCurrentView for user {request.user.username}: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                'error': 'An error occurred',
+                'detail': 'Internal server error while fetching geofence'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class GeofenceDetailView(OfficerOnlyMixin, APIView):

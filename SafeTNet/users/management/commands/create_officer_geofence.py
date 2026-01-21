@@ -15,13 +15,16 @@ class Command(BaseCommand):
 
         # Format as GeoJSON polygon (note: GeoJSON uses [longitude, latitude])
         # Close the polygon by repeating the first point
+        # Reorder the original points to form a square shape
+        # Original points: (18.64739,73.78467), (18.64739,73.78446), (18.64706,73.78468), (18.64705,73.78445)
+        # Reordered for square: top-left, top-right, bottom-right, bottom-left
         coordinates = [
             [
-                [73.78467, 18.64739],  # Point 1: longitude, latitude
-                [73.78446, 18.64739],  # Point 2: longitude, latitude
-                [73.78468, 18.64706],  # Point 3: longitude, latitude
-                [73.78445, 18.64705],  # Point 4: longitude, latitude
-                [73.78467, 18.64739]   # Close polygon with first point
+                [73.78445, 18.64739],  # Top-left: use min lng, max lat (original range)
+                [73.78467, 18.64739],  # Top-right: use max lng, max lat (original range)
+                [73.78468, 18.64705],  # Bottom-right: use max lng, min lat (original range)
+                [73.78446, 18.64705],  # Bottom-left: use min lng, min lat (original range)
+                [73.78445, 18.64739]   # Close polygon with first point
             ]
         ]
 
@@ -49,11 +52,11 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR("Security officer 'officer001' not found"))
                 return
 
-            # Create the geofence
-            geofence_name = f"Geofence for {officer.username}"
+            # Create the geofence with the correct name
+            geofence_name = f"Jay Ganesh Vision"
             geofence = Geofence.objects.create(
                 name=geofence_name,
-                description=f"Assigned geofence area for security officer {officer.username}",
+                description=f"Assigned security patrol area for officer {officer.username}",
                 polygon_json=geojson_polygon,
                 organization=org,
                 active=True,

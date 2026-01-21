@@ -119,10 +119,14 @@ export const LoginScreen = () => {
       setIsLoading(false); // Clear loading state immediately
     } catch (err: any) {
       setIsLoading(false); // Clear loading state on error
-      console.error("Login error:", err);
-      console.error("Error response:", err.response && err.response.data ? err.response.data : 'unknown');
-      console.error("Error status:", err.response && err.response.status ? err.response.status : 'unknown');
-      
+
+      // Improved error logging as requested
+      console.error("Login error:", err.message);
+      console.error("Error code:", err.code);
+      console.error("Error config URL:", err.config?.url);
+      console.error("Error response status:", err.response?.status);
+      console.error("Error response data:", err.response?.data);
+
       const status = err.response && err.response.status ? err.response.status : undefined;
       const isNetworkError = err.code === 'ERR_NETWORK' || err.message === 'Network Error' || !err.response;
       let errorMessage = 'Invalid Credentials';

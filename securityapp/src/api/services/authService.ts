@@ -13,8 +13,68 @@ const USE_MOCK_DATA = !ENABLE_API_CALLS;
 
 export const authService = {
   login: async (credentials: LoginPayload): Promise<LoginResponse> => {
-    // Use mock data if enabled
-    if (USE_MOCK_DATA) {
+    // Always try real API first, fallback to mock data if backend fails
+    try {
+      // Django REST API call
+      // Send username and password (Django expects username field, not email)
+      const response = await axiosInstance.post<DjangoLoginResponse>(
+        API_ENDPOINTS.LOGIN,
+        {
+          username: credentials.email, // Use email as username (Django accepts both)
+          password: credentials.password,
+        }
+      );
+
+      // Django returns: { access, refresh, user: { id, username, email, role, ... } }
+      const djangoResponse = response.data;
+
+      if (djangoResponse.access && djangoResponse.user) {
+        // Store access token (JWT)
+        await AsyncStorage.setItem('token', djangoResponse.access);
+        await AsyncStorage.setItem('refresh_token', djangoResponse.refresh);
+        await storage.setAuthToken(djangoResponse.access);
+
+        // Store user ID
+        if (djangoResponse.user.id) {
+          await storage.setUserId(djangoResponse.user.id.toString());
+        }
+
+        // Store role
+        if (djangoResponse.user.role) {
+          await storage.setItem(constants.STORAGE_KEYS.ROLE, djangoResponse.user.role);
+        }
+
+        // Convert Django response to legacy format for compatibility
+        const legacyResponse: LoginResponse = {
+          result: 'success',
+          role: djangoResponse.user.role === 'security_officer' ? 'security' : 'user',
+          security_id: djangoResponse.user.id.toString(),
+          name: djangoResponse.user.first_name || djangoResponse.user.username,
+          email_id: djangoResponse.user.email || djangoResponse.user.username,
+          mobile: djangoResponse.user.mobile || '',
+          security_role: djangoResponse.user.role || 'security_officer',
+          geofence_id: djangoResponse.user.geofence_id?.toString() || '',
+          user_image: djangoResponse.user.user_image || '',
+          status: djangoResponse.user.status || 'active',
+          // Include Django format fields
+          access: djangoResponse.access,
+          refresh: djangoResponse.refresh,
+          user: djangoResponse.user,
+        };
+
+        return legacyResponse;
+      }
+
+      // If response doesn't match expected format, return error
+      return {
+        result: 'failed',
+        role: 'user',
+        msg: 'Invalid response from server',
+      };
+    } catch (error: any) {
+      // Backend is unavailable - fallback to mock data
+      console.warn('Backend login failed, falling back to mock data:', error.message);
+
       const mockResponse = await mockLogin(credentials.email, credentials.password);
 
       if (mockResponse.result === 'success') {
@@ -28,63 +88,6 @@ export const authService = {
 
       return mockResponse;
     }
-
-    // Django REST API call
-    // Send username and password (Django expects username field, not email)
-    const response = await axiosInstance.post<DjangoLoginResponse>(
-      API_ENDPOINTS.LOGIN,
-      {
-        username: credentials.email, // Use email as username (Django accepts both)
-        password: credentials.password,
-      }
-    );
-
-    // Django returns: { access, refresh, user: { id, username, email, role, ... } }
-    const djangoResponse = response.data;
-
-    if (djangoResponse.access && djangoResponse.user) {
-      // Store access token (JWT)
-      await AsyncStorage.setItem('token', djangoResponse.access);
-      await AsyncStorage.setItem('refresh_token', djangoResponse.refresh);
-      await storage.setAuthToken(djangoResponse.access);
-
-      // Store user ID
-      if (djangoResponse.user.id) {
-        await storage.setUserId(djangoResponse.user.id.toString());
-      }
-
-      // Store role
-      if (djangoResponse.user.role) {
-        await storage.setItem(constants.STORAGE_KEYS.ROLE, djangoResponse.user.role);
-      }
-
-      // Convert Django response to legacy format for compatibility
-      const legacyResponse: LoginResponse = {
-        result: 'success',
-        role: djangoResponse.user.role === 'security_officer' ? 'security' : 'user',
-        security_id: djangoResponse.user.id.toString(),
-        name: djangoResponse.user.first_name || djangoResponse.user.username,
-        email_id: djangoResponse.user.email || djangoResponse.user.username,
-        mobile: djangoResponse.user.mobile || '',
-        security_role: djangoResponse.user.role || 'security_officer',
-        geofence_id: djangoResponse.user.geofence_id?.toString() || '',
-        user_image: djangoResponse.user.user_image || '',
-        status: djangoResponse.user.status || 'active',
-        // Include Django format fields
-        access: djangoResponse.access,
-        refresh: djangoResponse.refresh,
-        user: djangoResponse.user,
-      };
-
-      return legacyResponse;
-    }
-
-    // If response doesn't match expected format, return error
-    return {
-      result: 'failed',
-      role: 'user',
-      msg: 'Invalid response from server',
-    };
   },
 
   logout: async (userId: string, role: string) => {

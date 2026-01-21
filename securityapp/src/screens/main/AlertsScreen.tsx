@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   FlatList,
@@ -8,6 +9,7 @@ import {
   TouchableOpacity,
   Alert as RNAlert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -25,11 +27,19 @@ export const AlertsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'emergency' | 'pending' | 'accepted' | 'completed'>('all');
 
   // Fetch alerts on component mount with retry logic
   useEffect(() => {
     fetchAlertsWithRetry();
   }, []);
+
+  // Reset filter to 'all' when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      setSelectedFilter('all');
+    }, [])
+  );
 
   // Aggressive retry logic to fetch real data
   const fetchAlertsWithRetry = async (retryCount = 0) => {
@@ -123,6 +133,16 @@ export const AlertsScreen = () => {
     RNAlert.alert('Success', 'Alert marked as solved!');
   };
 
+  // Filter alerts based on selected section
+  const getFilteredAlerts = () => {
+    if (selectedFilter === 'all') return alerts;
+    if (selectedFilter === 'emergency') return alerts.filter(alert => alert.alert_type === 'emergency' || alert.priority === 'high');
+    if (selectedFilter === 'pending') return alerts.filter(alert => alert.status === 'pending' || !alert.status);
+    if (selectedFilter === 'accepted') return alerts.filter(alert => alert.status === 'accepted');
+    if (selectedFilter === 'completed') return alerts.filter(alert => alert.status === 'completed');
+    return alerts;
+  };
+
   const renderAlertItem = ({ item }: { item: Alert }) => (
     <AlertCard
       alert={item}
@@ -166,17 +186,105 @@ export const AlertsScreen = () => {
     <View style={[styles.container, { backgroundColor: colors.lightGrayBg }]}>
       <View style={[styles.header, {
         backgroundColor: colors.white,
-        borderBottomColor: colors.borderGray
+        shadowColor: colors.darkText,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
       }]}>
-        <Text style={[styles.headerTitle, { color: colors.darkText }]}>Alerts</Text>
-        <TouchableOpacity style={styles.filterButton} onPress={() => {}}>
-          <Icon name="filter-list" size={24} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <View style={styles.headerLeft}>
+            <View style={[styles.headerIcon, { backgroundColor: colors.primary }]}>
+              <Icon name="notifications" size={20} color={colors.white} />
+            </View>
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.darkText }]}>Security Alerts</Text>
+              <Text style={[styles.headerSubtitle, { color: colors.mediumText }]}>Monitor and respond</Text>
+            </View>
+          </View>
+          <View style={styles.headerStats}>
+            <View style={[styles.statBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.statText, { color: colors.white }]}>{alerts.length}</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
-      {alerts.length > 0 ? (
+      {/* Filter Sections - Horizontal Scrollable */}
+      <View style={[styles.filterSection, {
+        backgroundColor: colors.white,
+        shadowColor: colors.darkText
+      }]}>
+        <View style={styles.filterHeader}>
+          <Icon name="filter-list" size={16} color={colors.mediumText} />
+          <Text style={[styles.filterTitle, { color: colors.mediumText }]}>Filter by Status</Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          contentContainerStyle={styles.filterContainer}
+        >
+        <TouchableOpacity
+          style={[styles.filterButton, selectedFilter === 'all' && styles.filterButtonActive, {
+            backgroundColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
+            borderColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+          }]}
+          onPress={() => setSelectedFilter('all')}
+        >
+          <Icon name="list" size={16} color={selectedFilter === 'all' ? colors.white : colors.primary} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'all' ? colors.white : colors.primary }]}>All</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterButton, selectedFilter === 'emergency' && styles.filterButtonActive, {
+            backgroundColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.1)',
+            borderColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.2)'
+          }]}
+          onPress={() => setSelectedFilter('emergency')}
+        >
+          <Icon name="warning" size={16} color={selectedFilter === 'emergency' ? colors.white : colors.emergencyRed} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'emergency' ? colors.white : colors.emergencyRed }]}>Emergency</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterButton, selectedFilter === 'pending' && styles.filterButtonActive, {
+            backgroundColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.1)',
+            borderColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.2)'
+          }]}
+          onPress={() => setSelectedFilter('pending')}
+        >
+          <Icon name="schedule" size={16} color={selectedFilter === 'pending' ? colors.white : colors.warningOrange} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'pending' ? colors.white : colors.warningOrange }]}>Pending</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterButton, selectedFilter === 'accepted' && styles.filterButtonActive, {
+            backgroundColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.1)',
+            borderColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.2)'
+          }]}
+          onPress={() => setSelectedFilter('accepted')}
+        >
+          <Icon name="check-circle" size={16} color={selectedFilter === 'accepted' ? colors.white : colors.successGreen} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'accepted' ? colors.white : colors.successGreen }]}>Accepted</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.filterButton, selectedFilter === 'completed' && styles.filterButtonActive, {
+            backgroundColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
+            borderColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+          }]}
+          onPress={() => setSelectedFilter('completed')}
+        >
+          <Icon name="done-all" size={16} color={selectedFilter === 'completed' ? colors.white : colors.primary} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'completed' ? colors.white : colors.primary }]}>Completed</Text>
+        </TouchableOpacity>
+        </ScrollView>
+      </View>
+
+      {getFilteredAlerts().length > 0 ? (
         <FlatList
-          data={alerts}
+          data={getFilteredAlerts()}
           keyExtractor={(item) => item.id}
           renderItem={renderAlertItem}
           refreshControl={
@@ -193,8 +301,12 @@ export const AlertsScreen = () => {
         <View style={styles.emptyContainer}>
           <EmptyState
             icon="notifications-off"
-            title="No Alerts"
-            description="All quiet on the security front!"
+            title={alerts.length === 0 ? "No Alerts" : `No ${selectedFilter === 'all' ? 'Alerts' : selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)} Alerts`}
+            description={
+              alerts.length === 0
+                ? "All quiet on the security front!"
+                : `No alerts match the "${selectedFilter === 'all' ? 'All Alerts' : selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)}" filter.`
+            }
           />
         </View>
       )}
@@ -207,18 +319,54 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.lg,
+    paddingTop: spacing.xl,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
   },
   headerTitle: {
     ...typography.screenHeader,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 2,
   },
-  filterButton: {
-    padding: spacing.sm,
+  headerSubtitle: {
+    ...typography.caption,
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  headerStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statText: {
+    ...typography.caption,
+    fontSize: 12,
+    fontWeight: '600',
   },
   listContainer: {
     padding: spacing.base,
@@ -250,6 +398,60 @@ const styles = StyleSheet.create({
   retryButtonText: {
     ...typography.buttonSmall,
     fontWeight: '600',
+  },
+  filterSection: {
+    marginTop: spacing.sm,
+    marginHorizontal: spacing.base,
+    borderRadius: 12,
+    padding: spacing.md,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  filterTitle: {
+    ...typography.caption,
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: spacing.xs,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 4,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterButtonActive: {
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+    transform: [{ scale: 1.05 }],
+  },
+  filterText: {
+    ...typography.caption,
+    fontWeight: '500',
+    fontSize: 10,
+    textAlign: 'center',
+    lineHeight: 12,
+  },
+  filterIcon: {
+    marginRight: 6,
   },
 });
 

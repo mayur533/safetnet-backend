@@ -1,7 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import apiConfig from './config';
+
+// Note: Using centralized apiClient.ts instead of this file
+// This file is kept for backward compatibility
 
 // Hardened Axios config for mobile + Render + TLS handshake
 const axiosInstance = axios.create({
@@ -75,9 +77,20 @@ axiosInstance.interceptors.response.use(
       const method = (error.config && error.config.method) ? error.config.method.toUpperCase() : 'UNKNOWN';
       const url = (error.config && error.config.url) ? error.config.url : 'unknown';
       console.error(`[API Error] ${error.response.status} ${method} ${url}`);
-      // Only log response data if it's not HTML (HTML 404 pages are not useful)
+
+      // Handle 500 server errors with user alert
+      if (error.response.status === 500) {
+        // Show alert for server errors
+        if (typeof global !== 'undefined' && global.alert) {
+          global.alert('Server Error', 'Server error occurred. Please try again after some time.');
+        }
+        console.error('[API Error] Server error (500) - Check backend logs');
+      }
+
+      // Only log response data if it's not HTML (HTML error pages are not useful)
       if (typeof error.response.data === 'string' && error.response.data.includes('<!doctype html>')) {
-        // Skip logging HTML error pages
+        console.error('[API Error] Server returned HTML error page instead of JSON');
+        // Don't log the full HTML content
       } else {
         console.error(`[API Error] Response:`, error.response.data);
       }

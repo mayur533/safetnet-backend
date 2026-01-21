@@ -229,8 +229,8 @@ export const DashboardScreen = () => {
               <TouchableOpacity
                 style={styles.seeAllButton}
                 onPress={() => {
-                  // Navigate to Alerts tab
-                  (navigation as any).navigate('MainTabs', { screen: 'AlertsTab' });
+                  // Navigate to Alerts screen
+                  (navigation as any).navigate('Alerts');
                 }}
                 activeOpacity={0.7}
               >
