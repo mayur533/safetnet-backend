@@ -445,14 +445,6 @@ export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
           </Text>
         </View>
       )}
-      {hasError && (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.placeholderText}>Map Failed to Load</Text>
-          <Text style={styles.placeholderSubtext}>
-            Check internet connection and try again
-          </Text>
-        </View>
-      )}
       {!hasError && (
         <WebView
           ref={webViewRef}
