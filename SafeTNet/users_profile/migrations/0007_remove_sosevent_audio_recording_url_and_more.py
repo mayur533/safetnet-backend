@@ -14,21 +14,40 @@ def remove_fields_if_exist(apps, schema_editor):
         'is_premium_event',
         'video_recording_url'
     ]
-    
+
     with connection.cursor() as cursor:
-        # Get existing columns
-        cursor.execute("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = %s
-        """, [db_table])
-        existing_columns = {row[0] for row in cursor.fetchall()}
-        
+        # Get existing columns - different SQL for different databases
+        db_backend = connection.vendor
+
+        if db_backend == 'postgresql':
+            # PostgreSQL: use information_schema
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = %s
+            """, [db_table])
+        elif db_backend == 'sqlite':
+            # SQLite: use PRAGMA table_info
+            cursor.execute(f"PRAGMA table_info({db_table})")
+            # For SQLite, column name is in index 1 (name column)
+            rows = cursor.fetchall()
+            existing_columns = {row[1] for row in rows}  # column name is at index 1
+        else:
+            # For other databases, skip the operation
+            print(f"Warning: Unsupported database backend {db_backend}, skipping column removal")
+            return
+
+        if db_backend == 'postgresql':
+            existing_columns = {row[0] for row in cursor.fetchall()}
+
         # Remove only columns that exist
         for field_name in fields_to_remove:
             if field_name in existing_columns:
                 try:
-                    cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN IF EXISTS {field_name}')
+                    if db_backend == 'postgresql':
+                        cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN IF EXISTS {field_name}')
+                    elif db_backend == 'sqlite':
+                        cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN {field_name}')
                 except Exception as e:
                     # If column doesn't exist or can't be dropped, continue
                     print(f"Warning: Could not remove column {field_name}: {e}")

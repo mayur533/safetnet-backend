@@ -108,29 +108,40 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 # Database configuration - Optimized for Neon PostgreSQL with SSL
-DATABASES = {
-    'default': dj_database_url.parse(
-        os.getenv(
-            'DATABASE_URL',
-            'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
-        ),
-        conn_max_age=600,
-        ssl_require=True
-    )
-}
+# Use SQLite for local development, PostgreSQL for production
+if DEBUG:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+else:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            os.getenv(
+                'DATABASE_URL',
+                'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+            ),
+            conn_max_age=600,
+            ssl_require=True
+        )
+    }
 
 # Additional database options for Neon stability
-DATABASES['default']['OPTIONS'] = {
-    'sslmode': 'require',
-    'sslcert': None,
-    'sslkey': None,
-    'sslrootcert': None,
-    'connect_timeout': 30,
-    'keepalives': 1,
-    'keepalives_idle': 30,
-    'keepalives_interval': 10,
-    'keepalives_count': 5,
-}
+# PostgreSQL SSL options only apply in production
+if not DEBUG:
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+        'sslcert': None,
+        'sslkey': None,
+        'sslrootcert': None,
+        'connect_timeout': 30,
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
+    }
 
 # Print database connection details for debugging (only in production/Render)
 if os.getenv('RENDER'):
