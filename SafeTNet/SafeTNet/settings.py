@@ -124,18 +124,21 @@ def get_database_config():
     - Render/Production: PostgreSQL via DATABASE_URL
     """
     # Check if we're on Render (has RENDER environment variable)
-    is_render = os.getenv('RENDER') is not None
+    is_render = os.getenv('RENDER') is not None or os.getenv('RENDER_SERVICE_ID') is not None
     database_url = os.getenv('DATABASE_URL')
 
-    print(f"Environment check:")
-    print(f"   DEBUG: {DEBUG}")
-    print(f"   RENDER: {is_render}")
-    print(f"   DATABASE_URL present: {bool(database_url)}")
+    # Debug environment info (only in DEBUG mode to avoid log spam in production)
+    if DEBUG:
+        print(f"Environment check:")
+        print(f"   DEBUG: {DEBUG}")
+        print(f"   RENDER: {is_render}")
+        print(f"   RENDER_SERVICE_ID: {os.getenv('RENDER_SERVICE_ID')}")
+        print(f"   DATABASE_URL present: {bool(database_url)}")
 
-    if database_url:
-        print(f"Using DATABASE_URL: {database_url[:50]}...")
-    else:
-        print("No DATABASE_URL found")
+        if database_url:
+            print(f"Using DATABASE_URL: {database_url[:50]}...")
+        else:
+            print("No DATABASE_URL found")
 
     if DEBUG and not is_render:
         # Local development - use SQLite
@@ -145,7 +148,8 @@ def get_database_config():
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     else:
-        # Production/Render - use PostgreSQL
+        # Production/Render - always use PostgreSQL
+        print("Using PostgreSQL for production/Render")
         if database_url:
             print(f"Configuring PostgreSQL from DATABASE_URL")
             try:
@@ -194,17 +198,17 @@ if not DEBUG:
         'keepalives_count': 5,
     }
 
-# Print database connection details for debugging (only in production/Render)
-if os.getenv('RENDER'):
+# Print database connection details for debugging (only once and only in DEBUG mode)
+if DEBUG and os.getenv('RENDER'):
     db_config = DATABASES['default']
-    print("=== DATABASE CONFIGURATION ===")
+    print("=== DATABASE CONFIGURATION (DEBUG MODE) ===")
     print(f"Database Engine: {db_config.get('ENGINE', 'Unknown')}")
     print(f"Database Name: {db_config.get('NAME', 'Unknown')}")
     print(f"Database Host: {db_config.get('HOST', 'Unknown')}")
     print(f"Database Port: {db_config.get('PORT', 'Unknown')}")
     print(f"Database User: {db_config.get('USER', 'Unknown')}")
     print(f"SSL Mode: {db_config.get('OPTIONS', {}).get('sslmode', 'Unknown')}")
-    print("================================")
+    print("===========================================")
 
 
 
