@@ -40,10 +40,18 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
     setCreatingAlert(true);
     try {
       console.log('📡 Calling store.createAlert() - this will attempt API call with optimistic updates');
-      await storeCreateAlert({
+      const createdAlert = await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+      });
+
+      console.log('✅ Alert created successfully!');
+      console.log('📊 Created alert details:', {
+        id: createdAlert.id,
+        message: createdAlert.message,
+        status: createdAlert.status,
+        alert_type: createdAlert.alert_type
       });
 
       // Reset form and close modal
@@ -54,10 +62,10 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
       RNAlert.alert('Success', 'Alert created successfully!');
 
-      console.log('🎯 Alert added instantly to store and will appear in:');
-      console.log('   📱 Alerts page (full list - instant update)');
-      console.log('   📊 Dashboard Recent Alerts (instant update)');
-      console.log('   💾 Local storage (persists across app restarts)');
+      console.log('🎯 Alert verified and will appear in:');
+      console.log('   📱 Alerts page (full list - synced with backend)');
+      console.log('   📊 Dashboard Recent Alerts (synced with backend)');
+      console.log('   💾 Backend database (persists across app restarts)');
     } catch (error) {
       console.error('Error creating alert:', error);
       RNAlert.alert('Error', 'Failed to create alert. Please try again.');

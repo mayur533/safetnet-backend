@@ -1,5 +1,5 @@
 export interface Alert {
-  id: string;
+  id: number; // Backend returns integer IDs
   log_id: string;
   user_id: string;
   user_name: string;

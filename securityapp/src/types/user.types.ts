@@ -1,6 +1,6 @@
 export interface SecurityOfficer {
   security_id: string;
-  name: string;
+  name: string | undefined;
   email_id: string;
   mobile: string;
   security_role: 'guard' | 'supervisor' | 'admin';

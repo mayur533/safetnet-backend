@@ -130,11 +130,11 @@ export const ProfileScreen = () => {
         <View style={styles.profilePictureContainer}>
           <View style={styles.profilePicture}>
             <Text style={styles.profilePictureText}>
-              {officer.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+              {officer.name ? officer.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
             </Text>
           </View>
         </View>
-        <Text style={styles.profileName}>{officer.name}</Text>
+        <Text style={styles.profileName}>{officer.name || 'Unknown Officer'}</Text>
         <Text style={styles.profileId}>ID: {officer.security_id}</Text>
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>{officer.security_role}</Text>

@@ -30,14 +30,13 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
     isLoading,
     error,
     fetchAlerts,
-    fetchResolvedAlerts,
     createAlert: storeCreateAlert,
     updateAlert: storeUpdateAlert,
     deleteAlert: storeDeleteAlert
     // resolveAlert: storeResolveAlert // TODO: Enable once TypeScript issue resolved
   } = useAlertsStore();
 
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'emergency' | 'pending' | 'accepted' | 'completed' | 'resolved'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'emergency' | 'pending' | 'accepted' | 'completed'>('all');
 
   // Create alert modal state (local to this screen)
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -55,16 +54,13 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
     }, [fetchAlerts])
   );
 
-  // Handle filter changes - fetch resolved alerts when resolved filter is selected
+  // Handle filter changes - only refetch for 'all' filter to ensure fresh data
   useEffect(() => {
-    if (selectedFilter === 'resolved') {
-      console.log('🔄 Fetching resolved alerts for filter...');
-      fetchResolvedAlerts();
-    } else if (selectedFilter === 'all') {
+    if (selectedFilter === 'all') {
       console.log('🔄 Fetching all alerts for filter...');
       fetchAlerts();
     }
-  }, [selectedFilter, fetchResolvedAlerts, fetchAlerts]);
+  }, [selectedFilter, fetchAlerts]);
 
   // Expose refresh function to parent component
   useImperativeHandle(ref, () => ({
@@ -149,7 +145,6 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
     if (selectedFilter === 'pending') return alerts.filter(alert => alert.status === 'pending' || !alert.status);
     if (selectedFilter === 'accepted') return alerts.filter(alert => alert.status === 'accepted');
     if (selectedFilter === 'completed') return alerts.filter(alert => alert.status === 'completed');
-    if (selectedFilter === 'resolved') return alerts.filter(alert => alert.status === 'completed');
     return alerts;
   };
 
@@ -297,16 +292,6 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
           <Text style={[styles.filterText, { color: selectedFilter === 'completed' ? colors.white : colors.primary }]}>Completed</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.filterButton, selectedFilter === 'resolved' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'resolved' ? colors.successGreen : 'rgba(16, 185, 129, 0.1)',
-            borderColor: selectedFilter === 'resolved' ? colors.successGreen : 'rgba(16, 185, 129, 0.2)'
-          }]}
-          onPress={() => setSelectedFilter('resolved')}
-        >
-          <Icon name="verified" size={16} color={selectedFilter === 'resolved' ? colors.white : colors.successGreen} style={styles.filterIcon} />
-          <Text style={[styles.filterText, { color: selectedFilter === 'resolved' ? colors.white : colors.successGreen }]}>Resolved</Text>
-        </TouchableOpacity>
         </ScrollView>
       </View>
 

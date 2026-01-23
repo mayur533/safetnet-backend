@@ -33,6 +33,9 @@ class SOSAlert(models.Model):
         blank=True,
         related_name='sos_alerts'
     )
+    alert_type = models.CharField(max_length=20, default='security')  # emergency, security, general
+    message = models.TextField(blank=True, default='')
+    description = models.TextField(blank=True, default='')
     location_lat = models.FloatField()
     location_long = models.FloatField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')

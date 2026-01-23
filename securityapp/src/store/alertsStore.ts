@@ -10,7 +10,6 @@ interface AlertsState {
 
   // Actions
   fetchAlerts: () => Promise<void>;
-  fetchResolvedAlerts: () => Promise<void>;
   createAlert: (alertData: {
     alert_type: 'emergency' | 'security' | 'general';
     message: string;
@@ -57,6 +56,12 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       });
 
       console.log(`✅ Fetched ${alerts.length} alerts from API`);
+      if (alerts.length > 0) {
+        console.log('📋 Sample alerts from API:');
+        alerts.slice(0, 3).forEach((alert, index) => {
+          console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status})`);
+        });
+      }
     } catch (error: any) {
       console.error('❌ Failed to fetch alerts:', error);
       // IMPORTANT: Do NOT clear existing alerts on fetch error
@@ -68,103 +73,36 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
     }
   },
 
-  // Fetch resolved alerts from API
-  fetchResolvedAlerts: async () => {
-    set({ isLoading: true, error: null });
-
-    try {
-      console.log('🔄 Fetching resolved alerts from API...');
-      const { alertService } = await import('../api/services/alertService');
-      const resolvedAlerts = await alertService.getResolvedAlerts();
-
-      set({
-        alerts: resolvedAlerts,
-        isLoading: false,
-        error: null,
-        lastUpdated: new Date().toISOString()
-      });
-
-      console.log(`✅ Fetched ${resolvedAlerts.length} resolved alerts from API`);
-    } catch (error: any) {
-      console.error('❌ Failed to fetch resolved alerts:', error);
-      set({
-        isLoading: false,
-        error: error.message || 'Failed to fetch resolved alerts'
-      });
-    }
-  },
 
   // Create alert with optimistic update
   createAlert: async (alertData) => {
-    console.log('🚀 Creating alert with optimistic update:', alertData);
-
-    // Create optimistic alert with a stable temporary ID
-    const tempId = `optimistic_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const optimisticAlert: Alert = {
-      id: tempId, // Stable temporary ID for React keys
-      user_name: 'Security Officer', // Will be set by backend
-      user_mobile: '+1234567890', // Will be set by backend
-      alert_type: alertData.alert_type,
-      original_alert_type: alertData.alert_type,
-      message: alertData.message,
-      description: alertData.description || alertData.message,
-      latitude: alertData.latitude || 18.6472,
-      longitude: alertData.longitude || 73.7845,
-      location: alertData.location || 'Current Location',
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      priority: alertData.alert_type === 'emergency' ? 'high' :
-               alertData.alert_type === 'security' ? 'medium' : 'low',
-      // Backend fields (will be populated by API)
-      log_id: '',
-      user_id: '',
-      user_email: '',
-      user_phone: '',
-    };
-
-    // Optimistically add to store immediately
-    set((state) => ({
-      alerts: [optimisticAlert, ...state.alerts],
-      error: null
-    }));
-
-    console.log('⚡ Alert added optimistically to UI');
+    console.log('🚀 Creating alert via API:', alertData);
 
     try {
-      // Make API call
+      // Make API call first (no optimistic updates)
       const { alertService } = await import('../api/services/alertService');
       const createdAlert = await alertService.createAlert(alertData);
       console.log('✅ Alert created successfully via API:', createdAlert.id);
 
-      // Replace optimistic alert with real alert
-      set((state) => {
-        const updatedAlerts = state.alerts.map(alert => {
-          if (alert.id === optimisticAlert.id) {
-            console.log(`🔄 Replacing optimistic alert ${optimisticAlert.id} with real alert ${createdAlert.id}`);
-            return createdAlert;
-          }
-          return alert;
-        });
-        return {
-          alerts: updatedAlerts,
-          lastUpdated: new Date().toISOString()
-        };
-      });
+      // Add the real alert to the store
+      set((state) => ({
+        alerts: [createdAlert, ...state.alerts.filter(a => a.id !== createdAlert.id)],
+        error: null,
+        lastUpdated: new Date().toISOString()
+      }));
 
-      console.log('🔄 Optimistic alert replaced with real alert');
+      console.log('📦 Alert added to store with real data');
       return createdAlert;
 
     } catch (error: any) {
-      console.error('❌ Alert creation failed, rolling back:', error);
+      console.error('❌ Alert creation failed:', error);
       console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
 
-      // Rollback: Remove the optimistic alert
       set((state) => ({
-        alerts: state.alerts.filter(alert => alert.id !== optimisticAlert.id),
         error: error?.message || error?.response?.data?.detail || error?.response?.data?.message || 'Failed to create alert'
       }));
 
-      throw error; // Re-throw to let caller handle
+      throw error;
     }
   },
 
@@ -378,29 +316,23 @@ export const testAlertErrorHandling = async () => {
   return { success: true, message: 'Error handling tests completed' };
 };
 
-// Test function to verify resolved alerts endpoint
-export const testResolvedAlertsEndpoint = async () => {
-  console.log('🧪 TESTING RESOLVED ALERTS ENDPOINT');
 
-  try {
-    console.log('📡 Testing fetchResolvedAlerts...');
-    await useAlertsStore.getState().fetchResolvedAlerts();
+// Debug function to check current alert state
+export const debugAlertState = () => {
+  const state = useAlertsStore.getState();
+  console.log('🐛 DEBUG ALERT STATE:');
+  console.log(`   Total alerts: ${state.alerts.length}`);
+  console.log(`   Is loading: ${state.isLoading}`);
+  console.log(`   Error: ${state.error || 'none'}`);
+  console.log(`   Last updated: ${state.lastUpdated || 'never'}`);
 
-    const alerts = useAlertsStore.getState().alerts;
-    console.log(`✅ Resolved alerts endpoint test successful!`);
-    console.log(`📊 Found ${alerts.length} resolved alerts`);
-
-    if (alerts.length > 0) {
-      console.log('📋 Sample resolved alerts:');
-      alerts.slice(0, 2).forEach((alert, index) => {
-        console.log(`   ${index + 1}. "${alert.message}" (${alert.status})`);
-      });
-    }
-
-    return { success: true, count: alerts.length };
-  } catch (error) {
-    console.error('❌ Resolved alerts endpoint test failed:', error);
-    return { success: false, error: error.message };
+  if (state.alerts.length > 0) {
+    console.log('   📋 All alerts:');
+    state.alerts.forEach((alert, index) => {
+      console.log(`      ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 40)}..." (${alert.status})`);
+    });
+  } else {
+    console.log('   📋 No alerts in store');
   }
 };
 

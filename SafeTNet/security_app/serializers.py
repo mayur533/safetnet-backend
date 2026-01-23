@@ -22,8 +22,8 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         model = SOSAlert
         fields = (
             'id', 'user', 'user_username', 'user_email', 'geofence', 'geofence_name',
-            'location_lat', 'location_long', 'status', 'priority', 'assigned_officer', 'assigned_officer_name',
-            'created_at', 'updated_at'
+            'alert_type', 'message', 'description', 'location_lat', 'location_long', 'status', 'priority',
+            'assigned_officer', 'assigned_officer_name', 'created_at', 'updated_at'
         )
         read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_at', 'updated_at')
 
@@ -31,7 +31,8 @@ class SOSAlertSerializer(serializers.ModelSerializer):
 class SOSAlertCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SOSAlert
-        fields = ('geofence', 'location_lat', 'location_long', 'priority')
+        fields = ('id', 'alert_type', 'message', 'description', 'geofence', 'location_lat', 'location_long', 'priority', 'status', 'created_at')
+        read_only_fields = ('id', 'status', 'created_at')
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user

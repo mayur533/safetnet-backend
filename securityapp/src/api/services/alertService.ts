@@ -26,7 +26,9 @@ export const alertService = {
   // Get all alerts (SOS alerts)
   getAlerts: async (): Promise<Alert[]> => {
     try {
+      console.log('📡 GET /sos/ - Fetching all alerts from backend');
       const response = await apiClient.get(API_ENDPOINTS.LIST_SOS);
+      console.log(`📥 GET /sos/ response count: ${response.data.results ? response.data.results.length : response.data.length} alerts`);
 
       let alertsData: any[] = [];
 
@@ -42,11 +44,12 @@ export const alertService = {
         return [];
       }
 
-      // Transform alerts to ensure they have the correct ID field
+      // Transform alerts to ensure they have the correct fields
+      // Backend must provide integer IDs - no fallbacks to fake IDs
       const transformedAlerts = alertsData.map(alert => ({
         ...alert,
-        // Ensure ID field exists - try different possible field names
-        id: alert.id || alert.pk || alert.alert_id || String(alert.log_id || Math.random()),
+        // Backend provides integer ID - ensure it's a number
+        id: typeof alert.id === 'number' ? alert.id : parseInt(alert.id) || alert.pk || alert.alert_id,
         // Ensure other required fields exist with defaults
         log_id: alert.log_id || '',
         user_id: alert.user_id || '',
@@ -107,7 +110,7 @@ export const alertService = {
   // Get alert by ID
   getAlertById: async (id: string): Promise<Alert> => {
     try {
-      const response = await apiClient.get(API_ENDPOINTS.GET_SOS.replace('{id}', id));
+      const response = await apiClient.get(API_ENDPOINTS.GET_SOS.replace('{id}', String(id)));
       return response.data;
     } catch (error) {
       console.error('Error fetching alert:', error);
@@ -118,7 +121,7 @@ export const alertService = {
   // Accept/respond to alert
   acceptAlert: async (id: string): Promise<Alert> => {
     try {
-      const response = await apiClient.patch(API_ENDPOINTS.UPDATE_SOS.replace('{id}', id), {
+      const response = await apiClient.patch(API_ENDPOINTS.UPDATE_SOS.replace('{id}', String(id)), {
         status: 'accepted'
       });
       return response.data;
@@ -131,7 +134,7 @@ export const alertService = {
   // Resolve/close alert
   resolveAlert: async (id: string): Promise<Alert> => {
     try {
-      const response = await apiClient.patch(API_ENDPOINTS.RESOLVE_SOS.replace('{id}', id));
+      const response = await apiClient.patch(API_ENDPOINTS.RESOLVE_SOS.replace('{id}', String(id)));
       return response.data;
     } catch (error) {
       console.error('Error resolving alert:', error);
@@ -160,14 +163,25 @@ export const alertService = {
 
     try {
       console.log('📡 Creating alert with data:', apiData);
+      console.log('📤 POST /sos/ request payload:', JSON.stringify(apiData, null, 2));
+
       const response = await apiClient.post(API_ENDPOINTS.CREATE_SOS, apiData);
+
+      console.log('📥 POST /sos/ response:', {
+        status: response.status,
+        data: response.data,
+        id: response.data.id,
+        alert_type: response.data.alert_type,
+        message: response.data.message
+      });
       console.log('✅ Alert created, response:', response.data);
 
       // Transform the response to ensure it matches our Alert interface
+      // Backend must return the real integer ID
       const createdAlert = {
         ...response.data,
-        // Ensure ID field exists - try different possible field names
-        id: response.data.id || response.data.pk || response.data.alert_id || String(response.data.log_id || Math.random()),
+        // Backend provides integer ID - ensure it's a number
+        id: typeof response.data.id === 'number' ? response.data.id : parseInt(response.data.id) || response.data.pk || response.data.alert_id,
         // Ensure other required fields exist with defaults
         log_id: response.data.log_id || '',
         user_id: response.data.user_id || '',
@@ -199,10 +213,10 @@ export const alertService = {
   },
 
   // Delete alert
-  deleteAlert: async (id: string): Promise<void> => {
+  deleteAlert: async (id: number): Promise<void> => {
     try {
       console.log('Attempting to delete alert:', id);
-      await apiClient.delete(API_ENDPOINTS.DELETE_SOS.replace('{id}', id));
+      await apiClient.delete(API_ENDPOINTS.DELETE_SOS.replace('{id}', String(id)));
       console.log('Alert deleted successfully');
     } catch (error: any) {
       console.error('Error deleting alert:', error);
