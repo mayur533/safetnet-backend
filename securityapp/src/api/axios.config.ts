@@ -85,6 +85,28 @@ axiosInstance.interceptors.response.use(
           global.alert('Server Error', 'Server error occurred. Please try again after some time.');
         }
         console.error('[API Error] Server error (500) - Check backend logs');
+
+        // Enhanced logging for SSL/connection issues
+        const errorData = error.response.data;
+        if (errorData && typeof errorData === 'object') {
+          console.error('[API Error] Server Error Details:', JSON.stringify(errorData, null, 2));
+
+          // Check for SSL/database connection issues
+          if (errorData.detail && errorData.detail.includes('SSL connection has been closed')) {
+            console.error('🔒 SSL CONNECTION ISSUE DETECTED!');
+            console.error('💡 This usually means:');
+            console.error('   1. Neon PostgreSQL database connection failed');
+            console.error('   2. Database credentials are incorrect');
+            console.error('   3. Database is in sleep mode or unreachable');
+            console.error('   4. SSL certificate issues with Neon');
+            console.error('🔧 SOLUTION: Check Neon dashboard and database settings');
+          }
+
+          if (errorData.error && errorData.error.includes('SSL connection has been closed')) {
+            console.error('🔒 SSL CONNECTION ISSUE DETECTED!');
+            console.error('💡 This usually means database connectivity problems');
+          }
+        }
       }
 
       // Only log response data if it's not HTML (HTML error pages are not useful)

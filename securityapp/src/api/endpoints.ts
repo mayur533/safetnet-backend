@@ -17,6 +17,7 @@ export const API_ENDPOINTS = {
   // ==================== SOS ALERTS ====================
   // Note: These match the documented API - using /sos/ instead of /alerts/
   LIST_SOS: '/sos/',
+  CREATE_SOS: '/sos/', // POST - for officers to create new alerts
   GET_SOS: '/sos/{id}/',
   UPDATE_SOS: '/sos/{id}/', // PATCH/PUT
   DELETE_SOS: '/sos/{id}/', // DELETE

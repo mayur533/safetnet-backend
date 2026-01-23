@@ -7,24 +7,95 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert as RNAlert,
+  LogBox,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { Alert } from '../../types/alert.types';
-import { alertService, DashboardData } from '../../api/services/alertService';
+import { alertService } from '../../api/services/alertService';
+import { useAlertsStore } from '../../store/alertsStore';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
+
+// Suppress debugger-related warnings that appear on login
+LogBox.ignoreLogs([
+  'Remote debugger',
+  'Debugger and device',
+  'Open debugger',
+  'debugger',
+]);
+
+// Suppress console warnings related to debugger
+const originalWarn = console.warn;
+console.warn = (...args) => {
+  const message = args.join(' ');
+  if (
+    message.includes('Remote debugger') ||
+    message.includes('Debugger and device') ||
+    message.includes('Open debugger') ||
+    message.includes('debugger')
+  ) {
+    return; // Suppress debugger warnings
+  }
+  originalWarn.apply(console, args); // Show other warnings
+};
+
+interface DashboardStats {
+  active: number;
+  pending: number;
+  resolved: number;
+  total: number;
+}
+
+interface DashboardData {
+  stats: DashboardStats;
+  recent_alerts: Alert[];
+}
+
 export const DashboardScreen = () => {
   const navigation = useNavigation();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Fetch dashboard data on component mount
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+  // Use Zustand alerts store
+  const {
+    alerts,
+    isLoading,
+    error,
+    fetchAlerts,
+    getRecentAlerts,
+    updateAlert: storeUpdateAlert
+  } = useAlertsStore();
+
+  // Calculate dashboard stats from alerts
+  const dashboardData: DashboardData = React.useMemo(() => {
+    console.log('🏠 Dashboard: Calculating stats from', alerts.length, 'alerts');
+    const active = alerts.filter(alert => alert.status === 'pending' || alert.status === 'accepted').length;
+    const pending = alerts.filter(alert => alert.status === 'pending').length;
+    const resolved = alerts.filter(alert => alert.status === 'completed').length;
+    const recentAlerts = getRecentAlerts(5); // Get last 5 alerts
+
+    console.log('🏠 Dashboard: Stats - Active:', active, 'Pending:', pending, 'Resolved:', resolved, 'Recent:', recentAlerts.length);
+
+    return {
+      stats: {
+        active,
+        pending,
+        resolved,
+        total: active + pending + resolved
+      },
+      recent_alerts: recentAlerts
+    };
+  }, [alerts, getRecentAlerts]);
+
+  // Fetch alerts when dashboard comes into focus
+  // Note: Login process already fetches alerts initially
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🏠 Dashboard: Screen focused, ensuring alerts are fresh...');
+      fetchAlerts();
+    }, [fetchAlerts])
+  );
 
   // Test network connectivity
   const testNetworkConnectivity = async () => {
@@ -52,61 +123,29 @@ export const DashboardScreen = () => {
     }
   };
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
 
-      // Fetch alerts data from backend and derive dashboard stats
-      console.log('Fetching alerts data for dashboard...');
-      const alerts = await alertService.getAlerts();
-
-      // alerts is now guaranteed to be an array from alertService
-      console.log('Alerts data received:', alerts.length, 'alerts');
-
-      // Calculate dashboard stats from alerts data
-      const active = alerts.filter(alert => alert.status === 'pending' || alert.status === 'accepted').length;
-      const pending = alerts.filter(alert => alert.status === 'pending').length;
-      const resolved = alerts.filter(alert => alert.status === 'completed').length;
-
-      // Get recent alerts (last 2 alerts, sorted by timestamp)
-      const recentAlerts = alerts
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 2);
-
-      const dashboardData = {
-        stats: {
-          active,
-          pending,
-          resolved,
-          total: active + pending + resolved
+  const handleRespond = async (alert: Alert) => {
+    RNAlert.alert(
+      'Respond to Alert',
+      `Accept and respond to alert from ${alert.user_name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept',
+          onPress: async () => {
+            try {
+              console.log('📞 Accepting alert response from Dashboard:', alert.id);
+              await storeUpdateAlert(alert.id, { status: 'accepted' });
+              console.log('✅ Alert accepted successfully from Dashboard');
+              RNAlert.alert('Success', 'Alert accepted! Check the Alerts page for more actions.');
+            } catch (error) {
+              console.error('❌ Failed to accept alert from Dashboard:', error);
+              RNAlert.alert('Error', 'Failed to accept alert. Please try again.');
+            }
+          },
         },
-        recent_alerts: recentAlerts
-      };
-
-      console.log('Dashboard data calculated from alerts:', dashboardData);
-      setDashboardData(dashboardData);
-
-      // Since alertService now handles all errors gracefully,
-      // we should always succeed here. But keep basic error handling just in case.
-    } catch (error: any) {
-      console.error('Unexpected error in dashboard data processing:', error);
-      // This should rarely happen now that alertService handles errors
-      setError('Unexpected error occurred. Please try again.');
-
-      // Fallback to empty data
-      setDashboardData({
-        stats: { active: 0, pending: 0, resolved: 0, total: 0 },
-        recent_alerts: []
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRespond = (alert: Alert) => {
-    // Navigate to alerts map to show locations
-    (navigation as any).navigate('AlertsMap', { alert });
+      ]
+    );
   };
 
   const handleSettingsPress = () => {
@@ -125,7 +164,7 @@ export const DashboardScreen = () => {
   const recentAlerts = dashboardData?.recent_alerts?.slice(0, 2) || []; // Show 2 recent alerts
 
   // Show loading state
-  if (loading) {
+  if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -137,16 +176,26 @@ export const DashboardScreen = () => {
     );
   }
 
-  // Show error state
+  // Show error state with network-aware messaging
   if (error) {
+    const isNetworkError = error.includes('SSL connection') || error.includes('Network Error') || error.includes('timeout') || error.includes('ECONNREFUSED');
+    const errorTitle = isNetworkError ? 'Backend Server Unavailable' : 'Error Loading Dashboard';
+    const errorMessage = isNetworkError
+      ? 'SafeTNet backend server is currently unavailable.\n\nPlease ensure the Django server is running on the correct port.'
+      : error;
+
     return (
       <View style={[styles.container, styles.centered]}>
-        <Icon name="error" size={48} color={colors.emergencyRed} />
-        <Text style={styles.errorText}>{error}</Text>
+        <Icon name={isNetworkError ? 'wifi-off' : 'error'} size={48} color={colors.emergencyRed} />
+        <Text style={styles.errorTitle}>{errorTitle}</Text>
+        <Text style={styles.errorText}>{errorMessage}</Text>
         <View style={styles.errorActions}>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={fetchDashboardData}
+            onPress={() => {
+              console.log('🔄 Retrying dashboard load...');
+              fetchAlerts();
+            }}
             activeOpacity={0.7}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
@@ -241,9 +290,12 @@ export const DashboardScreen = () => {
           </View>
           <View style={styles.cardsContainer}>
             {recentAlerts.length > 0 ? (
-              recentAlerts.map((alert) => (
-                <AlertCard key={alert.id} alert={alert} onRespond={handleRespond} />
-              ))
+              recentAlerts.map((alert) => {
+                console.log('🔑 Dashboard AlertCard key:', alert.id, alert.message?.substring(0, 30));
+                return (
+                  <AlertCard key={String(alert.id)} alert={alert} onRespond={handleRespond} />
+                );
+              })
             ) : (
               // Show empty alert card placeholders
               Array.from({ length: 2 }).map((_, index) => (
@@ -490,12 +542,19 @@ const styles = StyleSheet.create({
     color: colors.darkText,
     marginTop: spacing.md,
   },
+  errorTitle: {
+    ...typography.screenHeader,
+    color: colors.emergencyRed,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
   errorText: {
     ...typography.body,
-    color: colors.emergencyRed,
+    color: colors.mediumText,
     textAlign: 'center',
     marginTop: spacing.md,
     marginBottom: spacing.lg,
+    lineHeight: 20,
   },
   retryButton: {
     backgroundColor: colors.primary,

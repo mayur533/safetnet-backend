@@ -4,10 +4,13 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "android:no-debug": "node disable-debugger.js && react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "start:no-debug": "node disable-debugger.js && react-native start --reset-cache",
+    "test": "jest",
+    "disable-debugger": "node disable-debugger.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

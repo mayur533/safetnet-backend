@@ -7,7 +7,7 @@ export const ENABLE_API_CALLS = true; // Set to true to enable API calls and use
 // Replace with your real Render URL, include the protocol
 // Deployed backend URL: https://safetnet-backend.onrender.com
 // Local development URL: http://localhost:8000 (for emulator/simulator only)
-// Using local server for development - switch to Render URL after deployment
+// Using deployed backend for production
 const BACKEND_BASE_URL = 'https://safetnet.onrender.com';
 
 export default {

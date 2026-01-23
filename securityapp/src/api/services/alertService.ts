@@ -1,4 +1,4 @@
-import apiClient from '../axios.config';
+import apiClient, { ApiError } from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
 import { Alert } from '../../types/alert.types';
 
@@ -19,74 +19,63 @@ export interface DashboardData {
   };
 }
 
+
+
 export const alertService = {
+
   // Get all alerts (SOS alerts)
   getAlerts: async (): Promise<Alert[]> => {
     try {
-      console.log('Fetching alerts from:', API_ENDPOINTS.LIST_SOS);
       const response = await apiClient.get(API_ENDPOINTS.LIST_SOS);
-      console.log('Alerts API response:', response.data);
 
-      // Ensure response.data is an array
-      if (!Array.isArray(response.data)) {
-        console.warn('API returned non-array data for alerts:', response.data);
-        return []; // Return empty array instead of throwing
+      let alertsData: any[] = [];
+
+      // Handle paginated response (Django REST Framework style)
+      if (response.data.results && Array.isArray(response.data.results)) {
+        // Paginated response: { count, next, previous, results: [...] }
+        alertsData = response.data.results;
+      } else if (Array.isArray(response.data)) {
+        // Direct array response
+        alertsData = response.data;
+      } else {
+        console.warn('Unexpected API response format for getAlerts');
+        return [];
       }
 
-      return response.data;
+      // Transform alerts to ensure they have the correct ID field
+      const transformedAlerts = alertsData.map(alert => ({
+        ...alert,
+        // Ensure ID field exists - try different possible field names
+        id: alert.id || alert.pk || alert.alert_id || String(alert.log_id || Math.random()),
+        // Ensure other required fields exist with defaults
+        log_id: alert.log_id || '',
+        user_id: alert.user_id || '',
+        user_name: alert.user_name || alert.user || 'Unknown User',
+        user_email: alert.user_email || '',
+        user_phone: alert.user_phone || '',
+        alert_type: alert.alert_type || 'security',
+        priority: alert.priority || 'medium',
+        message: alert.message || 'Alert message',
+        location: alert.location || {
+          latitude: alert.latitude || alert.location_lat || 0,
+          longitude: alert.longitude || alert.location_long || 0,
+          address: alert.address || 'Unknown location'
+        },
+        timestamp: alert.timestamp || alert.created_at || new Date().toISOString(),
+        status: alert.status || 'pending',
+        geofence_id: alert.geofence_id || '',
+        created_at: alert.created_at || alert.timestamp || new Date().toISOString(),
+        updated_at: alert.updated_at
+      }));
+
+      console.log('✅ Fetched alerts:', transformedAlerts.length, 'alerts');
+      return transformedAlerts;
     } catch (error: any) {
-      console.warn('Backend alerts API failed, falling back to mock data:', error.message);
+      console.error('Failed to fetch alerts:', error.message || error);
+      console.error('Error details:', error.response?.data || error);
 
-      // Fallback to mock data when backend is unavailable
-      const mockAlerts = [
-        {
-          id: 1,
-          user_name: 'John Doe',
-          user_mobile: '+1234567890',
-          alert_type: 'emergency' as const,
-          original_alert_type: 'emergency' as const,
-          message: 'Emergency alert - Medical assistance needed',
-          latitude: 37.7749,
-          longitude: -122.4194,
-          timestamp: new Date().toISOString(),
-          status: 'pending' as const,
-          priority: 'high' as const,
-          location: 'San Francisco, CA',
-          description: 'Medical emergency at downtown location'
-        },
-        {
-          id: 2,
-          user_name: 'Jane Smith',
-          user_mobile: '+1234567891',
-          alert_type: 'security' as const,
-          original_alert_type: 'security' as const,
-          message: 'Security concern - Suspicious activity',
-          latitude: 37.7849,
-          longitude: -122.4094,
-          timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-          status: 'accepted' as const,
-          priority: 'medium' as const,
-          location: 'Market Street, San Francisco',
-          description: 'Suspicious person observed near bank'
-        },
-        {
-          id: 3,
-          user_name: 'Bob Wilson',
-          user_mobile: '+1234567892',
-          alert_type: 'general' as const,
-          original_alert_type: 'general' as const,
-          message: 'General assistance request',
-          latitude: 37.7649,
-          longitude: -122.4294,
-          timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
-          status: 'completed' as const,
-          priority: 'low' as const,
-          location: 'Mission District, San Francisco',
-          description: 'Request for directions to police station'
-        }
-      ];
-
-      return mockAlerts;
+      // Return empty array - real alerts should come from backend only
+      return [];
     }
   },
 
@@ -98,6 +87,20 @@ export const alertService = {
     } catch (error) {
       console.error('Error fetching active alerts:', error);
       throw error;
+    }
+  },
+
+  // Get resolved alerts only
+  getResolvedAlerts: async (): Promise<Alert[]> => {
+    try {
+      const response = await apiClient.get(API_ENDPOINTS.GET_RESOLVED_SOS);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error fetching resolved alerts:', error);
+      console.error('Error details:', error.response?.data || error);
+
+      // Return empty array - real alerts should come from backend only
+      return [];
     }
   },
 
@@ -136,39 +139,102 @@ export const alertService = {
     }
   },
 
+  // Create new alert (for officers)
+  createAlert: async (alertData: {
+    alert_type: 'emergency' | 'security' | 'general';
+    message: string;
+    description?: string;
+    latitude?: number;
+    longitude?: number;
+    location?: string;
+  }): Promise<Alert> => {
+    // Format data to match backend expectations
+    const apiData = {
+      alert_type: alertData.alert_type === 'general' ? 'normal' : alertData.alert_type,
+      message: alertData.message,
+      description: alertData.description || alertData.message,
+      location_lat: alertData.latitude || 18.6472,
+      location_long: alertData.longitude || 73.7845,
+      location: alertData.location || 'Current Location',
+    };
+
+    try {
+      console.log('📡 Creating alert with data:', apiData);
+      const response = await apiClient.post(API_ENDPOINTS.CREATE_SOS, apiData);
+      console.log('✅ Alert created, response:', response.data);
+
+      // Transform the response to ensure it matches our Alert interface
+      const createdAlert = {
+        ...response.data,
+        // Ensure ID field exists - try different possible field names
+        id: response.data.id || response.data.pk || response.data.alert_id || String(response.data.log_id || Math.random()),
+        // Ensure other required fields exist with defaults
+        log_id: response.data.log_id || '',
+        user_id: response.data.user_id || '',
+        user_name: response.data.user_name || response.data.user || 'Security Officer',
+        user_email: response.data.user_email || '',
+        user_phone: response.data.user_phone || '',
+        alert_type: response.data.alert_type || apiData.alert_type,
+        priority: response.data.priority || (apiData.alert_type === 'emergency' ? 'high' : 'medium'),
+        message: response.data.message || apiData.message,
+        location: response.data.location || {
+          latitude: apiData.location_lat,
+          longitude: apiData.location_long,
+          address: apiData.location
+        },
+        timestamp: response.data.timestamp || response.data.created_at || new Date().toISOString(),
+        status: response.data.status || 'pending',
+        geofence_id: response.data.geofence_id || '',
+        created_at: response.data.created_at || response.data.timestamp || new Date().toISOString(),
+        updated_at: response.data.updated_at
+      };
+
+      console.log('🔄 Transformed created alert:', createdAlert.id);
+      return createdAlert;
+    } catch (error: any) {
+      console.error('Failed to create alert:', error.message || error);
+      console.error('Error details:', error.response?.data || error);
+      throw error; // Don't create mock alerts - let the UI handle the error
+    }
+  },
+
   // Delete alert
   deleteAlert: async (id: string): Promise<void> => {
     try {
+      console.log('Attempting to delete alert:', id);
       await apiClient.delete(API_ENDPOINTS.DELETE_SOS.replace('{id}', id));
-    } catch (error) {
+      console.log('Alert deleted successfully');
+    } catch (error: any) {
       console.error('Error deleting alert:', error);
-      throw error;
+
+      // Handle specific error cases
+      if (error.response?.status === 404) {
+        console.error('DELETE endpoint not implemented on backend');
+        throw new Error('Delete functionality is not yet available. This feature will be implemented with the next backend update.');
+      } else if (error.response?.status === 405) {
+        console.error('DELETE method not allowed');
+        throw new Error('Delete operation is not permitted on this alert.');
+      } else if (error.response?.status >= 500) {
+        console.error('Server error during delete');
+        throw new Error('Server error occurred. Please try again later.');
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
     }
   },
 
   // Get dashboard data
   getDashboardData: async (): Promise<DashboardData> => {
     try {
-      console.log('Attempting to fetch dashboard data from:', API_ENDPOINTS.DASHBOARD);
       const response = await apiClient.get(API_ENDPOINTS.DASHBOARD);
-      console.log('Dashboard data fetched successfully:', response.data);
       return response.data;
     } catch (error: any) {
-      console.warn('Backend dashboard API failed, falling back to mock data:', error.message);
-
-      // Fallback to mock dashboard data when backend is unavailable
-      const mockAlerts = await this.getAlerts(); // Use the same mock alerts
-      const active = mockAlerts.filter(alert => alert.status === 'pending' || alert.status === 'accepted').length;
-      const pending = mockAlerts.filter(alert => alert.status === 'pending').length;
-      const resolved = mockAlerts.filter(alert => alert.status === 'completed').length;
-
-      const recentAlerts = mockAlerts
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 2);
-
+      console.error('Failed to fetch dashboard data:', error.message || error);
+      // Return empty dashboard data
       return {
-        stats: { active, pending, resolved, total: active + pending + resolved },
-        recent_alerts: recentAlerts,
+        stats: { active: 0, pending: 0, resolved: 0, total: 0 },
+        recent_alerts: [],
       };
     }
   },

@@ -52,7 +52,7 @@ export interface DjangoLoginResponse {
   };
 }
 
-// Legacy format (for backward compatibility with mock data)
+// Legacy format (for backward compatibility)
 export interface LoginResponse {
   result: 'success' | 'failed';
   role: 'security' | 'user';

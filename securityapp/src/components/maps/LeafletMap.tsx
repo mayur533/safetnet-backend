@@ -3,25 +3,19 @@ import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { colors } from '../../utils/colors';
 
-interface LeafletMapProps {
+export const LeafletMap = React.forwardRef<WebView, {
   latitude: number;
   longitude: number;
   zoom?: number;
-  height?: number | string;
+  height?: number;
   showMarker?: boolean;
   markerTitle?: string;
   polygonCoordinates?: Array<{
     latitude: number;
     longitude: number;
   }>;
-  mapKey?: string; // For controlled re-mounting
-}
-
-interface LeafletMapWithRefProps extends LeafletMapProps {
-  forwardedRef?: React.Ref<WebView>;
-}
-
-export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
+  mapKey?: string;
+}>(({
   latitude,
   longitude,
   zoom = 15,
@@ -29,364 +23,243 @@ export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
   showMarker = true,
   markerTitle = 'Location',
   polygonCoordinates,
-  mapKey,
-  forwardedRef
-}) => {
+  mapKey
+}, ref) => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
   // Forward the ref to the parent
-  useImperativeHandle(forwardedRef, () => webViewRef.current!, []);
+  useImperativeHandle(ref, () => webViewRef.current!, []);
+
   // Create inline HTML with Leaflet
   const generateMapHTML = () => {
     console.log('Generating map HTML for coordinates:', latitude, longitude);
 
-    // Process polygon coordinates outside template literal to avoid syntax issues
+    // Process polygon coordinates
     const polygonCoordsString = polygonCoordinates && polygonCoordinates.length >= 3
-      ? polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',\n                            ')
+      ? polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',')
       : '';
 
-    // Return HTML with embedded Leaflet to avoid external resource issues
-    return `
-<!DOCTYPE html>
+    // Create HTML with embedded Leaflet CSS and JS
+    const html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Leaflet Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
             margin: 0;
             padding: 0;
             height: 100vh;
             font-family: Arial, sans-serif;
+            overflow: hidden;
         }
         #map {
-            height: 100%;
-            width: 100%;
-        }
-        .leaflet-control-attribution {
-            background-color: rgba(255, 255, 255, 0.8);
-            font-size: 10px;
-        }
-    </style>
-</head>
-<body>
-    <div id="map"></div>
-
-    <script>
-        console.log('Map HTML loaded, coordinates:', ${latitude}, ${longitude});
-
-        // Send loaded message to React Native
-        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'loaded'
-        }));
-
-        try {
-            // Simple map implementation without external dependencies
-            var map = null;
-
-            function initMap() {
-                // Create a simple map container
-                var mapDiv = document.getElementById('map');
-                if (!mapDiv) return;
-
-                // Set up basic map styling
-                mapDiv.style.backgroundColor = '#e0f2fe';
-                mapDiv.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #0369a1; font-size: 18px; font-weight: bold;">🗺️ Map Loading...<br><small>Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}</small></div>';
-
-                // Try to load Leaflet from CDN
-                loadLeaflet();
-            }
-
-            function loadLeaflet() {
-                // Load CSS first
-                var cssLink = document.createElement('link');
-                cssLink.rel = 'stylesheet';
-                cssLink.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-                cssLink.onload = function() {
-                    console.log('Leaflet CSS loaded');
-
-                    // Load JS
-                    var script = document.createElement('script');
-                    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-                    script.onload = function() {
-                        console.log('Leaflet JS loaded, initializing map...');
-                        initializeLeafletMap();
-                    };
-                    script.onerror = function() {
-                        console.error('Failed to load Leaflet JS');
-                        showFallbackMap();
-                    };
-                    document.head.appendChild(script);
-                };
-                cssLink.onerror = function() {
-                    console.error('Failed to load Leaflet CSS');
-                    showFallbackMap();
-                };
-                document.head.appendChild(cssLink);
-            }
-
-            function initializeLeafletMap() {
-                try {
-                    // Clear loading message
-                    var mapDiv = document.getElementById('map');
-                    mapDiv.innerHTML = '';
-
-                    // Initialize Leaflet map
-                    map = L.map('map').setView([${latitude}, ${longitude}], ${zoom});
-
-                    // Add tile layer
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '© OpenStreetMap contributors',
-                        maxZoom: 19,
-                    }).addTo(map);
-
-                    // Add marker
-                    ${showMarker ? `L.marker([${latitude}, ${longitude}]).addTo(map).bindPopup('${markerTitle}').openPopup();` : ''}
-
-                    // Add polygon if coordinates provided
-                    ${polygonCoordsString ? `
-                    try {
-                        var polygonCoords = [
-                            ${polygonCoordsString}
-                        ];
-                        console.log('Adding polygon with coordinates:', polygonCoords);
-                        var polygon = L.polygon(polygonCoords, {
-                            color: '#DC2626',
-                            weight: 3,
-                            opacity: 0.8,
-                            fillColor: '#FEE2E2',
-                            fillOpacity: 0.3
-                        }).addTo(map);
-                    } catch (polyError) {
-                        console.error('Error adding polygon:', polyError);
-                    }
-                    ` : ''}
-
-                    console.log('Map initialized successfully');
-                    window.mapInstance = map;
-
-                    // Send success message to React Native
-                    window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                        type: 'mapLoaded'
-                    }));
-
-                } catch (error) {
-                    console.error('Error initializing Leaflet map:', error);
-                    showFallbackMap();
-                }
-            }
-
-            function showFallbackMap() {
-                var mapDiv = document.getElementById('map');
-                mapDiv.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #ef4444; font-size: 16px; font-weight: bold;">⚠️ Map Unavailable<br><small>Check internet connection</small><br><small>Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}</small></div>';
-                mapDiv.style.backgroundColor = '#fef2f2';
-
-                // Send error message to React Native
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'error',
-                    message: 'Failed to load map resources'
-                }));
-            }
-
-            // Handle incoming messages from React Native
-            window.addEventListener('message', function(event) {
-                try {
-                    var data = JSON.parse(event.data);
-                    console.log('Received message from React Native:', data);
-
-                    if (data.type === 'updateOfficerMarker' && map) {
-                        if (window.officerMarker) {
-                            window.officerMarker.setLatLng([data.latitude, data.longitude]);
-                        } else {
-                            // Create officer marker if it doesn't exist
-                            var officerIcon = L.divIcon({
-                                html: '<div style="background-color: #007AFF; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.4); position: relative;"><div style="position: absolute; top: -8px; left: -8px; width: 36px; height: 36px; border: 2px solid #007AFF; border-radius: 50%; opacity: 0.3; animation: pulse 2s infinite;"></div></div><style>@keyframes pulse { 0% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.2); opacity: 0.1; } 100% { transform: scale(1); opacity: 0.3; } }</style>',
-                                className: 'officer-location-marker',
-                                iconSize: [36, 36],
-                                iconAnchor: [18, 18]
-                            });
-                            window.officerMarker = L.marker([data.latitude, data.longitude], { icon: officerIcon }).addTo(map);
-                            window.officerMarker.bindPopup('<b>🚔 Live Officer Location</b><br/>📍 Real-time GPS tracking<br/>⚡ Updates every 1 second<br/>🎯 High accuracy mode');
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error handling message:', error);
-                }
-            });
-
-            // Initialize map when page loads
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initMap);
-            } else {
-                initMap();
-            }
-
-        } catch (error) {
-            console.error('Critical error in map initialization:', error);
-            showFallbackMap();
-        }
-
-        // Add error handling for map loading
-        window.addEventListener('error', function(e) {
-            console.error('Map error:', e.error);
-            // Send error message to React Native
-            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'error',
-                message: e.error ? e.error.toString() : 'Unknown map error'
-            }));
-        });
-
-        window.addEventListener('load', function() {
-            console.log('Map HTML loaded successfully');
-            // Send success message to React Native
-            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'loaded'
-            }));
-        });
-    </script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
             height: 100vh;
-            font-family: Arial, sans-serif;
-        }
-        #map {
-            height: 100%;
-            width: 100%;
+            width: 100vw;
         }
         .leaflet-control-attribution {
             background-color: rgba(255, 255, 255, 0.8);
             font-size: 10px;
         }
+        .loading-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #0369a1;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
-    <div id="map"></div>
+    <div id="map">
+        <div class="loading-text">
+            🗺️ Loading Map...<br>
+            <small>Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}</small>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Initialize map
-        const map = L.map('map').setView([${latitude}, ${longitude}], ${zoom});
+        console.log('Initializing Leaflet map...');
 
-        // Store map reference globally for dynamic marker updates
-        window.mapInstance = map;
+        var map = null;
+        var officerMarker = null;
 
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19,
-        }).addTo(map);
+        function initMap() {
+            try {
+                console.log('Creating Leaflet map...');
 
-        // Add marker if requested
-        ${showMarker ? `
-        const marker = L.marker([${latitude}, ${longitude}]).addTo(map);
-        marker.bindPopup('${markerTitle}').openPopup();
-        ` : ''}
+                // Clear loading message
+                var mapDiv = document.getElementById('map');
+                if (mapDiv) {
+                    var loadingDiv = mapDiv.querySelector('.loading-text');
+                    if (loadingDiv) {
+                        loadingDiv.style.display = 'none';
+                    }
+                }
 
-        // Add polygon if coordinates provided
-        ${polygonCoordinates && polygonCoordinates.length >= 3 ? `
-        try {
-            const polygonCoords = [
-                ${polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',\n                ')}
-            ];
-            console.log('Drawing polygon with coordinates:', polygonCoords);
+                // Initialize map
+                map = L.map('map', {
+                    center: [${latitude}, ${longitude}],
+                    zoom: ${zoom},
+                    zoomControl: true
+                });
 
-            // Validate coordinates
-            if (polygonCoords.length >= 3) {
-                const polygon = L.polygon(polygonCoords, {
-                    color: '#DC2626',
-                    weight: 3,
-                    opacity: 0.8,
-                    fillColor: '#FEE2E2',
-                    fillOpacity: 0.3
+                // Add tile layer
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 19
                 }).addTo(map);
 
-                // Fit map to polygon bounds
-                const bounds = polygon.getBounds();
-                if (bounds.isValid()) {
-                    map.fitBounds(bounds, { padding: [20, 20] });
+                // Add polygon if coordinates provided
+                ${polygonCoordsString ? `
+                var coords = [${polygonCoordsString}];
+                L.polygon(coords, {
+                    color: '#dc2626',
+                    fillColor: '#dc2626',
+                    fillOpacity: 0.2,
+                    weight: 3
+                }).addTo(map);
+                console.log('Geofence polygon added');
+                ` : ''}
+
+                // Add center marker
+                L.marker([${latitude}, ${longitude}]).addTo(map)
+                    .bindPopup('<b>📍 Center Location</b><br/>Lat: ${latitude.toFixed(6)}<br/>Lng: ${longitude.toFixed(6)}');
+
+                window.mapInstance = map;
+
+                // Notify React Native that map is loaded
+                if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'mapLoaded'
+                    }));
                 }
-            } else {
-                console.warn('Not enough coordinates for polygon:', polygonCoords.length);
+
+                console.log('✅ Map loaded successfully');
+
+            } catch (error) {
+                console.error('❌ Map initialization failed:', error);
+
+                var mapDiv = document.getElementById('map');
+                if (mapDiv) {
+                    mapDiv.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #dc2626; padding: 20px;"><b>🗺️ Map Error</b><br><small>' + error.message + '</small><br><small>Please check your internet connection</small></div>';
+                }
             }
-        } catch (error) {
-            console.error('Error creating polygon:', error);
         }
 
-            polygon.bindPopup('Security Geofence Area');
-
-            console.log('Polygon drawn successfully');
-        } catch (error) {
-            console.error('Error drawing polygon:', error);
+        // Initialize map
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initMap);
+        } else {
+            setTimeout(initMap, 100);
         }
-        ` : ''}
 
-        // Officer location marker will be added dynamically via postMessage
-        // This prevents initial re-renders and allows smooth updates
-
-        ${showMarker ? `
-        // Fit to marker bounds
-        map.fitBounds([[${latitude}, ${longitude}], [${latitude}, ${longitude}]], {
-            padding: [20, 20]
-        });
-        ` : ''}
-
-        // Handle map load event
-        map.whenReady(function() {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'mapLoaded',
-                center: map.getCenter(),
-                zoom: map.getZoom()
-            }));
-        });
-
-        // Handle marker click
-        ${showMarker ? `
-        marker.on('click', function() {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'markerClicked',
-                lat: ${latitude},
-                lng: ${longitude}
-            }));
-        });
-        ` : ''}
-
-        // Handle incoming messages from React Native
+        // Handle messages from React Native
         window.addEventListener('message', function(event) {
             try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'updateOfficerMarker') {
-                    // Update officer marker position
-                    const newLatLng = L.latLng(data.latitude, data.longitude);
+                var data = JSON.parse(event.data);
+                console.log('📨 Message received:', data.type);
 
-                    if (window.officerMarker) {
-                        // Update existing marker position
-                        window.officerMarker.setLatLng(newLatLng);
+                if (data.type === 'updateOfficerMarker' && map) {
+                    console.log('📍 Updating officer location:', data.latitude, data.longitude);
+                    console.log('🗺️ Map instance exists:', !!map);
+
+                    if (officerMarker) {
+                        // Update existing marker
+                        console.log('🔄 Updating existing officer marker position');
+                        officerMarker.setLatLng([data.latitude, data.longitude]);
+                        officerMarker.bringToFront();
                     } else {
-                        // Create new officer marker if it doesn't exist
-                        const officerIcon = L.divIcon({
-                            html: '<div style="background-color: #007AFF; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.4); position: relative;"><div style="position: absolute; top: -8px; left: -8px; width: 36px; height: 36px; border: 2px solid #007AFF; border-radius: 50%; opacity: 0.3; animation: pulse 2s infinite;"></div></div><style>@keyframes pulse { 0% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.2); opacity: 0.1; } 100% { transform: scale(1); opacity: 0.3; } }</style>',
-                            className: 'officer-location-marker',
+                        console.log('🆕 Creating new officer marker');
+                        // Create new officer marker - SIMPLIFIED FOR VISIBILITY
+                        var icon = L.divIcon({
+                            html: '<div style="background-color: #FF3B30; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; font-size: 16px;">👮</div>',
+                            className: 'officer-marker',
                             iconSize: [36, 36],
                             iconAnchor: [18, 18]
                         });
 
-                        window.officerMarker = L.marker(newLatLng, { icon: officerIcon }).addTo(window.mapInstance);
-                        window.officerMarker.bindPopup('<b>🚔 Live Officer Location</b><br/>📍 Real-time GPS tracking<br/>⚡ Updates every 1 second<br/>🎯 High accuracy mode');
+                        officerMarker = L.marker([data.latitude, data.longitude], {
+                            icon: icon,
+                            zIndexOffset: 1000
+                        }).addTo(map);
+
+                        officerMarker.bindPopup('<b>🚔 Security Officer</b><br/>📍 Live Location Tracking<br/>⚡ Updates every 3 seconds<br/>🎯 GPS High Accuracy Mode<br/>🛡️ Active Security Patrol');
+
+                        console.log('✅ Officer marker created at:', [data.latitude, data.longitude]);
+                        console.log('🎯 Marker added to map successfully');
                     }
                 }
+
+                if (data.type === 'centerOnGeofence') {
+                    console.log('📨 Received centerOnGeofence message:', data);
+                    console.log('🗺️ Map instance available:', !!map);
+                    console.log('📍 Center coordinates:', data.center);
+
+                    if (!map) {
+                        console.log('❌ Map not initialized yet');
+                        return;
+                    }
+
+                    if (!data.center || typeof data.center.latitude !== 'number' || typeof data.center.longitude !== 'number') {
+                        console.log('❌ Invalid center coordinates:', data.center);
+                        return;
+                    }
+
+                    try {
+                        console.log('🎯 Setting map view to:', [data.center.latitude, data.center.longitude], 'zoom:', data.zoom || 15);
+                        map.setView([data.center.latitude, data.center.longitude], data.zoom || 15);
+                        console.log('✅ Map successfully centered on geofence');
+
+                        // Optional: Add a marker at center for debugging
+                        if (window.debugCenterMarker) {
+                            map.removeLayer(window.debugCenterMarker);
+                        }
+                        window.debugCenterMarker = L.marker([data.center.latitude, data.center.longitude], {
+                            icon: L.divIcon({
+                                html: '<div style="background: blue; width: 10px; height: 10px; border-radius: 50%; border: 2px solid white;"></div>',
+                                className: 'debug-center-marker',
+                                iconSize: [14, 14],
+                                iconAnchor: [7, 7]
+                            })
+                        }).addTo(map);
+
+                    } catch (error) {
+                        console.error('❌ Error centering map:', error);
+                    }
+                }
+
+                if (data.type === 'centerOnOfficer' && map && data.center) {
+                    console.log('👮 Centering map on officer location:', data.center, 'zoom:', data.zoom);
+                    map.setView([data.center.latitude, data.center.longitude], data.zoom || 16);
+                }
             } catch (error) {
-                console.error('Error handling message:', error);
+                console.error('❌ Message handling error:', error);
             }
         });
 
-        // Officer marker will be added via postMessage updates
-        // window.officerMarker will be set when location updates arrive
+        // Send initial loaded message
+        setTimeout(function() {
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'loaded'
+                }));
+            }
+        }, 500);
     </script>
 </body>
 </html>`;
+
+    return html;
   };
 
   const handleMessage = (event: any) => {
@@ -400,14 +273,14 @@ export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
         console.log('✅ HTML document loaded');
       } else if (data.type === 'error') {
         console.error('❌ Map error:', data.message);
-      } else if (data.type === 'updateOfficerMarker') {
-        console.log('📍 Officer marker update processed');
+        setHasError(true);
+        setIsLoading(false);
       }
     } catch (error) {
+      console.error('LeafletMap message parsing error:', error);
       console.log('LeafletMap raw message:', event.nativeEvent.data);
     }
   };
-
 
   const handleLoadEnd = () => {
     console.log('WebView load ended');
@@ -423,8 +296,6 @@ export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
     setHasError(true);
     setIsLoading(false);
   };
-
-  // Officer location updates are now handled by the parent component via postMessage
 
   return (
     <View style={[styles.container, { height }]}>
@@ -465,7 +336,6 @@ export const LeafletMap: React.FC<LeafletMapWithRefProps> = ({
           allowFileAccess={true}
           allowUniversalAccessFromFileURLs={true}
           allowFileAccessFromFileURLs={true}
-          useWebkit={true}
           sharedCookiesEnabled={true}
           thirdPartyCookiesEnabled={true}
         />
@@ -484,6 +354,7 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
+    backgroundColor: colors.lightGrayBg,
   },
   loadingContainer: {
     flex: 1,

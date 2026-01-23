@@ -14,3 +14,8 @@ export * from './slices/authSlice';
 export * from './slices/alertsSlice';
 export * from './slices/locationSlice';
 export * from './slices/settingsSlice';
+
+// Zustand store exports
+export { useAlertsStore } from './alertsStore';
+export { useGeofenceStore } from './geofenceStore';
+export { useNotificationsStore } from './notificationsStore';

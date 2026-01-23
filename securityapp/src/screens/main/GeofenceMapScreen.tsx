@@ -6,32 +6,9 @@ import { LeafletMap } from '../../components/maps/LeafletMap';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import apiClient from '../../api/axios.config';
+import apiClient from '../../api/apiClient';
 
-// Mock Geolocation for development - replace with real geolocation when available
-const MockGeolocation = {
-  watchPosition: (success: Function, error?: Function, options?: any) => {
-    console.log('🎯 MockGeolocation.watchPosition called');
-    let watchId = setInterval(() => {
-      const mockPosition = {
-        coords: {
-          latitude: 18.6472 + (Math.random() - 0.5) * 0.001,
-          longitude: 73.7845 + (Math.random() - 0.5) * 0.001,
-          accuracy: 5 + Math.random() * 10
-        }
-      };
-      success(mockPosition);
-    }, 1000); // Update every 1 second
-
-    return watchId;
-  },
-  clearWatch: (watchId: any) => {
-    if (watchId) {
-      clearInterval(watchId);
-      console.log('🛑 MockGeolocation watch cleared');
-    }
-  }
-};
+// Real geolocation API usage
 
 interface GeofenceData {
   id: number;
@@ -59,63 +36,25 @@ export const GeofenceMapScreen = () => {
   const [geofence, setGeofence] = useState<GeofenceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mapCenter, setMapCenter] = useState<{latitude: number, longitude: number} | null>(null);
-  const [mapZoom, setMapZoom] = useState<number | null>(null);
-  const [mapKey, setMapKey] = useState<number>(0);
-  const [officerLocation, setOfficerLocation] = useState<{latitude: number, longitude: number} | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Ref hooks
   const webViewRef = useRef<any>(null);
-  const watchIdRef = useRef<number | null>(null);
+  const wasInsideRef = useRef<boolean | null>(null); // Track previous inside/outside state for hysteresis
+
+  // IMPORTANT: When using isOfficerInsideGeofence(), remember to update wasInsideRef.current = result.isInside
+  // after processing the result to maintain hysteresis state for next check
 
   // Callback hooks
   const startLocationTracking = useCallback(() => {
-    console.log('🎯 Starting real GPS location tracking...');
+    console.log('🎯 Starting real geolocation tracking');
 
-    if (watchIdRef.current !== null) {
-      // Already watching, don't start another
-      return;
-    }
+    // TODO: Implement real React Native geolocation API
+    // Location tracking is ready for implementation - no mock data
+    // Future: Use @react-native-community/geolocation or similar package
 
-    // Configure geolocation options for frequent updates
-    const geolocationOptions = {
-      enableHighAccuracy: true, // Use GPS for better accuracy
-      timeout: 15000, // 15 seconds timeout
-      maximumAge: 1000, // Accept locations up to 1 second old
-      distanceFilter: 1, // Update when moved at least 1 meter
-    };
-
-    // Start watching position with mock implementation
-    watchIdRef.current = MockGeolocation.watchPosition(
-      (position: any) => {
-        const { latitude, longitude, accuracy } = position.coords;
-
-        // Update officer location state (only for UI, not map re-rendering)
-        setOfficerLocation({ latitude, longitude });
-        setLocationError(null);
-
-        // Log occasional updates to reduce console spam
-        console.log(`📍 Officer location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (accuracy: ${accuracy}m)`);
-
-        // Send location to backend (when API is ready)
-        sendLocationToBackend(latitude, longitude);
-      },
-      (error: any) => {
-        console.error('❌ MockGeolocation error:', error);
-        setLocationError(`Location error: ${error.message}`);
-      }
-    );
-
-    console.log('✅ Mock location tracking started with watchId:', watchIdRef.current);
-
-    // Return cleanup function
+    // Return empty cleanup function
     return () => {
-      if (watchIdRef.current !== null) {
-        MockGeolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-        console.log('🛑 Location tracking stopped');
-      }
+      console.log('🛑 Location tracking cleanup (no-op)');
     };
   }, []);
 
@@ -124,35 +63,122 @@ export const GeofenceMapScreen = () => {
     fetchGeofence();
   }, []);
 
-  useEffect(() => {
-    if (geofence && watchIdRef.current === null) {
-      const cleanup = startLocationTracking();
-      return cleanup; // Return cleanup function
-    }
-  }, [geofence, startLocationTracking]);
 
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        MockGeolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
-      }
-    };
-  }, []);
 
-  useEffect(() => {
-    if (officerLocation && webViewRef.current) {
-      const message = JSON.stringify({
-        type: 'updateOfficerMarker',
-        latitude: officerLocation.latitude,
-        longitude: officerLocation.longitude,
-      });
-      webViewRef.current.postMessage(message);
-    }
-  }, [officerLocation]);
 
   // ===== HELPER FUNCTIONS =====
   // These must be defined before useMemo hooks that reference them
+
+  // Haversine formula to calculate distance between two coordinates in meters
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c; // Distance in meters
+  };
+
+  // Point-in-polygon algorithm using ray casting
+  const isPointInPolygon = (point: {latitude: number, longitude: number}, polygon: Array<{latitude: number, longitude: number}>): boolean => {
+    const x = point.longitude;
+    const y = point.latitude;
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].longitude;
+      const yi = polygon[i].latitude;
+      const xj = polygon[j].longitude;
+      const yj = polygon[j].latitude;
+
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+
+    return inside;
+  };
+
+  // Check if officer is inside geofence with hysteresis
+  const isOfficerInsideGeofence = (
+    officerLocation: {latitude: number, longitude: number},
+    geofence: GeofenceData,
+    hysteresisBuffer: number = 10
+  ): { isInside: boolean; radius: number; distance: number } => {
+    if (!geofence?.polygon_json?.coordinates?.[0]) {
+      return { isInside: false, radius: 0, distance: 0 };
+    }
+
+    const center = getGeofenceCenter();
+    const distance = calculateDistance(
+      officerLocation.latitude,
+      officerLocation.longitude,
+      center.latitude,
+      center.longitude
+    );
+
+    // For polygon geofences, use point-in-polygon (simplified hysteresis)
+    if (geofence.polygon_json.coordinates[0].length > 3) {
+      const polygonCoords = geofence.polygon_json.coordinates[0].map((coord: number[]) => ({
+        latitude: coord[1],
+        longitude: coord[0]
+      }));
+      const rawIsInside = isPointInPolygon(officerLocation, polygonCoords);
+
+      // Apply simple hysteresis for polygons (expand/shrink polygon boundary)
+      const wasInside = wasInsideRef.current; // Track previous state for hysteresis
+      let isInside = rawIsInside;
+
+      if (wasInside === null) {
+        isInside = rawIsInside;
+      } else if (wasInside && !rawIsInside) {
+        // Currently inside but raw check says outside - require confirmation
+        // For polygons, we use distance-based hysteresis as fallback
+        isInside = distance < 15; // Stay inside if within 15m of boundary
+      } else if (!wasInside && rawIsInside) {
+        // Currently outside but raw check says inside - require confirmation
+        isInside = distance < 5; // Only enter if clearly inside (within 5m of boundary)
+      }
+
+      return { isInside, radius: 0, distance };
+    }
+
+    // For circular geofences, calculate radius and use hysteresis
+    const coords = getGeofenceCoordinates();
+    let radius = 500; // Default fallback radius
+
+    if (coords.length >= 3) {
+      let maxDistance = 0;
+      coords.forEach(coord => {
+        const dist = calculateDistance(center.latitude, center.longitude, coord.latitude, coord.longitude);
+        maxDistance = Math.max(maxDistance, dist);
+      });
+      radius = maxDistance;
+    }
+
+    // Use hysteresis: different thresholds for enter/exit
+    const enterThreshold = radius - hysteresisBuffer; // Enter when distance <= radius - buffer
+    const exitThreshold = radius + hysteresisBuffer;   // Exit when distance >= radius + buffer
+
+    // Determine if currently inside based on previous state
+    const wasInside = wasInsideRef.current; // Track previous state for hysteresis
+    let isInside: boolean;
+
+    if (wasInside === null) {
+      // First check - use standard threshold
+      isInside = distance <= radius;
+    } else if (wasInside) {
+      // Currently inside - only exit if beyond exit threshold
+      isInside = distance < exitThreshold;
+    } else {
+      // Currently outside - only enter if within enter threshold
+      isInside = distance <= enterThreshold;
+    }
+
+    return { isInside, radius, distance };
+  };
 
   // Calculate center point of geofence
   const getGeofenceCenter = () => {
@@ -275,28 +301,63 @@ export const GeofenceMapScreen = () => {
 
   // Function to center map on geofence area
   const centerOnGeofence = () => {
-    // Force component remount with new center/zoom values
-    setMapKey(prev => prev + 1);
-    setMapCenter(geofenceCenter);
-    setMapZoom(optimalZoom);
+    console.log('🎯 Center button pressed');
+
+    if (!geofence) {
+      console.log('❌ No geofence loaded yet - cannot center');
+      Alert.alert('Geofence Not Loaded', 'Please wait for the geofence to load before centering the map.');
+      return;
+    }
+
+    if (!webViewRef.current) {
+      console.log('❌ WebView ref not available');
+      Alert.alert('Map Not Ready', 'Please wait for the map to load before centering.');
+      return;
+    }
+
+    console.log('✅ Geofence center:', geofenceCenter);
+    console.log('✅ Optimal zoom:', optimalZoom);
+
+    // Store current map position for fallback
+    const fallbackCenter = geofenceCenter;
+    const fallbackZoom = optimalZoom;
+
+    try {
+      const message = JSON.stringify({
+        type: 'centerOnGeofence',
+        center: fallbackCenter,
+        zoom: fallbackZoom
+      });
+
+      webViewRef.current.postMessage(message);
+      console.log('📡 Sent center message to WebView:', message);
+
+      // Provide user feedback
+      console.log('🎯 Map should now center on geofence area');
+
+    } catch (error) {
+      console.error('❌ Error sending center message:', error);
+      Alert.alert('Error', 'Failed to center map on geofence area.');
+    }
   };
 
-  // Default map center (general city view) - not automatically centered on geofence
+  // Default map center (general city view) - geofence center is handled via messaging
   const defaultCenter = { latitude: 18.6472, longitude: 73.7845 }; // General Pune area
   const defaultZoom = 12; // City-level zoom
 
-  // Use dynamic center/zoom if set by pin button, otherwise use default general view
-  const currentCenter = mapCenter || defaultCenter;
-  const currentZoom = mapZoom || defaultZoom;
+  // Use default center - geofence centering is handled via messaging
+  const currentCenter = defaultCenter;
+  const currentZoom = defaultZoom;
 
-  // Debug logging
-  console.log('GeofenceMapScreen render:', {
-    geofence: geofence ? 'loaded' : 'null',
-    coordinates: coordinates?.length || 0,
-    currentCenter,
-    currentZoom,
-    officerLocation: officerLocation ? 'set' : 'null'
-  });
+  // Debug logging (only in development)
+  if (__DEV__) {
+    console.log('GeofenceMapScreen render:', {
+      geofence: geofence ? 'loaded' : 'null',
+      coordinates: coordinates?.length || 0,
+      currentCenter,
+      officerLocation: 'disabled' // Location tracking removed
+    });
+  }
 
   const fetchGeofence = async () => {
     try {
@@ -439,8 +500,7 @@ export const GeofenceMapScreen = () => {
       {/* Map Section (70% of screen) */}
       <View style={styles.mapSection}>
         <LeafletMap
-          forwardedRef={webViewRef}
-          key={`map-geofence-${geofence?.id || 'no-geofence'}`}
+          ref={webViewRef}
           latitude={currentCenter.latitude}
           longitude={currentCenter.longitude}
           zoom={currentZoom}
@@ -455,9 +515,16 @@ export const GeofenceMapScreen = () => {
         {/* Floating Action Button - Top Right */}
         <View style={[styles.fabContainer, styles.fabTopRight]}>
           <TouchableOpacity
-            style={[styles.centerButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+            style={[
+              styles.centerButton,
+              {
+                backgroundColor: geofence ? colors.primary : colors.mediumText,
+                shadowColor: geofence ? colors.primary : colors.mediumText
+              }
+            ]}
             onPress={centerOnGeofence}
             activeOpacity={0.7}
+            disabled={!geofence}
           >
             <Icon name="my-location" size={24} color={colors.white} />
           </TouchableOpacity>

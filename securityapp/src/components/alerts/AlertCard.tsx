@@ -25,6 +25,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
   const isAccepted = alert.status === 'accepted';
 
   const handleDelete = () => {
+    console.log('🗑️ AlertCard: Delete button pressed for alert:', alert.id);
     RNAlert.alert(
       'Delete Alert',
       'Are you sure you want to delete this alert?',
@@ -33,7 +34,10 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => onDelete && onDelete(alert),
+          onPress: () => {
+            console.log('✅ AlertCard: User confirmed delete, calling onDelete for alert:', alert.id);
+            onDelete && onDelete(alert);
+          },
         },
       ]
     );

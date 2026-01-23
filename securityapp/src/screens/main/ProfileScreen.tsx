@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,37 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../utils/colors';
 import { typography, spacing, shadows } from '../../utils';
-import { MOCK_OFFICERS } from '../../utils/mockData';
-
+import { profileService } from '../../api/services/profileService';
+import { SecurityOfficer } from '../../types/user.types';
 export const ProfileScreen = () => {
-  // Use mock officer data
-  const officer = MOCK_OFFICERS['BADGE001'].officer;
+  const [officer, setOfficer] = useState<SecurityOfficer | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Fetch profile data on component mount
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const profileData = await profileService.getProfile('');
+      setOfficer(profileData);
+    } catch (error: any) {
+      console.error('Failed to fetch profile:', error);
+      setError(error.message || 'Failed to load profile');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -34,9 +56,72 @@ export const ProfileScreen = () => {
     );
   };
 
-  const handleEditProfile = () => {
-    Alert.alert('Edit Profile', 'Profile editing feature coming soon!');
+  const handleEditProfile = async () => {
+    if (!officer) return;
+
+    Alert.alert(
+      'Edit Profile',
+      'Profile editing feature is not yet implemented. This will be added in a future update.',
+      [{ text: 'OK' }]
+    );
+
+    // TODO: Implement profile editing with PATCH API
+    // const updates = { /* user input */ };
+    // try {
+    //   setIsUpdating(true);
+    //   await profileService.updateProfile(officer.security_id, updates);
+    //   await fetchProfile(); // Refresh data
+    //   Alert.alert('Success', 'Profile updated successfully!');
+    // } catch (error: any) {
+    //   Alert.alert('Error', error.message || 'Failed to update profile');
+    // } finally {
+    //   setIsUpdating(false);
+    // }
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Icon name="error" size={48} color={colors.emergencyRed} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={fetchProfile}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // No profile data
+  if (!officer) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Icon name="person" size={48} color={colors.mediumText} />
+        <Text style={styles.errorText}>No profile data available</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={fetchProfile}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
@@ -123,6 +208,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.lightGrayBg,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: 16,
+    color: colors.mediumText,
+  },
+  errorText: {
+    fontSize: 16,
+    color: colors.emergencyRed,
+    textAlign: 'center',
+    marginVertical: spacing.md,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 8,
+    marginTop: spacing.md,
+  },
+  retryButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   scrollContent: {
     paddingBottom: spacing.xl,

@@ -13,63 +13,26 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 
-// Mock search results data
-const mockSearchResults = [
-  {
-    id: '1',
-    type: 'alert',
-    title: 'Security Alert #1234',
-    subtitle: 'Intrusion detected at Main Gate',
-    timestamp: '2 hours ago',
-    priority: 'high',
-  },
-  {
-    id: '2',
-    type: 'location',
-    title: 'Downtown Branch',
-    subtitle: '123 Main St, Downtown',
-    timestamp: 'Geofence active',
-    priority: 'normal',
-  },
-  {
-    id: '3',
-    type: 'officer',
-    title: 'John Smith',
-    subtitle: 'Badge #5678 - On Duty',
-    timestamp: 'Last active: 30 min ago',
-    priority: 'normal',
-  },
-  {
-    id: '4',
-    type: 'report',
-    title: 'Monthly Security Report',
-    subtitle: 'Generated on Dec 15, 2024',
-    timestamp: 'Contains 15 alerts',
-    priority: 'low',
-  },
-];
-
 export const SearchScreen = () => {
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState(mockSearchResults);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     setIsSearching(true);
+    setError(null);
 
     // Simulate search delay
     setTimeout(() => {
       if (query.trim() === '') {
-        setSearchResults(mockSearchResults);
+        setSearchResults([]);
       } else {
-        // Filter results based on search query
-        const filtered = mockSearchResults.filter(item =>
-          item.title.toLowerCase().includes(query.toLowerCase()) ||
-          item.subtitle.toLowerCase().includes(query.toLowerCase())
-        );
-        setSearchResults(filtered);
+        // TODO: Implement real search API call
+        // For now, show empty results
+        setSearchResults([]);
       }
       setIsSearching(false);
     }, 300);
@@ -103,7 +66,7 @@ export const SearchScreen = () => {
     }
   };
 
-  const renderSearchResult = ({ item }: { item: typeof mockSearchResults[0] }) => (
+  const renderSearchResult = ({ item }: { item: any }) => (
     <TouchableOpacity
       style={[styles.resultItem, { borderLeftColor: getPriorityColor(item.priority) }]}
       activeOpacity={0.7}
@@ -156,7 +119,7 @@ export const SearchScreen = () => {
             <TouchableOpacity
               onPress={() => {
                 setSearchQuery('');
-                setSearchResults(mockSearchResults);
+                setSearchResults([]);
               }}
               activeOpacity={0.7}
             >

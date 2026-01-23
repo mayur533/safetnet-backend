@@ -1,29 +1,72 @@
-import axiosInstance from '../axios.config';
+import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
+import apiConfig from '../config';
 import { LoginPayload, LoginResponse, DjangoLoginResponse } from '../../types/user.types';
 import { storage } from '../../utils/storage';
 import { constants } from '../../utils/constants';
-import { mockLogin } from '../../utils/mockData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { ENABLE_API_CALLS } from '../config';
+// All mock data has been removed - app relies on real API calls only
 
-// Use global API enable flag
-const USE_MOCK_DATA = !ENABLE_API_CALLS;
+// Network connectivity test
+export const testBackendConnectivity = async (): Promise<{available: boolean, message: string}> => {
+  try {
+    console.log('🔍 Testing backend connectivity...');
+    console.log('🌐 Testing URL:', `${apiConfig.BASE_URL}/api/security/login/`);
+
+    // Try a simple HEAD request to test connectivity
+    const response = await apiClient.head('/login/', { timeout: 10000 });
+
+    console.log('✅ Backend is reachable!');
+    console.log('📊 Response status:', response.status);
+
+    return {
+      available: true,
+      message: 'Backend service is responding'
+    };
+  } catch (error: any) {
+    console.error('❌ Backend connectivity test failed:');
+
+    if (error.response) {
+      return {
+        available: false,
+        message: `Backend responded with error: ${error.response.status}`
+      };
+    } else if (error.request) {
+      return {
+        available: false,
+        message: 'Cannot connect to backend. Service may be sleeping or down.'
+      };
+    } else {
+      return {
+        available: false,
+        message: `Connection error: ${error.message}`
+      };
+    }
+  }
+};
 
 export const authService = {
   login: async (credentials: LoginPayload): Promise<LoginResponse> => {
-    // Always try real API first, fallback to mock data if backend fails
+    console.log('🔐 LOGIN ATTEMPT - Real API call to backend');
+    console.log('🌐 API Endpoint:', `${apiConfig.BASE_URL}/api/security${API_ENDPOINTS.LOGIN}`);
+    console.log('👤 Credentials:', { email: credentials.email, password: '[HIDDEN]' });
+
     try {
       // Django REST API call
       // Send username and password (Django expects username field, not email)
-      const response = await axiosInstance.post<DjangoLoginResponse>(
+      console.log('📡 Making POST request to login endpoint...');
+      const response = await apiClient.post<DjangoLoginResponse>(
         API_ENDPOINTS.LOGIN,
         {
           username: credentials.email, // Use email as username (Django accepts both)
           password: credentials.password,
         }
       );
+
+      console.log('✅ Login API call successful!');
+      console.log('📊 Response status:', response.status);
+      console.log('📦 Response data keys:', Object.keys(response.data || {}));
 
       // Django returns: { access, refresh, user: { id, username, email, role, ... } }
       const djangoResponse = response.data;
@@ -72,36 +115,96 @@ export const authService = {
         msg: 'Invalid response from server',
       };
     } catch (error: any) {
-      // Backend is unavailable - fallback to mock data
-      console.warn('Backend login failed, falling back to mock data:', error.message);
+      console.error('❌ LOGIN FAILED - Detailed Error Analysis:');
+      console.error('🔍 Error Type:', error.constructor.name);
+      console.error('💬 Error Message:', error.message);
 
-      const mockResponse = await mockLogin(credentials.email, credentials.password);
+      // Detailed error analysis
+      if (error.response) {
+        // Server responded with error status
+        console.error('📊 SERVER RESPONSE ERROR:');
+        console.error('   Status:', error.response.status);
+        console.error('   Status Text:', error.response.statusText);
+        console.error('   Headers:', error.response.headers);
+        console.error('   Data:', JSON.stringify(error.response.data, null, 2));
 
-      if (mockResponse.result === 'success') {
-        // Store token
-        await storage.setAuthToken('mock_bearer_token_' + Date.now());
-        if (mockResponse.security_id) {
-          await storage.setUserId(mockResponse.security_id);
+        const status = error.response.status;
+        const data = error.response.data;
+
+        if (status === 400) {
+          return {
+            result: 'failed',
+            role: 'user',
+            msg: data?.detail || data?.message || data?.non_field_errors?.[0] || 'Invalid credentials',
+          };
+        } else if (status === 401) {
+          return {
+            result: 'failed',
+            role: 'user',
+            msg: 'Invalid username or password',
+          };
+        } else if (status === 404) {
+          return {
+            result: 'failed',
+            role: 'user',
+            msg: 'Login endpoint not found. Backend may not be properly deployed.',
+          };
+        } else if (status === 429) {
+          return {
+            result: 'failed',
+            role: 'user',
+            msg: 'Too many login attempts. Please try again later.',
+          };
+        } else if (status >= 500) {
+          return {
+            result: 'failed',
+            role: 'user',
+            msg: 'Server error. Backend service may be down.',
+          };
         }
-        await storage.setItem(constants.STORAGE_KEYS.ROLE, mockResponse.role);
+      } else if (error.request) {
+        // Request made but no response received
+        console.error('🌐 NETWORK ERROR (No Response):');
+        console.error('   Request Config:', {
+          url: error.request._url || error.request.url,
+          method: error.request._method || 'POST',
+          timeout: error.request._timeout || 'unknown'
+        });
+
+        // This is likely a Render service sleeping or network issue
+        console.error('🚨 POSSIBLE CAUSES:');
+        console.error('   1. Render free tier service is sleeping (wake it up)');
+        console.error('   2. Backend server is down');
+        console.error('   3. Network connectivity issues');
+        console.error('   4. CORS policy blocking requests');
+
+        return {
+          result: 'failed',
+          role: 'user',
+          msg: 'Cannot connect to server. The backend service may be sleeping (Render free tier) or unavailable. Please try again in 30-60 seconds.',
+        };
+      } else {
+        // Something else happened
+        console.error('⚙️ UNKNOWN ERROR:', error);
+        return {
+          result: 'failed',
+          role: 'user',
+          msg: 'An unexpected error occurred. Please try again.',
+        };
       }
 
-      return mockResponse;
+      return {
+        result: 'failed',
+        role: 'user',
+        msg: 'Login failed. Please check your credentials and try again.',
+      };
     }
   },
 
   logout: async (userId: string, role: string) => {
-    if (USE_MOCK_DATA) {
-      // Mock logout - just clear storage
-      await storage.clear();
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('refresh_token');
-      return { result: 'success', msg: 'Logged out successfully' };
-    }
-
     try {
-      // Django REST API logout (endpoint may not exist - that's OK)
-      await axiosInstance.post(API_ENDPOINTS.LOGOUT, {}, {
+      // Attempt API logout (may not exist, which is fine)
+      await apiClient.post(API_ENDPOINTS.LOGOUT, {}, {
         validateStatus: (status) => status < 500, // Accept 404 as OK
       });
     } catch (error: any) {
@@ -120,18 +223,9 @@ export const authService = {
   },
 
   forgotPassword: async (email: string) => {
-    if (USE_MOCK_DATA) {
-      // Mock forgot password
-      await new Promise((resolve) => setTimeout(() => resolve(undefined), 1000));
-      return {
-        result: 'success',
-        msg: 'Password reset link sent to your email (mock)',
-      };
-    }
-
     try {
       // Django REST API forgot password - call the actual backend endpoint
-      const response = await axiosInstance.post(API_ENDPOINTS.FORGOT_PASSWORD, {
+      const response = await apiClient.post(API_ENDPOINTS.FORGOT_PASSWORD, {
         email: email.trim().toLowerCase(),
       });
 
@@ -197,7 +291,7 @@ export const authService = {
   // Refresh JWT token
   refreshToken: async (refreshToken: string): Promise<string | null> => {
     try {
-      const response = await axiosInstance.post(API_ENDPOINTS.REFRESH_TOKEN, {
+      const response = await apiClient.post(API_ENDPOINTS.REFRESH_TOKEN, {
         refresh: refreshToken,
       });
 

@@ -11,7 +11,8 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { authService } from '../../api/services';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authService, testBackendConnectivity } from '../../api/services/authService';
 import { useAppDispatch } from '../../store/hooks';
 import { loginSuccess } from '../../store/slices/authSlice';
 import { useNavigation } from '@react-navigation/native';
@@ -44,9 +45,11 @@ export const LoginScreen = () => {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const passwordInputRef = useRef<TextInput>(null);
   const dispatch = useAppDispatch();
   const navigation = useNavigation<AuthNavigationProp>();
+
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -58,14 +61,20 @@ export const LoginScreen = () => {
       setIsLoading(true);
       
       // Make login request
-      const res = await authService.login({ 
-        email, 
-        password, 
-        device_type: Platform.OS === 'ios' ? 'ios' : 'android' 
+      const res = await authService.login({
+        email,
+        password,
+        device_type: Platform.OS === 'ios' ? 'ios' : 'android'
       });
-      
+
+      // Check if login was successful
+      if (res.result !== 'success') {
+        throw new Error(res.msg || 'Invalid credentials');
+      }
+
       // Extract tokens and user data (optimized - minimal processing)
       const accessToken = res.access;
+      const refreshToken = res.refresh;
       const user = res.user || { 
         id: 0, 
         username: '', 
@@ -114,8 +123,29 @@ export const LoginScreen = () => {
         status: normalizedStatus,
       };
 
-      // Dispatch login success immediately - navigation happens automatically
+      // Persist tokens to AsyncStorage for session management
+      try {
+        await AsyncStorage.setItem('token', accessToken);
+        if (refreshToken) {
+          await AsyncStorage.setItem('refresh_token', refreshToken);
+        }
+        console.log('✅ Tokens persisted to AsyncStorage');
+      } catch (storageError) {
+        console.error('⚠️ Failed to persist tokens:', storageError);
+        // Continue with login even if storage fails
+      }
+
+      // Dispatch login success - navigation will automatically switch to MainNavigator
       dispatch(loginSuccess({ token: accessToken, officer, navigateToSOS: false }));
+
+      // Immediately fetch alerts for Dashboard (will be called when Dashboard mounts)
+      try {
+        const { useAlertsStore } = await import('../../store/alertsStore');
+        useAlertsStore.getState().fetchAlerts();
+      } catch (alertError) {
+        console.warn('Could not fetch alerts after login:', alertError);
+      }
+
       setIsLoading(false); // Clear loading state immediately
     } catch (err: any) {
       setIsLoading(false); // Clear loading state on error
