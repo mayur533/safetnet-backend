@@ -13,30 +13,55 @@ FIELDS_TO_REMOVE = [
 
 def remove_fields_if_table_exists(apps, schema_editor):
     db_table = 'users_profile_sosevent'
+    db_backend = connection.vendor
+
     with connection.cursor() as cursor:
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_name = %s
-            )
-        """, [db_table])
-        table_exists = cursor.fetchone()[0]
+        # Check if table exists - different SQL for different databases
+        if db_backend == 'postgresql':
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_name = %s
+                )
+            """, [db_table])
+            table_exists = cursor.fetchone()[0]
+        elif db_backend == 'sqlite':
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", [db_table])
+            table_exists = cursor.fetchone() is not None
+        else:
+            # For other databases, skip the operation
+            print(f"[users_profile] Unsupported database backend {db_backend}, skipping column removal")
+            return
 
         if not table_exists:
             print(f"[users_profile] Skipping column removal; table {db_table} does not exist.")
             return
 
-        cursor.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = %s
-        """, [db_table])
-        existing_columns = {row[0] for row in cursor.fetchall()}
+        # Get existing columns - different SQL for different databases
+        if db_backend == 'postgresql':
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = %s
+            """, [db_table])
+            existing_columns = {row[0] for row in cursor.fetchall()}
+        elif db_backend == 'sqlite':
+            cursor.execute(f"PRAGMA table_info({db_table})")
+            # For SQLite, column name is at index 1
+            rows = cursor.fetchall()
+            existing_columns = {row[1] for row in rows}
+        else:
+            print(f"[users_profile] Unsupported database backend {db_backend}, skipping column removal")
+            return
 
         for field in FIELDS_TO_REMOVE:
             if field in existing_columns:
-                cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN IF EXISTS {field}')
+                if db_backend == 'postgresql':
+                    cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN IF EXISTS {field}')
+                elif db_backend == 'sqlite':
+                    cursor.execute(f'ALTER TABLE {db_table} DROP COLUMN {field}')
+                print(f"[users_profile] Dropped column {field} from {db_table}")
 
 
 def noop_reverse(apps, schema_editor):

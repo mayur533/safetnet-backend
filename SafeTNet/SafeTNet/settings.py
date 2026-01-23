@@ -44,6 +44,14 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(','
 ALLOWED_HOSTS.append('safetnet.onrender.com')
 ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
 ALLOWED_HOSTS.append('192.168.0.125')  # Local network IP for device testing
+
+# Add Render domain if on Render
+if os.getenv('RENDER'):
+    ALLOWED_HOSTS.append(os.getenv('RENDER_EXTERNAL_URL', '').replace('https://', ''))
+
+print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print(f"RENDER environment: {os.getenv('RENDER')}")
+print(f"DATABASE_URL present: {bool(os.getenv('DATABASE_URL'))}")
 # Application definition
 
 INSTALLED_APPS = [
@@ -108,25 +116,68 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 
 
 # Database configuration - Optimized for Neon PostgreSQL with SSL
-# Use SQLite for local development, PostgreSQL for production
-if DEBUG:
-    DATABASES = {
-        'default': {
+# Database configuration for different environments
+def get_database_config():
+    """
+    Configure database based on environment.
+    - Local development: SQLite
+    - Render/Production: PostgreSQL via DATABASE_URL
+    """
+    # Check if we're on Render (has RENDER environment variable)
+    is_render = os.getenv('RENDER') is not None
+    database_url = os.getenv('DATABASE_URL')
+
+    print(f"Environment check:")
+    print(f"   DEBUG: {DEBUG}")
+    print(f"   RENDER: {is_render}")
+    print(f"   DATABASE_URL present: {bool(database_url)}")
+
+    if database_url:
+        print(f"Using DATABASE_URL: {database_url[:50]}...")
+    else:
+        print("No DATABASE_URL found")
+
+    if DEBUG and not is_render:
+        # Local development - use SQLite
+        print("Using SQLite for local development")
+        return {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
         }
-    }
-else:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            os.getenv(
-                'DATABASE_URL',
-                'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
-            ),
-            conn_max_age=600,
-            ssl_require=True
-        )
-    }
+    else:
+        # Production/Render - use PostgreSQL
+        if database_url:
+            print(f"Configuring PostgreSQL from DATABASE_URL")
+            try:
+                db_config = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
+                print(f"Database config parsed successfully")
+                print(f"   Engine: {db_config.get('ENGINE', 'Unknown')}")
+                print(f"   Host: {db_config.get('HOST', 'Unknown')}")
+                print(f"   Name: {db_config.get('NAME', 'Unknown')}")
+                return db_config
+            except Exception as e:
+                print(f"Error parsing DATABASE_URL: {e}")
+                # Fallback configuration
+                return {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': 'safetnet_db',
+                    'USER': 'safetnet_user',
+                    'PASSWORD': 'password',
+                    'HOST': 'localhost',
+                    'PORT': '5432',
+                }
+        else:
+            # Fallback for Render if DATABASE_URL is not set
+            print("No DATABASE_URL found, using fallback PostgreSQL config")
+            return dj_database_url.parse(
+                'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+                conn_max_age=600,
+                ssl_require=True
+            )
+
+DATABASES = {
+    'default': get_database_config(),
+}
 
 # Additional database options for Neon stability
 # PostgreSQL SSL options only apply in production
