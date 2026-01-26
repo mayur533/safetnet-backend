@@ -1,0 +1,9 @@
+warning: in the working copy of 'SafeTNet/security_app/serializers.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'SafeTNet/security_app/urls.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'SafeTNet/security_app/views.py', LF will be replaced by CRLF the next time Git touches it
+SafeTNet/security_app/serializers.py
+SafeTNet/security_app/urls.py
+SafeTNet/security_app/views.py
+SafeTNet/users/management/commands/assign_geofence_to_officer.py
+SafeTNet/users/management/commands/create_security_officer.py
+SafeTNet/users/management/commands/list_all_users.py

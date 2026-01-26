@@ -15,9 +15,12 @@ from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
+import math
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 # SecurityOfficer model removed - using User with role='security_officer' instead
+from users.models import SecurityOfficer, Geofence
+from django.shortcuts import get_object_or_404
 from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
 from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
 from users.models import Geofence
@@ -34,6 +37,7 @@ from .serializers import (
     NotificationSerializer,
     NotificationAcknowledgeSerializer,
     OfficerLoginSerializer,
+    GeofenceSerializer,
 )
 
 
@@ -378,6 +382,60 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
             instance.save(update_fields=['last_seen_at', 'updated_at'])
 
         return Response(OfficerProfileSerializer(instance).data)
+
+
+class GeofenceCurrentView(OfficerOnlyMixin, APIView):
+    """
+    Get current security officer's assigned geofence.
+    GET /api/security/geofence/
+    """
+    def get(self, request):
+        """Get the assigned geofence for the current security officer"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({
+                'error': 'Security officer profile not found',
+                'detail': 'Officer not found for user.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        if not officer.assigned_geofence:
+            return Response({
+                'error': 'No geofence assigned to this officer',
+                'detail': 'This security officer does not have an assigned geofence area.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        geofence = officer.assigned_geofence
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class GeofenceDetailView(OfficerOnlyMixin, APIView):
+    """
+    Get geofence details by ID.
+    Verifies that the geofence is assigned to the requesting security officer.
+    GET /api/security/geofence/{id}/
+    """
+    def get(self, request, geofence_id):
+        """Get specific geofence by ID (only if assigned to the officer)"""
+        try:
+            officer = SecurityOfficer.objects.get(email=request.user.email)
+        except SecurityOfficer.DoesNotExist:
+            return Response({
+                'error': 'Security officer profile not found',
+                'detail': 'Officer not found for user.'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Verify the requested geofence matches the officer's assignment
+        if not officer.assigned_geofence or str(officer.assigned_geofence.id) != str(geofence_id):
+            return Response({
+                'error': 'You are not authorized to access this geofence',
+                'detail': 'This geofence is not assigned to you.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        geofence = get_object_or_404(Geofence, id=geofence_id)
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class OfficerLoginView(APIView):
