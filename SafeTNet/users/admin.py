@@ -12,7 +12,7 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'role', 'organization', 'is_active', 'date_joined')
+    list_display = ('username', 'email', 'role', 'organization', 'is_active', 'is_staff', 'date_joined')
     list_filter = ('role', 'organization', 'is_active', 'is_staff', 'date_joined')
     search_fields = ('username', 'email', 'first_name', 'last_name')
     ordering = ('-date_joined',)
@@ -20,6 +20,22 @@ class CustomUserAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
         ('Additional Info', {'fields': ('role', 'organization')}),
     )
+    
+    def save_model(self, request, obj, form, change):
+        """
+        Override save_model to automatically set is_staff based on role.
+        Password handling is done by Django's UserAdmin automatically.
+        """
+        # Set is_staff based on role (SUPER_ADMIN, SUB_ADMIN, and security_officer should be staff)
+        if obj.role in ['SUPER_ADMIN', 'SUB_ADMIN', 'security_officer']:
+            obj.is_staff = True
+        elif not change:
+            # For new users with other roles, default to False
+            obj.is_staff = False
+        
+        # Django's UserAdmin handles password hashing automatically
+        # last_login will be set automatically when user logs in (empty for new users is normal)
+        super().save_model(request, obj, form, change)
 
 
 ## Removed SubAdminProfile admin registration

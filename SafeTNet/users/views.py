@@ -9,10 +9,14 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from django.db import transaction
+from django.utils import timezone
+from datetime import timedelta, datetime, time
 import logging
+from rest_framework import status
+from rest_framework.response import Response
 
 logger = logging.getLogger(__name__)
 from .serializers import (
@@ -27,37 +31,65 @@ from .serializers import (
     DiscountEmailSerializer, DiscountEmailCreateSerializer,
     UserReplySerializer, UserDetailsSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
 from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
-        serializer = UserLoginSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            refresh = RefreshToken.for_user(user)
+        try:
+            serializer = UserLoginSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.validated_data['user']
+                refresh = RefreshToken.for_user(user)
+                # Use simplified user data for login (no geofences to avoid performance issues)
+                user_data = {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': user.role,
+                    'is_active': user.is_active,
+                    'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+                }
+
+                return Response({
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': user_data
+                })
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            import traceback
+            logger.error(f"Login error: {str(e)}\n{traceback.format_exc()}")
             return Response({
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-                'user': UserSerializer(user).data
-            })
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                'error': 'Login failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
-    serializer = UserRegistrationSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        refresh = RefreshToken.for_user(user)
+    try:
+        serializer = UserRegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        import traceback
+        logger.error(f"Registration error: {str(e)}\n{traceback.format_exc()}")
         return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            'error': 'Registration failed',
+            'detail': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -359,8 +391,11 @@ class GeofenceViewSet(OrganizationIsolationMixin, ModelViewSet):
         """Override destroy to handle related objects"""
         try:
             with transaction.atomic():
-                # Handle SecurityOfficer assignments - SET_NULL will handle this, but we do it explicitly first
-                instance.assigned_officers.all().update(assigned_geofence=None)
+                # Handle security officer geofence assignments - remove geofence from officers' geofences ManyToManyField
+                # Security officers are User records with role='security_officer', and geofences are stored via ManyToManyField
+                # Remove this geofence from all security officers' geofences
+                for officer in instance.associated_users.filter(role='security_officer'):
+                    officer.geofences.remove(instance)
                 
                 # Handle SOS alerts from security_app if it exists
                 try:
@@ -451,17 +486,7 @@ class AlertViewSet(ModelViewSet):
             org_geofences = Geofence.objects.filter(organization=user.organization)
             user_geofences.update(org_geofences)
         
-        # For security officers, add their assigned geofence
-        if user.role == 'security_officer':
-            try:
-                from .models import SecurityOfficer
-                officer = SecurityOfficer.objects.filter(
-                    username=user.username
-                ).first()
-                if officer and officer.assigned_geofence:
-                    user_geofences.add(officer.assigned_geofence)
-            except:
-                pass
+        # Note: Security officers' geofences are already included above via user.geofences.all()
         
         # If user has geofences, filter alerts that have any of those geofences
         if user_geofences:
@@ -734,15 +759,16 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
     """
     ViewSet for managing Security Officers with organization isolation.
     Only SUB_ADMIN can perform CRUD operations on their organization's officers.
+    Security officers are stored in User table with role='security_officer' (no separate SecurityOfficer table).
     """
-    queryset = SecurityOfficer.objects.select_related('assigned_geofence', 'organization', 'created_by').all()
+    queryset = User.objects.filter(role='security_officer').select_related('organization').prefetch_related('geofences')
     permission_classes = [IsAuthenticated, IsSuperAdminOrSubAdmin]
     pagination_class = SubAdminPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['is_active', 'assigned_geofence']
-    search_fields = ['name', 'contact', 'email']
-    ordering_fields = ['name', 'created_at']
-    ordering = ['-created_at']
+    filterset_fields = ['is_active']
+    search_fields = ['username', 'first_name', 'last_name', 'email']
+    ordering_fields = ['username', 'date_joined']
+    ordering = ['-date_joined']
     
     def get_serializer_class(self):
         if self.action == 'create':
@@ -750,29 +776,56 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
         return SecurityOfficerSerializer
     
     def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
-        
-        # SUPER_ADMIN can see all officers
-        if user.role == 'SUPER_ADMIN':
-            return queryset
-        
-        # SUB_ADMIN can only see officers from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            return queryset.filter(organization=user.organization)
-        
-        # Regular users see no data
-        return queryset.none()
+        """Get queryset with organization filtering and error handling"""
+        try:
+            queryset = super().get_queryset()
+            user = self.request.user
+            
+            # SUPER_ADMIN can see all officers
+            if user.role == 'SUPER_ADMIN':
+                return queryset
+            
+            # SUB_ADMIN can only see officers from their organization
+            if user.role == 'SUB_ADMIN' and user.organization:
+                return queryset.filter(organization=user.organization)
+            
+            # Regular users see no data
+            return queryset.none()
+        except Exception as e:
+            # Log error and return empty queryset to prevent 500 error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in SecurityOfficerViewSet.get_queryset: {e}", exc_info=True)
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            return User.objects.none()
     
     def perform_create(self, serializer):
         # For SUB_ADMIN, automatically set organization to their organization
         if self.request.user.role == 'SUB_ADMIN' and self.request.user.organization:
-            serializer.save(
-                organization=self.request.user.organization,
-                created_by=self.request.user
-            )
+            serializer.save(organization=self.request.user.organization)
         else:
-            serializer.save(created_by=self.request.user)
+            # For SUPER_ADMIN, organization should be provided in request data
+            serializer.save()
+    
+
+def create(self, request, *args, **kwargs):
+    serializer = self.get_serializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = serializer.save()
+
+    # IMPORTANT: use OUTPUT serializer for response
+    response_serializer = SecurityOfficerSerializer(
+        user,
+        context={'request': request}
+    )
+
+    return Response(
+        response_serializer.data,
+        status=status.HTTP_201_CREATED
+    )
+
 
 
 class IncidentViewSet(ModelViewSet):
@@ -840,19 +893,27 @@ class NotificationViewSet(OrganizationIsolationMixin, ModelViewSet):
         return NotificationSerializer
     
     def get_queryset(self):
-        queryset = super().get_queryset()
-        user = self.request.user
-        
-        # SUPER_ADMIN can see all notifications
-        if user.role == 'SUPER_ADMIN':
-            return queryset
-        
-        # SUB_ADMIN can only see notifications from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            return queryset.filter(organization=user.organization)
-        
-        # Regular users see no data
-        return queryset.none()
+        """Get queryset with organization filtering and error handling"""
+        try:
+            queryset = super().get_queryset()
+            user = self.request.user
+            
+            # SUPER_ADMIN can see all notifications
+            if user.role == 'SUPER_ADMIN':
+                return queryset
+            
+            # SUB_ADMIN can only see notifications from their organization
+            if user.role == 'SUB_ADMIN' and user.organization:
+                return queryset.filter(organization=user.organization)
+            
+            # Regular users see no data
+            return queryset.none()
+        except Exception as e:
+            # Log error and return empty queryset to prevent 500 error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in NotificationViewSet.get_queryset: {e}", exc_info=True)
+            return Notification.objects.none()
     
     def perform_create(self, serializer):
         # For SUB_ADMIN, automatically set organization to their organization
@@ -895,24 +956,28 @@ def send_notification(request):
         )
         
         # Set target officers based on target_type
+        # Security officers are User records with role='security_officer'
         if data['target_type'] == 'ALL_OFFICERS':
-            officers = SecurityOfficer.objects.filter(
+            officers = User.objects.filter(
+                role='security_officer',
                 organization=request.user.organization,
                 is_active=True
             )
             notification.target_officers.set(officers)
         
         elif data['target_type'] == 'GEOFENCE_OFFICERS' and geofence_ids:
-            # Get officers from all selected geofences
-            officers = SecurityOfficer.objects.filter(
-                assigned_geofence_id__in=geofence_ids,
+            # Get officers from all selected geofences (using User.geofences ManyToManyField)
+            officers = User.objects.filter(
+                role='security_officer',
+                geofences__id__in=geofence_ids,
                 organization=request.user.organization,
                 is_active=True
-            )
+            ).distinct()
             notification.target_officers.set(officers)
         
         elif data['target_type'] == 'SPECIFIC_OFFICERS' and data.get('target_officer_ids'):
-            officers = SecurityOfficer.objects.filter(
+            officers = User.objects.filter(
+                role='security_officer',
                 id__in=data['target_officer_ids'],
                 organization=request.user.organization,
                 is_active=True
@@ -985,11 +1050,13 @@ def subadmin_dashboard_kpis(request):
         organization=organization
     ).count()
     
-    total_officers = SecurityOfficer.objects.filter(
+    total_officers = User.objects.filter(
+        role='security_officer',
         organization=organization
     ).count()
     
-    active_officers = SecurityOfficer.objects.filter(
+    active_officers = User.objects.filter(
+        role='security_officer',
         organization=organization,
         is_active=True
     ).count()

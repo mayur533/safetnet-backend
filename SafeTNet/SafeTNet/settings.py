@@ -27,9 +27,8 @@ except ModuleNotFoundError:
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Check DATABASE_URL after load_dotenv() (it might be set in .env file)
-database_url = os.environ.get('DATABASE_URL', '').strip()
-is_render_service = os.environ.get('RENDER') == 'true'  # Render sets this automatically
+# REMOVED: Unused database_url variable
+# Database configuration is handled below using dj_database_url
 
 
 # Quick-start development settings - unsuitable for production
@@ -45,6 +44,14 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(','
 ALLOWED_HOSTS.append('safetnet.onrender.com')
 ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
 ALLOWED_HOSTS.append('192.168.0.125')  # Local network IP for device testing
+
+# Add Render domain if on Render
+if os.getenv('RENDER'):
+    ALLOWED_HOSTS.append(os.getenv('RENDER_EXTERNAL_URL', '').replace('https://', ''))
+
+print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print(f"RENDER environment: {os.getenv('RENDER')}")
+print(f"DATABASE_URL present: {bool(os.getenv('DATABASE_URL'))}")
 # Application definition
 
 INSTALLED_APPS = [
@@ -103,43 +110,106 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'SafeTNet',
-#         'USER': 'postgres',
-#         'PASSWORD': 'Rsl@2015',
-#         'HOST': 'localhost',
-#         'PORT': '5432',
-#     }
-# }
+# REMOVED: Old hardcoded database configuration
+# All database configuration now uses DATABASE_URL environment variable only
 
 
 
-# Database configuration
-# Uses DATABASE_URL environment variable (automatically different for local vs production)
-# 
-# Local development: Set DATABASE_URL in .env file
-#   Example: DATABASE_URL=postgresql://postgres:Rsl@2015@localhost:5432/SafeTNet
-#
-# Render production: DATABASE_URL is automatically set when database is linked
-#   If not set, falls back to the hardcoded Render database URL below
+# Database configuration - Optimized for Neon PostgreSQL with SSL
+# Database configuration for different environments
+def get_database_config():
+    """
+    Configure database based on environment.
+    - Local development: SQLite
+    - Render/Production: PostgreSQL via DATABASE_URL
+    """
+    # Check if we're on Render (has RENDER environment variable)
+    is_render = os.getenv('RENDER') is not None or os.getenv('RENDER_SERVICE_ID') is not None
+    database_url = os.getenv('DATABASE_URL')
 
-# Database configuration
-# Use the new database URL provided
-# External URL for connections from outside Render network
-# external_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg"
-# # Internal URL for connections from within Render network
-# internal_db_url = "postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a/safetnet_h2jg"
+    # Debug environment info (only in DEBUG mode to avoid log spam in production)
+    if DEBUG:
+        print(f"Environment check:")
+        print(f"   DEBUG: {DEBUG}")
+        print(f"   RENDER: {is_render}")
+        print(f"   RENDER_SERVICE_ID: {os.getenv('RENDER_SERVICE_ID')}")
+        print(f"   DATABASE_URL present: {bool(database_url)}")
 
+        if database_url:
+            print(f"Using DATABASE_URL: {database_url[:50]}...")
+        else:
+            print("No DATABASE_URL found")
+
+    if DEBUG and not is_render:
+        # Local development - use SQLite
+        print("Using SQLite for local development")
+        return {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    else:
+        # Production/Render - always use PostgreSQL
+        print("Using PostgreSQL for production/Render")
+        if database_url:
+            print(f"Configuring PostgreSQL from DATABASE_URL")
+            try:
+                db_config = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
+                print(f"Database config parsed successfully")
+                print(f"   Engine: {db_config.get('ENGINE', 'Unknown')}")
+                print(f"   Host: {db_config.get('HOST', 'Unknown')}")
+                print(f"   Name: {db_config.get('NAME', 'Unknown')}")
+                return db_config
+            except Exception as e:
+                print(f"Error parsing DATABASE_URL: {e}")
+                # Fallback configuration
+                return {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': 'safetnet_db',
+                    'USER': 'safetnet_user',
+                    'PASSWORD': 'password',
+                    'HOST': 'localhost',
+                    'PORT': '5432',
+                }
+        else:
+            # Fallback for Render if DATABASE_URL is not set
+            print("No DATABASE_URL found, using fallback PostgreSQL config")
+            return dj_database_url.parse(
+                'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+                conn_max_age=600,
+                ssl_require=True
+            )
 
 DATABASES = {
-    "default": dj_database_url.config(
-        default="postgresql://safetnet_h2jg_user:AqTs3ayHWq0LYXorhvQp6tE2Qi5IO1hu@dpg-d4fejrili9vc73adp0e0-a.oregon-postgres.render.com/safetnet_h2jg",
-        conn_max_age=600,
-        ssl_require=True,
-    )
+    'default': get_database_config(),
 }
+
+# Additional database options for Neon stability
+# PostgreSQL SSL options only apply in production
+if not DEBUG:
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+        'sslcert': None,
+        'sslkey': None,
+        'sslrootcert': None,
+        'connect_timeout': 30,
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
+    }
+
+# Print database connection details for debugging (only once and only in DEBUG mode)
+if DEBUG and os.getenv('RENDER'):
+    db_config = DATABASES['default']
+    print("=== DATABASE CONFIGURATION (DEBUG MODE) ===")
+    print(f"Database Engine: {db_config.get('ENGINE', 'Unknown')}")
+    print(f"Database Name: {db_config.get('NAME', 'Unknown')}")
+    print(f"Database Host: {db_config.get('HOST', 'Unknown')}")
+    print(f"Database Port: {db_config.get('PORT', 'Unknown')}")
+    print(f"Database User: {db_config.get('USER', 'Unknown')}")
+    print(f"SSL Mode: {db_config.get('OPTIONS', {}).get('sslmode', 'Unknown')}")
+    print("===========================================")
+
 
 
 
@@ -202,6 +272,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
 }
 
 # DRF Spectacular settings
@@ -260,14 +331,14 @@ else:
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "https://security-frontend-website.onrender.com",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
     "https://safetnet-backend.onrender.com",
-        # Allow same-origin requests for live-share pages
-        "https://safetnet-backend.onrender.com",
-        "http://safetnet-backend.onrender.com",
+    # Allow same-origin requests for live-share pages
+    "http://safetnet-backend.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -309,6 +380,7 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://security-frontend-website.onrender.com",
     "https://security-app-vert.vercel.app",
     "https://security-app-veot.onrender.com",
     "https://safetnet-backend.onrender.com",

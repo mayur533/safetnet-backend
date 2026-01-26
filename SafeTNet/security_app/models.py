@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
-from users.models import Geofence, SecurityOfficer
+from users.models import Geofence
 
 
 User = get_user_model()
@@ -33,16 +33,21 @@ class SOSAlert(models.Model):
         blank=True,
         related_name='sos_alerts'
     )
+    alert_type = models.CharField(max_length=20, default='security')  # emergency, security, general
+    message = models.TextField(blank=True, default='')
+    description = models.TextField(blank=True, default='')
     location_lat = models.FloatField()
     location_long = models.FloatField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     assigned_officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_security_app_alerts'
+        related_name='assigned_security_app_alerts',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer assigned to this SOS alert (User with role='security_officer')"
     )
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -70,11 +75,13 @@ class Case(models.Model):
         related_name='cases'
     )
     officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_cases'
+        related_name='assigned_cases',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer assigned to this case (User with role='security_officer')"
     )
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='open')
@@ -92,9 +99,17 @@ class Case(models.Model):
 class OfficerProfile(models.Model):
     """Lightweight profile for security officer runtime attributes."""
     officer = models.OneToOneField(
-        SecurityOfficer,
+        User,
         on_delete=models.CASCADE,
-        related_name='profile'
+        related_name='officer_profile',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer user (User with role='security_officer')"
+    )
+    phone_number = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text='Phone number or mobile phone for the security officer'
     )
     on_duty = models.BooleanField(default=True)
     last_latitude = models.FloatField(null=True, blank=True)
@@ -108,7 +123,8 @@ class OfficerProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Profile({self.officer.name}) on_duty={self.on_duty}"
+        officer_name = f"{self.officer.first_name} {self.officer.last_name}".strip() or self.officer.username
+        return f"Profile({officer_name}) on_duty={self.on_duty}"
 
     def update_location(self, latitude=None, longitude=None, battery_level=None):
         """Convenience helper for officer apps to update runtime telemetry."""
@@ -128,11 +144,13 @@ class Incident(models.Model):
     ]
 
     officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='incidents'
+        related_name='security_app_incidents',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer who reported this incident (User with role='security_officer')"
     )
     sos_alert = models.ForeignKey(
         SOSAlert,
@@ -172,9 +190,11 @@ class Notification(models.Model):
     ]
 
     officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.CASCADE,
-        related_name='notifications'
+        related_name='security_app_notifications',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer who should receive this notification (User with role='security_officer')"
     )
     title = models.CharField(max_length=200)
     message = models.TextField()
@@ -203,7 +223,8 @@ class Notification(models.Model):
         verbose_name_plural = 'Notifications'
 
     def __str__(self):
-        return f"Notification for {self.officer.name}: {self.title}"
+        officer_name = f"{self.officer.first_name} {self.officer.last_name}".strip() or self.officer.username if self.officer else "Unknown"
+        return f"Notification for {officer_name}: {self.title}"
 
     def mark_as_read(self):
         from django.utils import timezone

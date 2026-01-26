@@ -21,6 +21,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, Sp
 from core import views as core_views
 
 urlpatterns = [
+    path("", core_views.root_view, name="root"),
     path("admin/", admin.site.urls),
     path("live-share/<uuid:share_token>/", core_views.live_share_view, name="live-share"),
     path("live-share/<uuid:share_token>", core_views.live_share_view),

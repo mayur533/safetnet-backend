@@ -1,10 +1,17 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Organization, Geofence, Alert, GlobalReport, SecurityOfficer, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user registration.
+    
+    IMPORTANT: Creates users in users_user table ONLY.
+    Supports all user types: SUPER_ADMIN, SUB_ADMIN, USER, security_officer
+    All users are stored in the same users_user table, differentiated by the 'role' field.
+    """
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
     
@@ -22,6 +29,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
+        """
+        Create user in users_user table.
+        All user types (SUPER_ADMIN, SUB_ADMIN, USER, security_officer) are stored here.
+        """
         validated_data.pop('password_confirm')
         user = User.objects.create_user(**validated_data)
         return user
@@ -292,28 +303,74 @@ class GlobalReportCreateSerializer(serializers.ModelSerializer):
 
 # Sub-Admin Panel Serializers
 class SecurityOfficerSerializer(serializers.ModelSerializer):
-    assigned_geofence_name = serializers.CharField(source='assigned_geofence.name', read_only=True)
+    """Serializer for security officers - now uses User model with role='security_officer'"""
     organization_name = serializers.CharField(source='organization.name', read_only=True)
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
-    # Password field is excluded from read serializer for security
+    name = serializers.SerializerMethodField()
+    contact = serializers.SerializerMethodField()
+    geofences_list = serializers.SerializerMethodField()
     
     class Meta:
-        model = SecurityOfficer
+        from django.contrib.auth import get_user_model
+        model = get_user_model()
         fields = (
-            'id', 'username', 'name', 'contact', 'email', 'assigned_geofence', 
-            'assigned_geofence_name', 'organization', 'organization_name',
-            'is_active', 'created_by_username', 'created_at', 'updated_at'
+            'id', 'username', 'first_name', 'last_name', 'name', 'email', 'phone', 'contact',
+            'organization', 'organization_name', 'geofences', 'geofences_list',
+            'is_active', 'is_staff', 'date_joined', 'last_login'
         )
-        read_only_fields = ('id', 'created_by_username', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'date_joined', 'last_login', 'contact')
+        extra_kwargs = {
+            'phone': {'required': False, 'allow_blank': True}
+        }
+    
+    def get_name(self, obj):
+        """Combine first_name and last_name into name"""
+        if obj.first_name and obj.last_name:
+            return f"{obj.first_name} {obj.last_name}"
+        return obj.first_name or obj.username
+    
+    def get_contact(self, obj):
+        """
+        Return phone number from user.phone if available, otherwise return email.
+        This ensures contact field shows phone number instead of email when phone is available.
+        """
+        # Return phone if it exists and is not empty
+        if obj.phone and obj.phone.strip() and '@' not in obj.phone:
+            return obj.phone.strip()
+        # Fallback to email only if phone is not available
+        return obj.email if obj.email else None
+    
+    def get_geofences_list(self, obj):
+        """Get list of assigned geofences"""
+        return [{'id': g.id, 'name': g.name} for g in obj.geofences.all()]
+    
+    def to_internal_value(self, data):
+        """
+        Map 'contact' field to 'phone' field if 'contact' is provided.
+        This allows frontend to send 'contact' and it will be saved to 'phone'.
+        """
+        # If 'contact' is in data but 'phone' is not, map contact to phone
+        if 'contact' in data and 'phone' not in data:
+            data = data.copy()
+            data['phone'] = data['contact']
+        return super().to_internal_value(data)
 
 
-class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
+class SecurityOfficerCreateSerializer(serializers.Serializer):
+    """
+    Serializer for creating security officers.
+    
+    IMPORTANT: Creates users in users_user table ONLY with role='security_officer'.
+    Does NOT create records in users_securityofficer table or officer_profile table.
+    All security officers are stored in users_user table, same as all other user types.
+    """
     password = serializers.CharField(write_only=True, required=True, min_length=6)
     username = serializers.CharField(required=True, max_length=150)
-    
-    class Meta:
-        model = SecurityOfficer
-        fields = ('username', 'name', 'contact', 'email', 'password', 'assigned_geofence', 'is_active')
+    name = serializers.CharField(write_only=True, required=True, max_length=100)
+    contact = serializers.CharField(required=False, max_length=20, allow_blank=True, help_text='Phone number or contact information')
+    phone = serializers.CharField(required=False, max_length=20, allow_blank=True, write_only=True, help_text='Alias for contact field')
+    email = serializers.EmailField(required=False, allow_blank=True)
+    assigned_geofence = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    is_active = serializers.BooleanField(default=True, required=False)
     
     def validate_username(self, value):
         """Validate username is unique in both SecurityOfficer and User models"""
@@ -424,7 +481,13 @@ class SecurityOfficerCreateSerializer(serializers.ModelSerializer):
 
 class IncidentSerializer(serializers.ModelSerializer):
     geofence_name = serializers.CharField(source='geofence.name', read_only=True)
-    officer_name = serializers.CharField(source='officer.name', read_only=True)
+    officer_name = serializers.SerializerMethodField()
+    
+    def get_officer_name(self, obj):
+        if obj.officer:
+            name = f"{obj.officer.first_name} {obj.officer.last_name}".strip()
+            return name or obj.officer.username
+        return None
     resolved_by_username = serializers.CharField(source='resolved_by.username', read_only=True)
     
     class Meta:
@@ -539,7 +602,10 @@ class NotificationSendSerializer(serializers.Serializer):
     
     def validate_target_officer_ids(self, value):
         if value:
-            officers = SecurityOfficer.objects.filter(
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            officers = User.objects.filter(
+                role='security_officer',
                 id__in=value,
                 organization=self.context['request'].user.organization
             )

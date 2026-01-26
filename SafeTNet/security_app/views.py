@@ -1,4 +1,10 @@
-from rest_framework import viewsets, status
+import logging
+import traceback
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
+from rest_framework import viewsets, status, serializers
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,10 +18,13 @@ from datetime import timedelta
 import math
 from users.permissions import IsSuperAdminOrSubAdmin
 from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
+# SecurityOfficer model removed - using User with role='security_officer' instead
 from users.models import SecurityOfficer, Geofence
 from django.shortcuts import get_object_or_404
 from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
 from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
+from users.models import Geofence
+from users.serializers import GeofenceSerializer
 
 from .permissions import IsSecurityOfficer
 from .serializers import (
@@ -53,11 +62,11 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         user = self.request.user
 
         # For Security Officers → show SOS alerts assigned to them or their geofence
-        if hasattr(user, 'securityofficerprofile'):
-            officer = user.securityofficerprofile
+        # Security officers are User records with role='security_officer'
+        if user.role == 'security_officer':
             return SOSAlert.objects.filter(
                 Q(is_deleted=False),
-                Q(assigned_officer=officer) | Q(geofence=officer.geofence)
+                Q(assigned_officer=user) | Q(geofence__in=user.geofences.all())
             )
 
         # For Sub-Admins → show SOS alerts within their managed geofence
@@ -76,6 +85,17 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """Override create to return full object data including ID."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        # Return the created object using the full serializer
+        instance = serializer.instance
+        response_serializer = SOSAlertSerializer(instance)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=True, methods=['patch'])
     def resolve(self, request, pk=None):
@@ -122,12 +142,10 @@ class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Only cases assigned to the current officer
-        try:
-            officer = SecurityOfficer.objects.get(email=user.email)
-            return Case.objects.filter(officer=officer)
-        except SecurityOfficer.DoesNotExist:
-            return Case.objects.none()
+        # Only cases assigned to the current officer (user with role='security_officer')
+        if user.role == 'security_officer':
+            return Case.objects.filter(officer=user)
+        return Case.objects.none()
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -144,12 +162,10 @@ class CaseViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         case = self.get_object()
         
         # Verify the requesting officer is assigned to this case
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-            if case.officer != officer:
-                return Response({'detail': 'Only the assigned officer can update this case.'}, status=status.HTTP_403_FORBIDDEN)
-        except SecurityOfficer.DoesNotExist:
+        if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can update cases.'}, status=status.HTTP_403_FORBIDDEN)
+        if case.officer != request.user:
+            return Response({'detail': 'Only the assigned officer can update this case.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = CaseUpdateStatusSerializer(case, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -306,12 +322,10 @@ class IncidentsView(OfficerOnlyMixin, APIView, PageNumberPagination):
 
     def get(self, request):
         # List incidents for logged-in officer, filterable by date range and status
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can view incidents.'}, status=status.HTTP_403_FORBIDDEN)
 
-        qs = Incident.objects.filter(officer=officer)
+        qs = Incident.objects.filter(officer=request.user)
 
         # Filters
         status_param = request.query_params.get('status')
@@ -335,35 +349,29 @@ class IncidentsView(OfficerOnlyMixin, APIView, PageNumberPagination):
 
     def post(self, request):
         # Manually log a new incident
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
+        if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can log incidents.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = IncidentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(officer=officer)
+        serializer.save(officer=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class OfficerProfileView(OfficerOnlyMixin, APIView):
     def get(self, request):
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can view profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.get_or_create(officer=officer)
+        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
         from .serializers import OfficerProfileSerializer
         return Response(OfficerProfileSerializer(profile).data)
 
     def patch(self, request):
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can update profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.get_or_create(officer=officer)
+        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
         from .serializers import OfficerProfileSerializer
         serializer = OfficerProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -493,27 +501,52 @@ class OfficerLoginView(APIView):
 
     def post(self, request):
         from rest_framework_simplejwt.tokens import RefreshToken
+        import logging
 
-        # Validate input and authenticate using serializer
-        serializer = OfficerLoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        # Get authenticated user from serializer
-        user = serializer.validated_data['user']
-        
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        
-        return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'role': user.role,
+        logger = logging.getLogger(__name__)
+
+        # Log incoming request data (for debugging)
+        logger.info(f"Officer login attempt - Request data: {request.data}")
+        print(f"🔍 LOGIN REQUEST: {request.data}")
+
+        try:
+            # Validate input and authenticate using serializer
+            serializer = OfficerLoginSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            # Get authenticated user from serializer
+            user = serializer.validated_data['user']
+            logger.info(f"Officer login success - User: {user.username}, Role: {user.role}")
+            print(f"✅ LOGIN SUCCESS: User {user.username} authenticated")
+
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+
+            response_data = {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'role': user.role,
+                }
             }
-        }, status=status.HTTP_200_OK)
+
+            print(f"✅ LOGIN RESPONSE: Tokens generated for {user.username}")
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except serializers.ValidationError as e:
+            logger.warning(f"Officer login validation error: {e.detail}")
+            print(f"❌ LOGIN VALIDATION ERROR: {e.detail}")
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Officer login unexpected error: {str(e)}")
+            print(f"❌ LOGIN UNEXPECTED ERROR: {str(e)}")
+            return Response({
+                'error': 'Login failed',
+                'detail': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):
@@ -521,13 +554,11 @@ class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):
 
     def get(self, request):
         """List notifications for the logged-in officer (unread first)"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can view notifications.'}, status=status.HTTP_403_FORBIDDEN)
 
         # Get notifications, unread first
-        notifications = Notification.objects.filter(officer=officer).order_by('is_read', '-created_at')
+        notifications = Notification.objects.filter(officer=request.user).order_by('is_read', '-created_at')
         
         page = self.paginate_queryset(notifications, request, view=self)
         serializer = NotificationSerializer(page, many=True)
@@ -537,10 +568,8 @@ class NotificationView(OfficerOnlyMixin, APIView, PageNumberPagination):
 class NotificationAcknowledgeView(OfficerOnlyMixin, APIView):
     def post(self, request):
         """Mark notifications as read"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can mark notifications as read.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = NotificationAcknowledgeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -548,7 +577,7 @@ class NotificationAcknowledgeView(OfficerOnlyMixin, APIView):
         notification_ids = serializer.validated_data['notification_ids']
         notifications = Notification.objects.filter(
             id__in=notification_ids,
-            officer=officer,
+            officer=request.user,
             is_read=False
         )
         
@@ -566,10 +595,10 @@ class NotificationAcknowledgeView(OfficerOnlyMixin, APIView):
 class DashboardView(OfficerOnlyMixin, APIView):
     def get(self, request):
         """Get officer dashboard metrics"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found for user.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can view dashboard.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        officer = request.user
 
         from django.utils import timezone
         from datetime import timedelta
@@ -608,8 +637,11 @@ class DashboardView(OfficerOnlyMixin, APIView):
         # Unread notifications count
         unread_notifications = Notification.objects.filter(officer=officer, is_read=False).count()
         
+        # Get officer name
+        officer_name = f"{officer.first_name} {officer.last_name}".strip() or officer.username
+        
         return Response({
-            'officer_name': officer.name,
+            'officer_name': officer_name,
             'metrics': {
                 'total_sos_handled': total_sos_handled,
                 'active_cases': active_cases,
@@ -630,10 +662,10 @@ class OfficerLiveLocationShareView(OfficerOnlyMixin, APIView):
     
     def post(self, request):
         """Start live location sharing for security officer"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can share location.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        officer = request.user
         
         # Stop any existing active sessions
         LiveLocationShare.objects.filter(
@@ -673,10 +705,10 @@ class OfficerLiveLocationShareView(OfficerOnlyMixin, APIView):
     
     def get(self, request):
         """Get active live location sharing sessions for officer"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can view live location sessions.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        officer = request.user
         
         sessions = LiveLocationShare.objects.filter(
             security_officer=officer,
@@ -697,10 +729,10 @@ class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
     
     def patch(self, request, session_id):
         """Update live location for security officer"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can update live location.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        officer = request.user
         
         try:
             live_share = LiveLocationShare.objects.get(
@@ -745,10 +777,10 @@ class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
     
     def delete(self, request, session_id):
         """Stop live location sharing for security officer"""
-        try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
-            return Response({'detail': 'Officer not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'security_officer':
+            return Response({'detail': 'Only officers can stop live location sharing.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        officer = request.user
         
         try:
             live_share = LiveLocationShare.objects.get(
@@ -764,4 +796,69 @@ class OfficerLiveLocationShareDetailView(OfficerOnlyMixin, APIView):
         live_share.stop_reason = 'user'
         live_share.save(update_fields=['is_active', 'expires_at', 'current_location', 'stop_reason'])
         return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
+
+
+class GeofenceCurrentView(OfficerOnlyMixin, APIView):
+    """
+    Get the current geofence assigned to the logged-in security officer.
+    Returns empty data if no geofence is assigned (200 status, not 404).
+    """
+    def get(self, request):
+        try:
+            officer = request.user
+            logger.info(f"Geofence request for officer: {officer.username} (ID: {officer.id})")
+
+            # Get the most recently created geofence assigned to the officer
+            geofences = officer.geofences.all()
+            logger.info(f"Found {geofences.count()} geofences for officer {officer.username}")
+
+            if not geofences.exists():
+                logger.info(f"No geofence assigned to officer {officer.username}")
+                return Response({
+                    'data': None,
+                    'message': 'No geofence assigned to this officer'
+                }, status=status.HTTP_200_OK)
+
+            # Return the most recently created geofence (ordered by creation date)
+            geofence = geofences.order_by('-created_at').first()
+            logger.info(f"Returning geofence: {geofence.name} (ID: {geofence.id}) for officer {officer.username}")
+
+            serializer = GeofenceSerializer(geofence)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error in GeofenceCurrentView for user {request.user.username}: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                'error': 'An error occurred',
+                'detail': 'Internal server error while fetching geofence'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class GeofenceDetailView(OfficerOnlyMixin, APIView):
+    """
+    Get geofence details by ID.
+    Only returns geofences that are assigned to the logged-in security officer.
+    """
+    def get(self, request, geofence_id):
+        officer = request.user
+        
+        try:
+            # Get the geofence by ID
+            geofence = Geofence.objects.get(id=geofence_id)
+            
+            # Check if this geofence is assigned to the officer
+            if officer not in geofence.associated_users.all():
+                return Response(
+                    {'error': 'Geofence not assigned to this officer'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Geofence.DoesNotExist:
+            return Response(
+                {'error': 'Geofence not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = GeofenceSerializer(geofence)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 

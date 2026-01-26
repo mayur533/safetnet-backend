@@ -42,17 +42,19 @@ def send_sos_alert_notification(sender, instance, created, **kwargs):
     Send FCM notification when a new SOS alert is created
     """
     if created:  # Only for new SOS alerts
-        from users.models import SecurityOfficer
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
         
-        # Get all active officers in the same organization
+        # Get all active security officers (Users with role='security_officer') in the same organization
         if instance.user.organization:
-            officers = SecurityOfficer.objects.filter(
+            officers = User.objects.filter(
+                role='security_officer',
                 organization=instance.user.organization,
                 is_active=True
             )
         else:
-            # If no organization, notify all active officers
-            officers = SecurityOfficer.objects.filter(is_active=True)
+            # If no organization, notify all active security officers
+            officers = User.objects.filter(role='security_officer', is_active=True)
         
         # Create notifications and send FCM
         for officer in officers:

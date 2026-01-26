@@ -48,6 +48,12 @@ class User(AbstractUser):
         related_name='associated_users',
         help_text='Geofences associated with this user for alert notifications'
     )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text='Phone number or contact information'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -210,12 +216,12 @@ class SecurityOfficer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_officers'
+        related_name='legacy_assigned_officers'  # Changed to avoid conflicts - this model is deprecated
     )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name='security_officers'
+        related_name='legacy_security_officers'  # Changed to avoid conflicts - this model is deprecated
     )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
@@ -223,7 +229,7 @@ class SecurityOfficer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='created_officers',
+        related_name='legacy_created_officers',  # Changed to avoid conflicts - this model is deprecated
         limit_choices_to={'role': 'SUB_ADMIN'}
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -233,6 +239,8 @@ class SecurityOfficer(models.Model):
         verbose_name = 'Security Officer'
         verbose_name_plural = 'Security Officers'
         ordering = ['-created_at']
+        managed = False  # Table has been deleted - using User model with role='security_officer' instead
+        db_table = 'users_securityofficer'  # Legacy table name (no longer exists)
     
     def set_password(self, raw_password):
         """Hash and set password"""
@@ -271,11 +279,13 @@ class Incident(models.Model):
         related_name='incidents'
     )
     officer = models.ForeignKey(
-        SecurityOfficer,
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='reported_incidents'
+        related_name='reported_incidents',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer who reported this incident (User with role='security_officer')"
     )
     incident_type = models.CharField(
         max_length=20,
@@ -359,9 +369,11 @@ class Notification(models.Model):
         help_text='List of geofence IDs for multi-geofence notifications'
     )
     target_officers = models.ManyToManyField(
-        SecurityOfficer,
+        User,
         blank=True,
-        related_name='received_notifications'
+        related_name='received_notifications',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officers who should receive this notification (Users with role='security_officer')"
     )
     read_users = models.ManyToManyField(
         User,
