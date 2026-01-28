@@ -548,6 +548,7 @@ class LiveLocationShareSerializer(serializers.ModelSerializer):
     """
     share_url = serializers.SerializerMethodField()
     path_points = serializers.SerializerMethodField()
+    geofence_id = serializers.SerializerMethodField()
 
     class Meta:
         model = LiveLocationShare
@@ -563,6 +564,7 @@ class LiveLocationShareSerializer(serializers.ModelSerializer):
             'path_points',
             'plan_type',
             'stop_reason',
+            'geofence_id',
         )
         read_only_fields = (
             'id',
@@ -575,6 +577,7 @@ class LiveLocationShareSerializer(serializers.ModelSerializer):
             'path_points',
             'plan_type',
             'stop_reason',
+            'geofence_id',
         )
 
     def get_share_url(self, obj):
@@ -594,6 +597,14 @@ class LiveLocationShareSerializer(serializers.ModelSerializer):
             }
             for point in qs
         ]
+    
+    def get_geofence_id(self, obj):
+        """Return the geofence ID from security officer's assigned geofence"""
+        if obj.security_officer and obj.security_officer.assigned_geofence:
+            return obj.security_officer.assigned_geofence.id
+        # For regular users, you might want to get geofence from user's profile
+        # For now, return None if not a security officer
+        return None
 
 
 class LiveLocationShareCreateSerializer(serializers.Serializer):
