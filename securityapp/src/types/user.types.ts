@@ -17,6 +17,9 @@ export interface SecurityOfficer {
     id?: string | number;
     name?: string;
   };
+  // Additional fields from backend
+  date_joined?: string;
+  last_login?: string;
 }
 
 export interface OfficerStats {

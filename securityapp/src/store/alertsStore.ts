@@ -3,7 +3,7 @@ import { Alert } from '../types/alert.types';
 
 interface AlertsState {
   // State
-  alerts: Alert[];
+  alerts: Alert[]; // Keep as array, handle undefined in component
   isLoading: boolean;
   error: string | null;
   lastUpdated: string | null;
@@ -33,42 +33,69 @@ interface AlertsState {
 }
 
 export const useAlertsStore = create<AlertsState>((set, get) => ({
-  // Initial state
+  // Initial state - start with empty array
   alerts: [],
   isLoading: false,
   error: null,
   lastUpdated: null,
 
-  // Fetch alerts from API
+  // Fetch alerts from API with cache-busting
   fetchAlerts: async () => {
     set({ isLoading: true, error: null });
 
     try {
-      console.log('🔄 Fetching alerts from API...');
+      console.log('🔄 Fetching alerts from API with fresh data...');
       const { alertService } = await import('../api/services/alertService');
       const alerts = await alertService.getAlerts();
 
+      // ALWAYS replace the alerts array with fresh data - never merge
+      console.log('🔄 Replacing entire alerts array with fresh data...');
       set({
-        alerts,
+        alerts: alerts || [], // Always use fresh data, never merge with old
         isLoading: false,
         error: null,
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${alerts.length} alerts from API`);
+      console.log(`✅ Fetched ${alerts.length} fresh alerts from API`);
+      console.log(`🕒 Store updated at: ${new Date().toISOString()}`);
+      console.log(`🔍 Store now contains ${get().alerts?.length || 0} alerts`);
+      
       if (alerts.length > 0) {
-        console.log('📋 Sample alerts from API:');
+        console.log('📋 Latest alerts from API:');
         alerts.slice(0, 3).forEach((alert, index) => {
-          console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status})`);
+          console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status}) - ${alert.created_at}`);
         });
+        
+        // Log alert status distribution
+        const statusCounts = alerts.reduce((acc: Record<string, number>, alert) => {
+          acc[alert.status] = (acc[alert.status] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('📊 Alert status distribution:', statusCounts);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch alerts:', error);
+      
+      // Handle specific error cases
+      let errorMessage = 'Failed to fetch alerts';
+      if (error?.message?.includes('401') || error?.message?.includes('Authentication')) {
+        errorMessage = 'Authentication expired. Please login again.';
+      } else if (error?.message?.includes('403')) {
+        errorMessage = 'Access denied. Please check your permissions.';
+      } else if (error?.message?.includes('404')) {
+        errorMessage = 'Alerts service not found. Please check server connection.';
+      } else if (error?.message?.includes('500')) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       // IMPORTANT: Do NOT clear existing alerts on fetch error
       // Keep existing alerts so they don't disappear from UI
       set({
         isLoading: false,
-        error: error.message || 'Failed to fetch alerts'
+        error: errorMessage
       });
     }
   },
@@ -92,16 +119,23 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       }));
 
       console.log('📦 Alert added to store with real data');
+      console.log('🔄 Total alerts in store after creation:', get().alerts.length);
+      
+      // IMPORTANT: Fetch fresh data to ensure store is fully synchronized
+      // This prevents issues where some alerts might be missing from the UI
+      console.log('🔄 Fetching fresh alerts after creation to ensure synchronization...');
+      setTimeout(() => {
+        get().fetchAlerts();
+      }, 500); // Small delay to ensure backend has processed the creation
+      
       return createdAlert;
 
     } catch (error: any) {
       console.error('❌ Alert creation failed:', error);
       console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
-
-      set((state) => ({
-        error: error?.message || error?.response?.data?.detail || error?.response?.data?.message || 'Failed to create alert'
-      }));
-
+      
+      // Don't update store on error to keep existing alerts visible
+      set({ error: error.message || 'Failed to create alert' });
       throw error;
     }
   },
@@ -190,7 +224,8 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       // Make actual API call for delete
       console.log('📡 Making API call to delete alert:', id);
       const { alertService } = await import('../api/services/alertService');
-      await alertService.deleteAlert(id);
+      const alertId = typeof id === 'string' ? parseInt(id) : id;
+      await alertService.deleteAlert(alertId);
       console.log('✅ Alert deleted successfully via API');
 
       set((state) => ({
@@ -251,7 +286,8 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       // Make actual API call for resolve
       console.log('📡 Making API call to resolve alert:', id);
       const { alertService } = await import('../api/services/alertService');
-      const resolvedAlert = await alertService.resolveAlert(id);
+      const alertId = typeof id === 'string' ? String(id) : id;
+      const resolvedAlert = await alertService.resolveAlert(alertId);
       console.log('✅ Alert resolved successfully via API:', resolvedAlert.id);
 
       // Replace optimistic update with real API response
@@ -294,7 +330,40 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
   },
 }));
 
-// Test function to verify error handling in alert operations
+// Debug function to track alert persistence issue
+export const debugAlertPersistence = () => {
+  const state = useAlertsStore.getState();
+  console.log('🔍 ALERT PERSISTENCE DEBUG:');
+  console.log(`📊 Total alerts in store: ${state.alerts.length}`);
+  console.log(`🕒 Last updated: ${state.lastUpdated || 'never'}`);
+  console.log(`⚠️ Is loading: ${state.isLoading}`);
+  console.log(`❌ Error: ${state.error || 'none'}`);
+  
+  if (state.alerts.length > 0) {
+    console.log('📋 All alerts in store:');
+    state.alerts.forEach((alert, index) => {
+      console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Created:${alert.created_at}`);
+    });
+    
+    // Check for duplicates
+    const ids = state.alerts.map(a => a.id);
+    const uniqueIds = [...new Set(ids)];
+    if (ids.length !== uniqueIds.length) {
+      console.log('⚠️ DUPLICATE ALERTS DETECTED!');
+    }
+    
+    // Sort by creation time to see newest
+    const sortedByCreated = [...state.alerts].sort((a, b) => 
+      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    console.log('🕒 Newest 5 alerts:');
+    sortedByCreated.slice(0, 5).forEach((alert, index) => {
+      console.log(`   ${index + 1}. ID:${alert.id} Created:${alert.created_at}`);
+    });
+  } else {
+    console.log('📋 No alerts in store');
+  }
+};
 export const testAlertErrorHandling = async () => {
   console.log('🧪 TESTING ALERT ERROR HANDLING');
 
@@ -302,21 +371,21 @@ export const testAlertErrorHandling = async () => {
     // Test with invalid alert ID to trigger error
     console.log('Testing update with invalid ID...');
     await useAlertsStore.getState().updateAlert('invalid-id', { status: 'accepted' });
-  } catch (error) {
+  } catch (error: any) {
     console.log('✅ Error handling test passed - error caught properly:', error?.message);
   }
 
   try {
     console.log('Testing delete with invalid ID...');
     await useAlertsStore.getState().deleteAlert('invalid-id');
-  } catch (error) {
+  } catch (error: any) {
     console.log('✅ Error handling test passed - error caught properly:', error?.message);
   }
 
   return { success: true, message: 'Error handling tests completed' };
 };
 
-
+// ... (rest of the code remains the same)
 // Debug function to check current alert state
 export const debugAlertState = () => {
   const state = useAlertsStore.getState();
@@ -355,7 +424,7 @@ export const testCompleteAlertFlow = async () => {
     });
 
     // Check immediate optimistic update
-    await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for optimistic update
+    await new Promise<void>((resolve) => setTimeout(resolve, 100)); // Small delay for optimistic update
     const afterCreateAlerts = useAlertsStore.getState().alerts;
     console.log(`   Alerts after optimistic create: ${afterCreateAlerts.length}`);
     const optimisticAlert = afterCreateAlerts.find(a => a.message.includes('Complete Flow Verification'));
@@ -393,8 +462,8 @@ export const testCompleteAlertFlow = async () => {
       persists: !!alertPersists
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ COMPLETE FLOW TEST FAILED:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error?.message || 'Unknown error' };
   }
 };

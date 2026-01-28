@@ -28,11 +28,31 @@ export const ProfileScreen = () => {
     try {
       setIsLoading(true);
       setError(null);
+      console.log('🔄 Fetching profile data...');
       const profileData = await profileService.getProfile('');
+      console.log('✅ Profile data loaded:', profileData);
       setOfficer(profileData);
     } catch (error: any) {
-      console.error('Failed to fetch profile:', error);
+      console.error('❌ Failed to fetch profile:', error);
       setError(error.message || 'Failed to load profile');
+      // Set a default officer object to prevent crashes
+      setOfficer({
+        security_id: 'N/A',
+        name: 'Unknown Officer',
+        email_id: 'N/A',
+        mobile: '',
+        security_role: 'guard',
+        geofence_id: '',
+        status: 'active',
+        badge_number: 'N/A',
+        shift_schedule: 'Day Shift',
+        stats: {
+          total_responses: 0,
+          avg_response_time: 0,
+          active_hours: 0,
+          area_coverage: 0,
+        },
+      });
     } finally {
       setIsLoading(false);
     }
@@ -144,15 +164,15 @@ export const ProfileScreen = () => {
       {/* Stats Container */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{officer.stats?.total_responses || 0}</Text>
+          <Text style={styles.statNumber}>{officer.stats?.total_responses || 'N/A'}</Text>
           <Text style={styles.statLabel}>Responses</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{officer.stats?.avg_response_time || 0}m</Text>
+          <Text style={styles.statNumber}>{officer.stats?.avg_response_time ? `${officer.stats.avg_response_time}m` : 'N/A'}</Text>
           <Text style={styles.statLabel}>Avg. Response</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{officer.stats?.active_hours || 0}h</Text>
+          <Text style={styles.statNumber}>{officer.stats?.active_hours ? `${officer.stats.active_hours}h` : 'N/A'}</Text>
           <Text style={styles.statLabel}>Active Hours</Text>
         </View>
       </View>
@@ -181,7 +201,8 @@ export const ProfileScreen = () => {
           </View>
           <Text style={styles.body}>Badge Number: {officer.badge_number}</Text>
           <Text style={styles.body}>Shift: {officer.shift_schedule || 'Day Shift'}</Text>
-          <Text style={styles.body}>Geofence: {officer.geofence_name || officer.geofence_id}</Text>
+          <Text style={styles.body}>Geofence: {officer.assigned_geofence?.name || officer.geofence_name || 'Not Assigned'}</Text>
+          <Text style={styles.body}>Role: {officer.security_role}</Text>
         </View>
 
         <View style={styles.card}>
@@ -193,7 +214,8 @@ export const ProfileScreen = () => {
               </Text>
             </View>
           </View>
-          <Text style={styles.body}>Last updated: {new Date().toLocaleDateString()}</Text>
+          <Text style={styles.body}>Member since: {officer.date_joined ? new Date(officer.date_joined).toLocaleDateString() : 'N/A'}</Text>
+          <Text style={styles.body}>Last login: {officer.last_login ? new Date(officer.last_login).toLocaleDateString() : 'N/A'}</Text>
         </View>
       </View>
 

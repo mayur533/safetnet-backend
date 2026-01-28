@@ -1,29 +1,35 @@
-import React, { useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
-  FlatList,
-  StyleSheet,
-  RefreshControl,
   Text,
+  FlatList,
   TouchableOpacity,
-  Alert as RNAlert,
-  ActivityIndicator,
+  StyleSheet,
   ScrollView,
   Modal,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
+  Alert as RNAlert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { Alert } from '../../types/alert.types';
+import { useAlertsStore, debugAlertPersistence } from '../../store/alertsStore';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
-import { Alert } from '../../types/alert.types';
-import { alertService } from '../../api/services/alertService';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import { useAlertsStore } from '../../store/alertsStore';
+import { alertService } from '../../api/services/alertService';
 
-export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
+interface AlertsScreenProps {
+  // Add any props if needed
+}
+
+export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref: any) => {
+  const navigation = useNavigation();
+
   // Use Zustand alerts store
   const {
     alerts,
@@ -48,18 +54,61 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
   // Reset filter and fetch alerts when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('🚨 AlertsScreen: Screen focused, resetting filter and fetching alerts...');
+      console.log('🚨 AlertsScreen: Screen focused, resetting filter and fetching fresh alerts...');
+      console.log('🔍 Current alerts in store:', alerts.length);
+      console.log('🔍 Store last updated:', useAlertsStore.getState().lastUpdated);
+      
       setSelectedFilter('all');
-      fetchAlerts();
+      
+      // Clear only alerts-related cache, NOT authentication tokens
+      const forceRefresh = async () => {
+        try {
+          console.log('🧹 Clearing alerts cache only...');
+          
+          // Clear only alert-related cache, preserve authentication
+          const keysToRemove = [
+            'cached_alerts',
+            'alerts_timestamp',
+            'alerts_last_fetch',
+            'recent_alerts_cache'
+          ];
+          
+          await AsyncStorage.multiRemove(keysToRemove);
+          console.log('✅ Alerts cache cleared (auth tokens preserved)');
+          
+          // Clear Redux persistor for alerts only
+          try {
+            const { persistor } = require('../../store/store');
+            if (persistor) {
+              console.log('🧹 Flushing Redux persistor...');
+              await persistor.flush();
+              console.log('✅ Redux persistor flushed');
+            }
+          } catch (reduxError: any) {
+            console.log('⚠️ Redux persistor flush failed:', reduxError?.message);
+          }
+          
+          // Force fetch fresh data
+          await fetchAlerts();
+          // Debug alert persistence after fetch
+          setTimeout(() => {
+            console.log('🔍 DEBUG: Alert persistence after screen focus:');
+            debugAlertPersistence();
+          }, 1000);
+        } catch (error) {
+          console.error('❌ Error clearing alerts cache:', error);
+          await fetchAlerts();
+        }
+      };
+      
+      forceRefresh();
     }, [fetchAlerts])
   );
 
-  // Handle filter changes - only refetch for 'all' filter to ensure fresh data
+  // Handle filter changes - always refetch for fresh data
   useEffect(() => {
-    if (selectedFilter === 'all') {
-      console.log('🔄 Fetching all alerts for filter...');
-      fetchAlerts();
-    }
+    console.log('🔄 Filter changed, fetching fresh alerts...');
+    fetchAlerts();
   }, [selectedFilter, fetchAlerts]);
 
   // Expose refresh function to parent component
@@ -72,8 +121,18 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
 
   // Aggressive retry logic to fetch real data
   const onRefresh = useCallback(async () => {
-    console.log('🔄 Refreshing alerts from pull-to-refresh...');
-    await fetchAlerts();
+    console.log('🔄 Pull-to-refresh: Force fetching fresh alerts...');
+    try {
+      // Force multiple fetch attempts to ensure fresh data
+      await fetchAlerts();
+      // Small delay and fetch again to be absolutely sure
+      setTimeout(() => {
+        console.log('🔄 Second fetch attempt for freshness...');
+        fetchAlerts();
+      }, 500);
+    } catch (error) {
+      console.error('❌ Pull-to-refresh failed:', error);
+    }
   }, [fetchAlerts]);
 
   const handleRespond = async (alert: Alert) => {
@@ -115,8 +174,10 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
     }
 
     setCreatingAlert(true);
+    console.log('🚨 AlertsScreen: Creating new alert...');
+
     try {
-      console.log('🚨 Creating alert via store...');
+      // Create alert via store
       await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
@@ -128,6 +189,10 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
       setAlertDescription('');
       setAlertType('security');
       setCreateModalVisible(false);
+
+      // IMPORTANT: Refresh alerts list after creating to get fresh data
+      console.log('🔄 Refreshing alerts list after creating new alert...');
+      await fetchAlerts();
 
       RNAlert.alert('Success', 'Alert created successfully!');
     } catch (error) {
@@ -218,6 +283,44 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
             <View style={[styles.statBadge, { backgroundColor: colors.primary }]}>
               <Text style={[styles.statText, { color: colors.white }]}>{alerts.length}</Text>
             </View>
+            {/* Debug button */}
+            <TouchableOpacity 
+              style={[styles.statBadge, { backgroundColor: colors.emergencyRed, marginLeft: 8 }]}
+              onPress={() => (navigation as any).navigate('DebugAlerts')}
+            >
+              <Icon name="bug-report" size={12} color={colors.white} />
+            </TouchableOpacity>
+            {/* Hard reset button */}
+            <TouchableOpacity 
+              style={[styles.statBadge, { backgroundColor: '#FF9800', marginLeft: 4 }]}
+              onPress={async () => {
+                console.log('🔥 HARD RESET: Clearing alerts cache only...');
+                try {
+                  // Clear only alerts-related cache, preserve authentication
+                  const keysToRemove = [
+                    'cached_alerts',
+                    'alerts_timestamp',
+                    'alerts_last_fetch',
+                    'recent_alerts_cache'
+                  ];
+                  
+                  await AsyncStorage.multiRemove(keysToRemove);
+                  
+                  // Flush Redux persistor (don't purge auth)
+                  const { persistor } = require('../../store/store');
+                  if (persistor) {
+                    await persistor.flush();
+                  }
+                  
+                  await fetchAlerts();
+                  console.log('✅ Hard reset complete (auth preserved)');
+                } catch (error) {
+                  console.error('❌ Hard reset failed:', error);
+                }
+              }}
+            >
+              <Icon name="refresh" size={12} color={colors.white} />
+            </TouchableOpacity>
           </View>
         </View>
       </View>

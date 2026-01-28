@@ -359,25 +359,37 @@ class OfficerProfileView(OfficerOnlyMixin, APIView):
         if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can view profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
-        from .serializers import OfficerProfileSerializer
-        return Response(OfficerProfileSerializer(profile).data)
+        # Return User data instead of OfficerProfile data for compatibility with frontend
+        user = request.user
+        from users_profile.serializers import UserProfileSerializer
+
+        # Create serializer context with request
+        serializer = UserProfileSerializer(user, context={'request': request})
+        return Response(serializer.data)
 
     def patch(self, request):
         if request.user.role != 'security_officer':
             return Response({'detail': 'Only officers can update profile.'}, status=status.HTTP_403_FORBIDDEN)
 
-        profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=request.user)
-        from .serializers import OfficerProfileSerializer
-        serializer = OfficerProfileSerializer(profile, data=request.data, partial=True)
+        # Update User data instead of OfficerProfile data
+        user = request.user
+        from users_profile.serializers import UserProfileSerializer
+
+        serializer = UserProfileSerializer(user, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
 
-        if 'last_latitude' in serializer.validated_data and 'last_longitude' in serializer.validated_data:
-            instance.last_seen_at = timezone.now()
-            instance.save(update_fields=['last_seen_at', 'updated_at'])
+        # Update OfficerProfile if location data is provided
+        if 'last_latitude' in request.data or 'last_longitude' in request.data:
+            profile, _ = OfficerProfile.objects.select_related('officer').get_or_create(officer=user)
+            if 'last_latitude' in request.data:
+                profile.last_latitude = request.data['last_latitude']
+            if 'last_longitude' in request.data:
+                profile.last_longitude = request.data['last_longitude']
+            profile.last_seen_at = timezone.now()
+            profile.save(update_fields=['last_latitude', 'last_longitude', 'last_seen_at', 'updated_at'])
 
-        return Response(OfficerProfileSerializer(instance).data)
+        return Response(UserProfileSerializer(instance, context={'request': request}).data)
 
 
 class OfficerLoginView(APIView):
@@ -582,6 +594,16 @@ class DashboardView(OfficerOnlyMixin, APIView):
         # Get officer name
         officer_name = f"{officer.first_name} {officer.last_name}".strip() or officer.username
         
+        # Get recent alerts for dashboard
+        recent_alerts = SOSAlert.objects.filter(
+            Q(assigned_officer=officer) | Q(geofence__in=officer.geofences.all()),
+            is_deleted=False
+        ).order_by('-created_at')[:5]
+        
+        # Serialize recent alerts
+        from .serializers import SOSAlertSerializer
+        recent_alerts_data = SOSAlertSerializer(recent_alerts, many=True).data
+        
         return Response({
             'officer_name': officer_name,
             'metrics': {
@@ -591,6 +613,7 @@ class DashboardView(OfficerOnlyMixin, APIView):
                 'average_response_time_minutes': round(avg_response_time, 1),
                 'unread_notifications': unread_notifications
             },
+            'recent_alerts': recent_alerts_data,
             'last_updated': now.isoformat()
         })
 

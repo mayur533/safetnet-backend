@@ -20,6 +20,7 @@ import { APITestScreen } from '../screens/test/APITestScreen';
 import { UpdateProfileScreen } from '../screens/main/UpdateProfileScreen';
 import LeafletMapScreen from '../screens/LeafletMapScreen';
 import SOSPage from '../components/common/SOSPage';
+import { DebugAlertsScreen } from '../screens/main/DebugAlertsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -102,6 +103,10 @@ export const MainNavigator = () => {
       <Stack.Screen
         name="LeafletMap"
         component={LeafletMapScreen}
+      />
+      <Stack.Screen
+        name="DebugAlerts"
+        component={DebugAlertsScreen}
       />
     </Stack.Navigator>
   );

@@ -15,6 +15,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { Alert } from '../../types/alert.types';
 import { alertService } from '../../api/services/alertService';
+import { dashboardService, DashboardData, DashboardStats } from '../../api/services/dashboardService';
 import { useAlertsStore } from '../../store/alertsStore';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
@@ -42,59 +43,48 @@ console.warn = (...args) => {
   originalWarn.apply(console, args); // Show other warnings
 };
 
-interface DashboardStats {
-  active: number;
-  pending: number;
-  resolved: number;
-  total: number;
-}
-
-interface DashboardData {
-  stats: DashboardStats;
-  recent_alerts: Alert[];
-}
-
 export const DashboardScreen = () => {
   const navigation = useNavigation();
 
-  // Use Zustand alerts store
+  // State for dashboard data from API
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  // Use Zustand alerts store (kept for alert actions)
   const {
     alerts,
-    isLoading,
-    error,
+    isLoading: isLoadingAlerts,
+    error: alertsError,
     fetchAlerts,
     getRecentAlerts,
     updateAlert: storeUpdateAlert
   } = useAlertsStore();
 
-  // Calculate dashboard stats from alerts
-  const dashboardData: DashboardData = React.useMemo(() => {
-    console.log('🏠 Dashboard: Calculating stats from', alerts.length, 'alerts');
-    const active = alerts.filter(alert => alert.status === 'pending' || alert.status === 'accepted').length;
-    const pending = alerts.filter(alert => alert.status === 'pending').length;
-    const resolved = alerts.filter(alert => alert.status === 'completed').length;
-    const recentAlerts = getRecentAlerts(5); // Get last 5 alerts
+  // Fetch dashboard data from API
+  const fetchDashboardData = async () => {
+    try {
+      setIsLoadingDashboard(true);
+      setDashboardError(null);
+      console.log('🏠 Dashboard: Fetching dashboard data from API...');
+      const data = await dashboardService.getDashboardData();
+      setDashboardData(data);
+      console.log('✅ Dashboard: Data fetched successfully');
+    } catch (error: any) {
+      console.error('❌ Dashboard: Failed to fetch data:', error);
+      setDashboardError(error.message || 'Failed to load dashboard data');
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  };
 
-    console.log('🏠 Dashboard: Stats - Active:', active, 'Pending:', pending, 'Resolved:', resolved, 'Recent:', recentAlerts.length);
-
-    return {
-      stats: {
-        active,
-        pending,
-        resolved,
-        total: active + pending + resolved
-      },
-      recent_alerts: recentAlerts
-    };
-  }, [alerts, getRecentAlerts]);
-
-  // Fetch alerts when dashboard comes into focus
-  // Note: Login process already fetches alerts initially
+  // Fetch dashboard data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('🏠 Dashboard: Screen focused, ensuring alerts are fresh...');
-      fetchAlerts();
-    }, [fetchAlerts])
+      console.log('🏠 Dashboard: Screen focused, fetching dashboard data...');
+      fetchDashboardData();
+      // Recent alerts are now included in the dashboard API response
+    }, [])
   );
 
   // Test network connectivity
@@ -152,37 +142,32 @@ export const DashboardScreen = () => {
     (navigation as any).navigate('Settings');
   };
 
-  // Calculate stats from real data or fallback
-  const stats = dashboardData?.stats || {
-    active: 0,
-    pending: 0,
-    resolved: 0,
-    total: 0
-  };
+    // Calculate stats from dashboard API data - no fallback dummy data
+  const stats = dashboardData?.stats || null;
 
-  // Get recent alerts from real data or fallback to empty array
-  const recentAlerts = dashboardData?.recent_alerts?.slice(0, 2) || []; // Show 2 recent alerts
+  // Get recent alerts from alertsStore instead of dashboard API
+  const recentAlerts = getRecentAlerts(5);
 
   // Show loading state
-  if (isLoading) {
+  if (isLoadingDashboard) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
         <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7 }]}>
-          Fetching alerts data from SafeTNet backend
+          Fetching dashboard data from SafeTNet backend
         </Text>
       </View>
     );
   }
 
-  // Show error state with network-aware messaging
-  if (error) {
-    const isNetworkError = error.includes('SSL connection') || error.includes('Network Error') || error.includes('timeout') || error.includes('ECONNREFUSED');
+  // Show error state - no dummy data fallback
+  if (dashboardError || !stats) {
+    const isNetworkError = dashboardError?.includes('SSL connection') || dashboardError?.includes('Network Error') || dashboardError?.includes('timeout') || dashboardError?.includes('ECONNREFUSED');
     const errorTitle = isNetworkError ? 'Backend Server Unavailable' : 'Error Loading Dashboard';
     const errorMessage = isNetworkError
       ? 'SafeTNet backend server is currently unavailable.\n\nPlease ensure the Django server is running on the correct port.'
-      : error;
+      : dashboardError || 'Failed to load dashboard data from server';
 
     return (
       <View style={[styles.container, styles.centered]}>
@@ -194,7 +179,7 @@ export const DashboardScreen = () => {
             style={styles.retryButton}
             onPress={() => {
               console.log('🔄 Retrying dashboard load...');
-              fetchAlerts();
+              fetchDashboardData();
             }}
             activeOpacity={0.7}
           >
@@ -244,17 +229,17 @@ export const DashboardScreen = () => {
         <View style={styles.statsSection}>
           <View style={styles.statsCard}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.active}</Text>
+              <Text style={styles.statValue}>{stats.active_sos_alerts}</Text>
               <Text style={styles.statLabel}>Active</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.pendingValue]}>{stats.pending}</Text>
-              <Text style={styles.statLabel}>Pending</Text>
+              <Text style={[styles.statValue, styles.pendingValue]}>{stats.assigned_cases}</Text>
+              <Text style={styles.statLabel}>Cases</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.resolvedValue]}>{stats.resolved}</Text>
+              <Text style={[styles.statValue, styles.resolvedValue]}>{stats.resolved_today}</Text>
               <Text style={styles.statLabel}>Resolved</Text>
             </View>
           </View>
@@ -271,7 +256,7 @@ export const DashboardScreen = () => {
                 <View>
                   <Text style={styles.sectionTitle}>Recent Alerts</Text>
                   <Text style={styles.sectionSubtitle}>
-                    {recentAlerts.length > 0 ? `${recentAlerts.length} active` : '0 active'}
+                    {recentAlerts.length > 0 ? `${recentAlerts.length} most recent` : 'No recent alerts'}
                   </Text>
                 </View>
               </View>
@@ -290,6 +275,7 @@ export const DashboardScreen = () => {
           </View>
           <View style={styles.cardsContainer}>
             {recentAlerts.length > 0 ? (
+              // Show exactly 5 recent alerts from API
               recentAlerts.map((alert) => {
                 console.log('🔑 Dashboard AlertCard key:', alert.id, alert.message?.substring(0, 30));
                 return (
@@ -297,31 +283,14 @@ export const DashboardScreen = () => {
                 );
               })
             ) : (
-              // Show empty alert card placeholders
-              Array.from({ length: 2 }).map((_, index) => (
-                <View key={`empty-${index}`} style={styles.emptyAlertCard}>
-                  <View style={styles.emptyCardContent}>
-                    <View style={styles.emptyCardLeftAccent} />
-                    <View style={styles.emptyCardBody}>
-                      <View style={styles.emptyBadge} />
-                      <View style={styles.emptyContent}>
-                        <View style={styles.emptyAlertTypeRow}>
-                          <View style={styles.emptyIconPlaceholder} />
-                          <View style={styles.emptyTextPlaceholder} />
-                          <View style={styles.emptyBadgePlaceholder} />
-                        </View>
-                        <View style={styles.emptyTextPlaceholderLarge} />
-                        <View style={styles.emptyTextPlaceholderMedium} />
-                        <View style={styles.emptyTextPlaceholderSmall} />
-                        <View style={styles.emptyTextPlaceholderSmall} />
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.emptyCardActions}>
-                    <View style={styles.emptyButtonPlaceholder} />
-                  </View>
-                </View>
-              ))
+              // Show empty state message instead of dummy placeholders
+              <View style={styles.emptyStateContainer}>
+                <Icon name="notifications-none" size={48} color={colors.lightText} />
+                <Text style={styles.emptyStateTitle}>No Recent Alerts</Text>
+                <Text style={styles.emptyStateText}>
+                  When alerts are received, they will appear here
+                </Text>
+              </View>
             )}
           </View>
         </View>
@@ -690,6 +659,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     borderRadius: 8,
     marginRight: 12,
+  },
+  // Empty state styles (replaces dummy placeholders)
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  emptyStateTitle: {
+    ...typography.sectionHeader,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.lightText,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  emptyStateText: {
+    ...typography.body,
+    fontSize: 14,
+    color: colors.mediumText,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

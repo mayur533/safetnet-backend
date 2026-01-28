@@ -36,6 +36,16 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
+        
+        # Automatically assign the officer's first geofence if no geofence is provided
+        if not validated_data.get('geofence'):
+            officer = self.context['request'].user
+            if officer.geofences.exists():
+                validated_data['geofence'] = officer.geofences.first()
+                print(f"✅ Automatically assigned geofence: {validated_data['geofence'].name}")
+            else:
+                print("⚠️ Officer has no geofences, alert will not be visible to any officer")
+        
         return super().create(validated_data)
 
 

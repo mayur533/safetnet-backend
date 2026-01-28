@@ -120,8 +120,8 @@ WSGI_APPLICATION = "SafeTNet.wsgi.application"
 def get_database_config():
     """
     Configure database based on environment.
-    - Local development: SQLite
-    - Render/Production: PostgreSQL via DATABASE_URL
+    - Always use PostgreSQL via DATABASE_URL for multi-platform support
+    - Fallback to Neon PostgreSQL if DATABASE_URL is not set
     """
     # Check if we're on Render (has RENDER environment variable)
     is_render = os.getenv('RENDER') is not None or os.getenv('RENDER_SERVICE_ID') is not None
@@ -138,46 +138,31 @@ def get_database_config():
         if database_url:
             print(f"Using DATABASE_URL: {database_url[:50]}...")
         else:
-            print("No DATABASE_URL found")
+            print("No DATABASE_URL found, using fallback Neon config")
 
-    if DEBUG and not is_render:
-        # Local development - use SQLite
-        print("Using SQLite for local development")
-        return {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
+    # Always use PostgreSQL for multi-platform support
+    if database_url:
+        print("Configuring PostgreSQL from DATABASE_URL")
+        try:
+            db_config = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
+            print(f"Database config parsed successfully")
+            print(f"   Engine: {db_config.get('ENGINE', 'Unknown')}")
+            print(f"   Host: {db_config.get('HOST', 'Unknown')}")
+            print(f"   Name: {db_config.get('NAME', 'Unknown')}")
+            return db_config
+        except Exception as e:
+            print(f"Error parsing DATABASE_URL: {e}")
+            # Continue to fallback configuration
     else:
-        # Production/Render - always use PostgreSQL
-        print("Using PostgreSQL for production/Render")
-        if database_url:
-            print(f"Configuring PostgreSQL from DATABASE_URL")
-            try:
-                db_config = dj_database_url.parse(database_url, conn_max_age=600, ssl_require=True)
-                print(f"Database config parsed successfully")
-                print(f"   Engine: {db_config.get('ENGINE', 'Unknown')}")
-                print(f"   Host: {db_config.get('HOST', 'Unknown')}")
-                print(f"   Name: {db_config.get('NAME', 'Unknown')}")
-                return db_config
-            except Exception as e:
-                print(f"Error parsing DATABASE_URL: {e}")
-                # Fallback configuration
-                return {
-                    'ENGINE': 'django.db.backends.postgresql',
-                    'NAME': 'safetnet_db',
-                    'USER': 'safetnet_user',
-                    'PASSWORD': 'password',
-                    'HOST': 'localhost',
-                    'PORT': '5432',
-                }
-        else:
-            # Fallback for Render if DATABASE_URL is not set
-            print("No DATABASE_URL found, using fallback PostgreSQL config")
-            return dj_database_url.parse(
-                'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-                conn_max_age=600,
-                ssl_require=True
-            )
+        print("DATABASE_URL not found, using fallback Neon PostgreSQL config")
+
+    # Fallback Neon PostgreSQL configuration
+    print("Using fallback Neon PostgreSQL configuration")
+    return dj_database_url.parse(
+        'postgresql://neondb_owner:npg_Q6V0LwCybNvY@ep-red-queen-ahjbhshv-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+        conn_max_age=600,
+        ssl_require=True
+    )
 
 DATABASES = {
     'default': get_database_config(),
