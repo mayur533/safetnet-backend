@@ -30,6 +30,8 @@ export interface Alert {
     longitude: number;
     address: string;
   };
+  location_lat: number;
+  location_long: number;
   distance?: number;
   timestamp: string;
   status: 'pending' | 'accepted' | 'completed' | 'resolved' | 'cancelled';

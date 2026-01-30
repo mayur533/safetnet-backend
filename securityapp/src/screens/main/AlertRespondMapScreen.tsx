@@ -7,6 +7,7 @@ import {
   Alert as RNAlert,
   ActivityIndicator,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -80,9 +81,12 @@ export const AlertRespondMapScreen = () => {
         console.log('✅ Alert details fetched:', alertData);
         console.log('📍 Alert location data:', {
           location: alertData.location,
+          location_lat: alertData.location_lat,
+          location_long: alertData.location_long,
           latitude: alertData.location?.latitude,
           longitude: alertData.location?.longitude,
-          hasCoordinates: !!(alertData.location?.latitude && alertData.location?.longitude)
+          hasCoordinates: !!(alertData.location?.latitude && alertData.location?.longitude),
+          hasLatLong: !!(alertData.location_lat && alertData.location_long)
         });
         console.log('🗺️ Full alert object:', JSON.stringify(alertData, null, 2));
       } catch (error: any) {
@@ -182,12 +186,12 @@ export const AlertRespondMapScreen = () => {
   // Start location tracking with throttling
   const startLocationTracking = (sessionId: string) => {
     if (watchIdRef.current) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+      (Platform.OS === 'web' ? navigator.geolocation.clearWatch : require('react-native').Geolocation.clearWatch)(watchIdRef.current);
     }
 
     console.log('📡 Starting location tracking with 10-second intervals...');
 
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    watchIdRef.current = (Platform.OS === 'web' ? navigator.geolocation.watchPosition : require('react-native').Geolocation.watchPosition)(
       (position: any) => {
         const now = Date.now();
 
@@ -241,7 +245,7 @@ export const AlertRespondMapScreen = () => {
     return () => {
       // Stop location tracking
       if (watchIdRef.current) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        (Platform.OS === 'web' ? navigator.geolocation.clearWatch : require('react-native').Geolocation.clearWatch)(watchIdRef.current);
       }
 
       // Clear interval
@@ -288,31 +292,75 @@ export const AlertRespondMapScreen = () => {
   }
 
   // Check if alert has coordinates
-  const hasCoordinates = alert?.location?.latitude && alert?.location?.longitude;
+  const hasCoordinates = alert?.location_lat && alert?.location_long;
 
-  // Get geofence coordinates for the map
+  // Calculate distance between officer and alert
+  const calculateDistance = () => {
+    if (!alert?.location_lat || !alert?.location_long || !officerLocation?.latitude || !officerLocation?.longitude) {
+      return null;
+    }
+
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (officerLocation.latitude - alert.location_lat) * Math.PI / 180;
+    const dLon = (officerLocation.longitude - alert.location_long) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(alert.location_lat * Math.PI / 180) * Math.cos(officerLocation.latitude * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+
+    return {
+      kilometers: distance,
+      meters: distance * 1000,
+      text: distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`
+    };
+  };
   const getGeofenceCoordinates = () => {
-    if (!alert?.geofence) return null;
+    if (!alert?.geofence) {
+      console.log('❌ No geofence data available');
+      return null;
+    }
 
     const geofence = alert.geofence;
+    console.log('🔍 Processing geofence:', {
+      id: geofence.id,
+      type: geofence.geofence_type,
+      hasPolygonJson: !!geofence.polygon_json,
+      hasCenter: !!(geofence.center_latitude && geofence.center_longitude),
+      radius: geofence.radius
+    });
+
     if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
       // Parse polygon coordinates
       try {
         const polygon = JSON.parse(geofence.polygon_json);
+        console.log('📐 Parsed polygon:', polygon);
+        
         if (polygon.type === 'Polygon' && polygon.coordinates && polygon.coordinates[0]) {
-          return polygon.coordinates[0].map((coord: number[]) => ({
+          const coords = polygon.coordinates[0].map((coord: number[]) => ({
             latitude: coord[1], // GeoJSON is [longitude, latitude]
             longitude: coord[0]
           }));
+          console.log('✅ Polygon coordinates extracted:', coords.length, 'points');
+          return coords;
+        } else {
+          console.log('❌ Invalid polygon structure');
         }
       } catch (error) {
-        console.error('Error parsing polygon coordinates:', error);
+        console.error('❌ Error parsing polygon coordinates:', error);
       }
     } else if (geofence.geofence_type === 'circle') {
       // Create a circle approximation using polygon points
       const centerLat = geofence.center_latitude;
       const centerLng = geofence.center_longitude;
       const radius = geofence.radius || 1000; // Default 1km
+      
+      if (!centerLat || !centerLng) {
+        console.log('❌ Circle geofence missing center coordinates');
+        return null;
+      }
+      
       const points = [];
       const sides = 32; // Number of points to approximate circle
       
@@ -323,9 +371,11 @@ export const AlertRespondMapScreen = () => {
         points.push({ latitude: lat, longitude: lng });
       }
       
+      console.log('✅ Circle coordinates generated:', points.length, 'points');
       return points;
     }
     
+    console.log('❌ Unsupported geofence type or missing data');
     return null;
   };
 
@@ -388,22 +438,27 @@ export const AlertRespondMapScreen = () => {
 
       {/* Map */}
       <View style={styles.mapContainer}>
-        {hasCoordinates ? (
+        {alert && (alert.location_lat && alert.location_long) ? (
           <>
             {/* Location Info Bar */}
             <View style={styles.locationInfoBar}>
               <Icon name="location-on" size={16} color={colors.primary} />
               <Text style={styles.locationInfoText}>
-                {alert.location.latitude.toFixed(6)}, {alert.location.longitude.toFixed(6)}
+                {alert.location_lat.toFixed(6)}, {alert.location_long.toFixed(6)}
               </Text>
+              {calculateDistance() && (
+                <Text style={styles.distanceText}>
+                  🚶 {calculateDistance()?.text} away
+                </Text>
+              )}
               <Text style={styles.locationAccuracyText}>
                 GPS: ±10m accuracy
               </Text>
             </View>
             
             <LeafletMap
-              latitude={alert.location.latitude}
-              longitude={alert.location.longitude}
+              latitude={alert.location_lat}
+              longitude={alert.location_long}
               zoom={18} // Very high zoom for street-level precision
               height={screenHeight * 0.45} // Adjust height for info bar
               showMarker={true}
@@ -412,19 +467,38 @@ export const AlertRespondMapScreen = () => {
               mapKey={`alert-${alert.id}-${Date.now()}`} // Force re-render
             />
             
+            {/* Officer Location Indicator */}
+            {officerLocation && (
+              <View style={styles.officerLocationContainer}>
+                <Icon name="person" size={16} color={colors.successGreen} />
+                <Text style={styles.officerLocationText}>
+                  📍 You: {officerLocation.latitude.toFixed(6)}, {officerLocation.longitude.toFixed(6)}
+                </Text>
+                {calculateDistance() && (
+                  <Text style={styles.officerDistanceText}>
+                    Distance to alert: {calculateDistance()?.text}
+                  </Text>
+                )}
+              </View>
+            )}
+            
             {/* Debug coordinates overlay */}
             <View style={styles.debugOverlay}>
               <Text style={styles.debugText}>
-                📍 LAT: {alert.location.latitude.toFixed(8)}
+                � ALERT: {alert.location_lat.toFixed(8)}, {alert.location_long.toFixed(8)}
               </Text>
-              <Text style={styles.debugText}>
-                📍 LNG: {alert.location.longitude.toFixed(8)}
-              </Text>
+              {officerLocation && (
+                <Text style={styles.debugText}>
+                  � OFFICER: {officerLocation.latitude.toFixed(8)}, {officerLocation.longitude.toFixed(8)}
+                </Text>
+              )}
+              {calculateDistance() && (
+                <Text style={styles.debugText}>
+                  📏 DISTANCE: {calculateDistance()?.meters.toFixed(0)}m ({calculateDistance()?.kilometers.toFixed(3)}km)
+                </Text>
+              )}
               <Text style={styles.debugText}>
                 🗺️ ZOOM: 18 (Street Level)
-              </Text>
-              <Text style={styles.debugText}>
-                🎯 MAP: {alert.location.latitude.toFixed(4)}, {alert.location.longitude.toFixed(4)}
               </Text>
             </View>
           </>
@@ -589,6 +663,34 @@ const styles = StyleSheet.create({
   },
   acceptButtonDisabled: {
     backgroundColor: colors.mediumText,
+  },
+  distanceText: {
+    fontSize: 12,
+    color: colors.successGreen,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
+  },
+  officerLocationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    padding: spacing.sm,
+    borderRadius: 6,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  officerLocationText: {
+    fontSize: 11,
+    color: colors.darkText,
+    marginLeft: spacing.xs,
+    flex: 1,
+  },
+  officerDistanceText: {
+    fontSize: 11,
+    color: colors.successGreen,
+    fontWeight: '600',
+    marginTop: 2,
   },
   acceptButtonText: {
     ...typography.body,

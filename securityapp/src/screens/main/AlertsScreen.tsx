@@ -54,6 +54,8 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
   const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general'>('security');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   
   // Location input state
   const [useCustomLocation, setUseCustomLocation] = useState(false);
@@ -227,13 +229,23 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       
       // Set priority based on alert type
       let priority: 'high' | 'medium' | 'low' = 'medium';
+      console.log('🎯 Alert Update Priority Debug:');
+      console.log(`   updatedAlertType: "${updatedAlertType}"`);
+      
       if (updatedAlertType === 'emergency') {
         priority = 'high';
+        console.log('   → Set priority to HIGH for emergency');
       } else if (updatedAlertType === 'security') {
         priority = 'medium';
-      } else {
+        console.log('   → Set priority to MEDIUM for security');
+      } else if (updatedAlertType === 'normal') {
         priority = 'low';
+        console.log('   → Set priority to LOW for normal (general)');
+      } else {
+        console.log(`   → Unknown alert type "${updatedAlertType}", defaulting to medium`);
       }
+      
+      console.log(`   Final priority: "${priority}"`);
       
       // Update the alert with the new message, type, and priority
       await storeUpdateAlert(alertToUpdate.id, {
@@ -292,58 +304,95 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     }
 
     setCreatingAlert(true);
-    console.log('🚨 AlertsScreen: Creating new alert...');
+    setIsGettingLocation(true);
+    setLocationError(null);
+    console.log('🚨 AlertsScreen: Creating new alert with GPS location...');
 
     try {
-      // Get current location for the alert
-      let locationData = {};
+      // STEP 1: Get real GPS location
+      let locationData;
       if (useCustomLocation && customLatitude && customLongitude) {
         // Use custom location provided by user
         locationData = {
           latitude: parseFloat(customLatitude),
           longitude: parseFloat(customLongitude),
+          accuracy: 50, // Estimated accuracy for custom location
           location: `Custom: ${customLatitude}, ${customLongitude}`
         };
         console.log('📍 Using custom location for alert:', locationData);
       } else {
-        // Use GPS location
+        // Get real GPS location
         try {
           const { locationService } = await import('../../api/services/geofenceService');
+          console.log('🛰️ Getting fresh GPS location...');
+          
           const currentLocation = await locationService.getCurrentLocation();
+          
           locationData = {
             latitude: currentLocation.latitude,
             longitude: currentLocation.longitude,
-            location: `GPS: ${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`
+            accuracy: currentLocation.accuracy || 10,
+            location: `GPS: ${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}`
           };
-          console.log('📍 Using GPS location for alert:', locationData);
-        } catch (locationError) {
-          console.log('⚠️ Could not get current location, using default:', locationError);
-          // Use default location if GPS fails
-          locationData = {
-            latitude: 18.5204,
-            longitude: 73.8567,
-            location: 'Default Location (Pune)'
-          };
+          
+          console.log('✅ Fresh GPS location obtained:', locationData);
+          console.log('📍 GPS Accuracy:', currentLocation.accuracy, 'meters');
+          console.log('🕐 GPS Timestamp:', currentLocation.timestamp);
+          
+        } catch (locationError: any) {
+          console.error('❌ Failed to get GPS location:', locationError);
+          setLocationError(locationError.message || 'Failed to get GPS location. Please enable location services and try again.');
+          setIsGettingLocation(false);
+          setCreatingAlert(false);
+          return;
         }
       }
 
-      // Set priority based on alert type
-      let priority: 'high' | 'medium' | 'low' = 'medium';
-      if (alertType === 'emergency') {
-        priority = 'high';
-      } else if (alertType === 'security') {
-        priority = 'medium';
-      } else {
-        priority = 'low';
+      // STEP 2: Validate location data
+      if (!locationData.latitude || !locationData.longitude) {
+        setLocationError('Invalid location coordinates. Please try again.');
+        setIsGettingLocation(false);
+        setCreatingAlert(false);
+        return;
       }
 
-      // Create alert via store with location data and priority
+      setIsGettingLocation(false);
+
+      // STEP 3: Set priority based on alert type
+      let priority: 'high' | 'medium' | 'low' = 'medium';
+      console.log('🎯 Alert Creation Priority Debug:');
+      console.log(`   alertType: "${alertType}"`);
+      
+      if (alertType === 'emergency') {
+        priority = 'high';
+        console.log('   → Set priority to HIGH for emergency');
+      } else if (alertType === 'security') {
+        priority = 'medium';
+        console.log('   → Set priority to MEDIUM for security');
+      } else if (alertType === 'general') {
+        priority = 'low';
+        console.log('   → Set priority to LOW for general');
+      } else {
+        console.log(`   → Unknown alert type "${alertType}", defaulting to medium`);
+      }
+      
+      console.log(`   Final priority: "${priority}"`);
+
+      // STEP 4: Create alert with real GPS data
       await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
         priority: priority,
-        ...locationData
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        location: locationData.location
+      });
+
+      console.log('✅ Alert created with real GPS coordinates:', {
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        accuracy: locationData.accuracy
       });
 
       // Reset form and close modal
@@ -356,12 +405,15 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       console.log('🔄 Refreshing alerts list after creating new alert...');
       await fetchAlerts();
 
-      showToast('Alert created successfully!', 'success');
-    } catch (error) {
-      console.error('Error creating alert:', error);
-      showToast('Failed to create alert. Please try again.', 'error');
+      showToast('Alert created successfully with GPS location!', 'success');
+
+    } catch (error: any) {
+      console.error('❌ Failed to create alert:', error);
+      const errorMessage = error?.message || 'Failed to create alert. Please try again.';
+      showToast(errorMessage, 'error');
     } finally {
       setCreatingAlert(false);
+      setIsGettingLocation(false);
     }
   };
 
@@ -780,11 +832,18 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               </View>
             </ScrollView>
 
+            {locationError && (
+              <View style={styles.locationErrorContainer}>
+                <Icon name="location-off" size={16} color="#ef4444" />
+                <Text style={styles.locationErrorText}>{locationError}</Text>
+              </View>
+            )}
+
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
                 onPress={() => setCreateModalVisible(false)}
-                disabled={creatingAlert}
+                disabled={creatingAlert || isGettingLocation}
               >
                 <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
               </TouchableOpacity>
@@ -794,17 +853,25 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                   styles.modalButton,
                   styles.createButton,
                   {
-                    backgroundColor: creatingAlert ? colors.mediumText : (
+                    backgroundColor: (creatingAlert || isGettingLocation) ? colors.mediumText : (
                       alertType === 'emergency' ? colors.emergencyRed :
                       alertType === 'security' ? colors.warningOrange : colors.primary
                     )
                   }
                 ]}
                 onPress={handleCreateAlert}
-                disabled={creatingAlert || !alertMessage.trim()}
+                disabled={creatingAlert || isGettingLocation || !alertMessage.trim()}
               >
-                {creatingAlert ? (
-                  <ActivityIndicator size="small" color={colors.white} />
+                {isGettingLocation ? (
+                  <>
+                    <ActivityIndicator size="small" color={colors.white} />
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Getting GPS...</Text>
+                  </>
+                ) : creatingAlert ? (
+                  <>
+                    <ActivityIndicator size="small" color={colors.white} />
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Creating...</Text>
+                  </>
                 ) : (
                   <>
                     <Icon name="send" size={18} color={colors.white} style={styles.buttonIcon} />
@@ -1351,7 +1418,22 @@ const styles = StyleSheet.create({
   alertPreviewMeta: {
     ...typography.caption,
     color: colors.mediumText,
-    fontStyle: 'italic',
+  },
+  locationErrorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: spacing.sm,
+    borderRadius: 6,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  locationErrorText: {
+    ...typography.caption,
+    color: '#ef4444',
+    marginLeft: spacing.xs,
+    flex: 1,
   },
   modalActions: {
     flexDirection: 'row',

@@ -296,6 +296,8 @@ export const alertService = {
     description?: string;
     latitude?: number;
     longitude?: number;
+    location_lat?: number;
+    location_long?: number;
     location?: string;
     priority?: 'high' | 'medium' | 'low';
   }): Promise<Alert> => {
@@ -304,11 +306,16 @@ export const alertService = {
       alert_type: alertData.alert_type === 'general' ? 'normal' : alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
-      location_lat: alertData.latitude || 18.5204,
-      location_long: alertData.longitude || 73.8567,
+      location_lat: alertData.latitude || alertData.location_lat || 18.5204,
+      location_long: alertData.longitude || alertData.location_long || 73.8567,
       location: alertData.location || 'Current Location',
       priority: alertData.priority || 'medium',
     };
+
+    console.log('📍 GPS Alert Creation Debug:');
+    console.log('   📤 Sending latitude:', apiData.location_lat);
+    console.log('   📤 Sending longitude:', apiData.location_long);
+    console.log('   📍 Location source:', apiData.location);
 
     try {
       console.log('📡 Creating alert with data:', apiData);

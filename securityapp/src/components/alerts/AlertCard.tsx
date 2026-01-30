@@ -157,6 +157,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
                 styles.priorityBadge,
                 alert.priority === 'high' && styles.priorityHigh,
                 alert.priority === 'medium' && styles.priorityMedium,
+                alert.priority === 'low' && styles.priorityLow,
               ]}>
                 <Text style={styles.priorityText}>{alert.priority.toUpperCase()}</Text>
               </View>
@@ -166,6 +167,16 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
           <Text style={[styles.userName, isCompleted && styles.completedText]}>
             {alert.user_name}
           </Text>
+          
+          {/* Location indicator */}
+          {(alert.location_lat && alert.location_long) && (
+            <View style={styles.locationContainer}>
+              <Icon name="location-on" size={12} color={colors.mediumText} />
+              <Text style={styles.locationText}>
+                {alert.location_lat.toFixed(4)}, {alert.location_long.toFixed(4)}
+              </Text>
+            </View>
+          )}
           <Text style={[styles.message, isCompleted && styles.completedText]} numberOfLines={2}>
             {alert.message}
           </Text>
@@ -335,6 +346,9 @@ const styles = StyleSheet.create({
   priorityMedium: {
     backgroundColor: 'rgba(251, 191, 36, 0.15)',
   },
+  priorityLow: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+  },
   priorityText: {
     fontSize: 10,
     fontWeight: '600',
@@ -347,6 +361,17 @@ const styles = StyleSheet.create({
     color: colors.darkText,
     letterSpacing: -0.2,
     marginBottom: 4,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  locationText: {
+    fontSize: 11,
+    color: colors.mediumText,
+    marginLeft: 4,
+    fontStyle: 'italic',
   },
   message: {
     fontSize: 14,
