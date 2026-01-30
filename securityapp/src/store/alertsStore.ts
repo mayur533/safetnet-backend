@@ -17,6 +17,7 @@ interface AlertsState {
     latitude?: number;
     longitude?: number;
     location?: string;
+    priority?: 'high' | 'medium' | 'low';
   }) => Promise<Alert>;
   updateAlert: (id: string | number, updateData: Partial<Alert>) => Promise<void>;
   deleteAlert: (id: string | number) => Promise<void>;

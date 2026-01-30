@@ -297,6 +297,7 @@ export const alertService = {
     latitude?: number;
     longitude?: number;
     location?: string;
+    priority?: 'high' | 'medium' | 'low';
   }): Promise<Alert> => {
     // Format data to match backend expectations
     const apiData = {
@@ -306,6 +307,7 @@ export const alertService = {
       location_lat: alertData.latitude || 18.5204,
       location_long: alertData.longitude || 73.8567,
       location: alertData.location || 'Current Location',
+      priority: alertData.priority || 'medium',
     };
 
     try {

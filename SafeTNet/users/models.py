@@ -64,6 +64,15 @@ class User(AbstractUser):
 class Geofence(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    geofence_type = models.CharField(
+        max_length=10,
+        choices=[
+            ('circle', 'Circle'),
+            ('polygon', 'Polygon'),
+        ],
+        default='circle',
+        help_text='Type of geofence: circle or polygon'
+    )
     polygon_json = models.JSONField(help_text="GeoJSON polygon coordinates")
     organization = models.ForeignKey(
         Organization,

@@ -117,6 +117,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     is_paid_user = serializers.SerializerMethodField()
     geofences = serializers.SerializerMethodField()
     geofence_ids = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()  # Map Django's is_active to status
     
     class Meta:
         model = User
@@ -124,7 +125,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'id', 'name', 'email', 'phone', 'plantype', 
             'planexpiry', 'plan_details', 'location', 'is_premium', 'is_paid_user',
             'date_joined', 'last_login', 'first_name', 'last_name', 'username',
-            'geofences', 'geofence_ids'
+            'geofences', 'geofence_ids', 'status'
         )
         read_only_fields = ('id', 'email', 'date_joined', 'last_login', 'username')
     
@@ -196,31 +197,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
             pass
         # Check is_paid_user first (highest priority)
         is_paid = self.get_is_paid_user(obj)
-        if is_paid:
-            return True
-        # Check if user has premium-related attributes
-        if hasattr(obj, 'is_premium'):
-            try:
-                if obj.is_premium:
-                    return True
-            except:
-                pass
-        if hasattr(obj, 'plantype'):
-            if obj.plantype and obj.plantype.lower() == 'premium':
-                return True
-        if hasattr(obj, 'plan_type'):
-            if obj.plan_type and obj.plan_type.upper() == 'PREMIUM':
-                return True
-        # Fallback: Check email or username for premium indicator
-        email = getattr(obj, 'email', '').lower()
-        username = getattr(obj, 'username', '').lower()
-        if 'premium' in email or 'premium' in username:
-            return True
-        # Check role - if role indicates premium
-        role = getattr(obj, 'role', '').upper()
-        if role in ['PREMIUM', 'PREMIUM_USER']:
-            return True
-        return False
+    
+    def get_status(self, obj):
+        """Map Django's is_active to frontend status field."""
+        return 'active' if obj.is_active else 'inactive'
     
     def get_plantype(self, obj):
         """Get user's plan type from UserDetails."""
@@ -312,6 +292,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         phone = self.initial_data.get('phone')
         if phone is not None:
             instance.phone = phone
+        
+        # Handle status update if provided
+        status = self.initial_data.get('status')
+        if status is not None:
+            instance.is_active = (status.lower() == 'active')
         
         # Remove fields that don't exist on the model
         validated_data.pop('name', None)

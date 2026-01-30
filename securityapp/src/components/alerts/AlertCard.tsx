@@ -11,9 +11,10 @@ interface AlertCardProps {
   onRespond: (alert: Alert) => void;
   onDelete?: (alert: Alert) => void;
   onSolve?: (alert: Alert) => void;
+  onUpdate?: (alert: Alert) => void;
 }
 
-export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete, onSolve }) => {
+export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete, onSolve, onUpdate }) => {
   // Check if emergency based on original_alert_type or alert_type
   const isEmergency = alert.original_alert_type === 'emergency' ||
                       alert.original_alert_type === 'warning' ||
@@ -204,28 +205,45 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
             )}
           </View>
         ) : (
-          <View style={styles.bottomButtonsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.respondButtonBottom,
-                isEmergency && styles.respondButtonBottomEmergency,
-              ]}
-              onPress={() => onRespond(alert)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.respondButtonBottomText}>RESPOND</Text>
-            </TouchableOpacity>
-            {onDelete && (
+          <>
+            {/* Top row: Update and Delete buttons */}
+            <View style={styles.topButtonsContainer}>
+              {onUpdate && (
+                <TouchableOpacity
+                  style={styles.updateButtonTop}
+                  onPress={() => onUpdate(alert)}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="edit" size={18} color={colors.warningOrange} />
+                  <Text style={styles.updateButtonTextTop}>UPDATE</Text>
+                </TouchableOpacity>
+              )}
+              {onDelete && (
+                <TouchableOpacity
+                  style={styles.deleteButtonTop}
+                  onPress={handleDelete}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="delete" size={18} color={colors.emergencyRed} />
+                  <Text style={styles.deleteButtonTextTop}>DELETE</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            {/* Bottom row: Respond button */}
+            <View style={styles.respondButtonContainer}>
               <TouchableOpacity
-                style={styles.deleteButtonBottom}
-                onPress={handleDelete}
+                style={[
+                  styles.respondButtonBottom,
+                  isEmergency && styles.respondButtonBottomEmergency,
+                ]}
+                onPress={() => onRespond(alert)}
                 activeOpacity={0.7}
               >
-                <Icon name="delete" size={18} color={colors.emergencyRed} />
-                <Text style={styles.deleteButtonText}>DELETE</Text>
+                <Text style={styles.respondButtonBottomText}>RESPOND</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          </>
         )}
       </View>
     </View>
@@ -395,6 +413,72 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.emergencyRed,
     letterSpacing: 0.5,
+  },
+  updateButtonBottom: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    gap: 6,
+  },
+  updateButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.warningOrange,
+    letterSpacing: 0.5,
+  },
+  // New layout styles
+  topButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border || '#E5E7EB',
+  },
+  updateButtonTop: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.3)',
+    gap: 6,
+  },
+  updateButtonTextTop: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.warningOrange,
+    letterSpacing: 0.5,
+  },
+  deleteButtonTop: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 6,
+  },
+  deleteButtonTextTop: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.emergencyRed,
+    letterSpacing: 0.5,
+  },
+  respondButtonContainer: {
+    marginTop: 8,
   },
   completedActions: {
     flexDirection: 'row',

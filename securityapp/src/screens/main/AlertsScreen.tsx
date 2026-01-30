@@ -61,6 +61,14 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
   const [alertToDelete, setAlertToDelete] = useState<Alert | null>(null);
   const [deletingAlert, setDeletingAlert] = useState(false);
 
+  // Update alert modal state
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [alertToUpdate, setAlertToUpdate] = useState<Alert | null>(null);
+  const [updatingAlert, setUpdatingAlert] = useState(false);
+  const [updatedAlertMessage, setUpdatedAlertMessage] = useState('');
+  const [updatedAlertDescription, setUpdatedAlertDescription] = useState('');
+  const [updatedAlertType, setUpdatedAlertType] = useState<'emergency' | 'security' | 'normal'>('security');
+
   // Toast message state
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -156,6 +164,30 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
     setDeleteModalVisible(true);
   };
 
+  const handleUpdate = (alert: Alert) => {
+    console.log('📱 AlertsScreen: Opening update modal for alert:', alert.id);
+    setAlertToUpdate(alert);
+    setUpdatedAlertMessage(alert.message || '');
+    setUpdatedAlertDescription(''); // Initialize empty since description field doesn't exist
+    
+    // Set alert type - map to allowed types
+    let alertType: 'emergency' | 'security' | 'normal' = 'security';
+    if (alert.original_alert_type === 'emergency' || alert.original_alert_type === 'warning') {
+      alertType = 'emergency';
+    } else if (alert.original_alert_type === 'general') {
+      alertType = 'normal'; // Map 'general' to 'normal'
+    } else if (alert.alert_type === 'emergency') {
+      alertType = 'emergency';
+    } else if (alert.alert_type === 'security') {
+      alertType = 'security';
+    } else {
+      alertType = 'normal'; // Default to 'normal'
+    }
+    
+    setUpdatedAlertType(alertType);
+    setUpdateModalVisible(true);
+  };
+
   const confirmDelete = async () => {
     if (!alertToDelete) return;
 
@@ -180,6 +212,48 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
     console.log('📱 AlertsScreen: Cancelled delete for alert:', alertToDelete?.id);
     setDeleteModalVisible(false);
     setAlertToDelete(null);
+  };
+
+  const confirmUpdate = async () => {
+    if (!alertToUpdate) return;
+
+    try {
+      console.log('📱 AlertsScreen: Confirming update for alert:', alertToUpdate.id);
+      setUpdatingAlert(true);
+      
+      // Set priority based on alert type
+      let priority: 'high' | 'medium' | 'low' = 'medium';
+      if (updatedAlertType === 'emergency') {
+        priority = 'high';
+      } else if (updatedAlertType === 'security') {
+        priority = 'medium';
+      } else {
+        priority = 'low';
+      }
+      
+      // Update the alert with the new message, type, and priority
+      await storeUpdateAlert(alertToUpdate.id, {
+        message: updatedAlertMessage.trim(),
+        alert_type: updatedAlertType,
+        original_alert_type: updatedAlertType === 'emergency' ? 'emergency' : 
+                           updatedAlertType === 'security' ? 'warning' : 'general',
+        priority: priority,
+      });
+      
+      console.log('✅ AlertsScreen: Alert updated successfully with priority:', priority);
+      setUpdateModalVisible(false);
+      setAlertToUpdate(null);
+      setUpdatedAlertMessage('');
+      setUpdatedAlertDescription('');
+      setUpdatedAlertType('security');
+      showToast('Alert updated successfully!', 'success');
+    } catch (error: any) {
+      console.error('❌ AlertsScreen: Failed to update alert:', error);
+      const errorMessage = error?.message || 'Failed to update alert. Please try again.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setUpdatingAlert(false);
+    }
   };
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -249,11 +323,22 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
         }
       }
 
-      // Create alert via store with location data
+      // Set priority based on alert type
+      let priority: 'high' | 'medium' | 'low' = 'medium';
+      if (alertType === 'emergency') {
+        priority = 'high';
+      } else if (alertType === 'security') {
+        priority = 'medium';
+      } else {
+        priority = 'low';
+      }
+
+      // Create alert via store with location data and priority
       await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+        priority: priority,
         ...locationData
       });
 
@@ -282,31 +367,52 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
     console.log('🔍 CRITICAL DEBUG - AlertsScreen Analysis:');
     console.log(`   📊 Total alerts in alertsStore: ${alerts.length}`);
     console.log(`   📊 Selected filter: ${selectedFilter}`);
-    console.log(`   📊 Filtered alerts count: ${alerts.length} (all filter)`);
     
-    if (selectedFilter === 'all') return alerts;
+    // Log each alert's status and type for debugging
+    alerts.forEach((alert, index) => {
+      console.log(`   � Alert ${index + 1}: id=${alert.id}, status='${alert.status}', alert_type='${alert.alert_type}', priority='${alert.priority}'`);
+    });
+    
+    if (selectedFilter === 'all') {
+      console.log(`   📊 All filter: returning all ${alerts.length} alerts`);
+      return alerts;
+    }
+    
     if (selectedFilter === 'emergency') {
-      const filtered = alerts.filter(alert => alert.alert_type === 'emergency' || alert.priority === 'high');
+      const filtered = alerts.filter(alert => 
+        (alert.alert_type === 'emergency' || alert.priority === 'high') &&
+        alert.status !== 'completed' && 
+        alert.status !== 'resolved'
+      );
       console.log(`   📊 Emergency filtered count: ${filtered.length}`);
+      console.log(`   📊 Emergency alerts: ${filtered.map(a => a.id).join(', ')}`);
       return filtered;
     }
+    
     if (selectedFilter === 'pending') {
       const filtered = alerts.filter(alert => alert.status === 'pending' || !alert.status);
       console.log(`   📊 Pending filtered count: ${filtered.length}`);
+      console.log(`   📊 Pending alerts: ${filtered.map(a => a.id).join(', ')}`);
       return filtered;
     }
+    
     if (selectedFilter === 'accepted') {
       const filtered = alerts.filter(alert => alert.status === 'accepted');
       console.log(`   📊 Accepted filtered count: ${filtered.length}`);
+      console.log(`   📊 Accepted alerts: ${filtered.map(a => a.id).join(', ')}`);
       return filtered;
     }
+    
     if (selectedFilter === 'completed') {
       const filtered = alerts.filter(alert => 
         alert.status === 'completed' || alert.status === 'resolved'
       );
       console.log(`   📊 Completed filtered count: ${filtered.length}`);
+      console.log(`   📊 Completed alerts: ${filtered.map(a => a.id).join(', ')}`);
       return filtered;
     }
+    
+    console.log(`   📊 Default filter: returning all ${alerts.length} alerts`);
     return alerts;
   };
 
@@ -316,6 +422,7 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
       onRespond={handleRespond}
       onDelete={handleDelete}
       onSolve={handleSolve}
+      onUpdate={handleUpdate}
     />
   );
 
@@ -772,6 +879,122 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
         </View>
       </Modal>
 
+      {/* Update Alert Modal */}
+      <Modal
+        visible={updateModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setUpdateModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Update Alert</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setUpdateModalVisible(false)}
+              >
+                <Icon name="close" size={24} color={colors.darkText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Alert Type Selection */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type *</Text>
+                <View style={styles.alertTypeContainer}>
+                  {[
+                    { key: 'emergency', label: '🚨 Emergency', color: colors.emergencyRed },
+                    { key: 'security', label: '🛡️ Security', color: colors.warningOrange },
+                    { key: 'normal', label: '📢 General', color: colors.infoBlue },
+                  ].map((type) => (
+                    <TouchableOpacity
+                      key={type.key}
+                      style={[
+                        styles.alertTypeButton,
+                        {
+                          backgroundColor: updatedAlertType === type.key 
+                            ? type.color 
+                            : colors.lightGrayBg,
+                          borderColor: updatedAlertType === type.key 
+                            ? type.color 
+                            : colors.border,
+                        }
+                      ]}
+                      onPress={() => setUpdatedAlertType(type.key as 'emergency' | 'security' | 'normal')}
+                    >
+                      <Text style={[
+                        styles.alertTypeButtonText,
+                        {
+                          color: updatedAlertType === type.key 
+                            ? colors.white 
+                            : type.color,
+                        }
+                      ]}>
+                        {type.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.descriptionInput,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.lightGrayBg,
+                      color: colors.darkText,
+                      textAlignVertical: 'top'
+                    }
+                  ]}
+                  placeholder="Enter alert message..."
+                  placeholderTextColor={colors.mediumText}
+                  value={updatedAlertMessage}
+                  onChangeText={setUpdatedAlertMessage}
+                  multiline
+                  maxLength={500}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={() => setUpdateModalVisible(false)}
+                disabled={updatingAlert}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.updateButton,
+                  {
+                    backgroundColor: updatingAlert ? colors.mediumText : colors.warningOrange
+                  }
+                ]}
+                onPress={confirmUpdate}
+                disabled={updatingAlert || !updatedAlertMessage.trim()}
+              >
+                {updatingAlert ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <>
+                    <Icon name="edit" size={18} color={colors.white} style={styles.buttonIcon} />
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Update Alert</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Toast Message */}
       {toastVisible && (
         <View style={[
@@ -957,6 +1180,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '80%',
     minHeight: '60%',
+    backgroundColor: colors.white,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -985,30 +1209,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: spacing.sm,
     marginTop: spacing.md,
-  },
-  alertTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  alertTypeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: 12,
-    marginHorizontal: 2,
-    borderWidth: 2,
-  },
-  alertTypeIcon: {
-    marginRight: spacing.xs,
-  },
-  alertTypeText: {
-    ...typography.buttonSmall,
-    fontWeight: '600',
-    fontSize: 12,
   },
   textInput: {
     borderWidth: 1,
@@ -1157,6 +1357,40 @@ const styles = StyleSheet.create({
   deleteButton: {
     backgroundColor: colors.emergencyRed,
     flex: 1,
+  },
+  inputGroup: {
+    marginBottom: spacing.md,
+  },
+  updateButton: {
+    backgroundColor: colors.warningOrange,
+    flex: 1,
+  },
+  // Alert type selector styles
+  alertTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  alertTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertTypeButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Additional styles for create modal
+  alertTypeIcon: {
+    marginRight: 6,
+  },
+  alertTypeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 
