@@ -6,6 +6,8 @@ import { colors } from '../../utils/colors';
 export const LeafletMap = React.forwardRef<WebView, {
   latitude: number;
   longitude: number;
+  officerLatitude?: number;
+  officerLongitude?: number;
   zoom?: number;
   height?: number;
   showMarker?: boolean;
@@ -15,15 +17,19 @@ export const LeafletMap = React.forwardRef<WebView, {
     longitude: number;
   }>;
   mapKey?: string;
+  autoFitBounds?: boolean;
 }>(({
   latitude,
   longitude,
-  zoom = 15,
+  officerLatitude,
+  officerLongitude,
+  zoom = 16,
   height = 300,
   showMarker = true,
   markerTitle = 'Location',
   polygonCoordinates,
-  mapKey
+  mapKey,
+  autoFitBounds = true
 }, ref) => {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -35,11 +41,15 @@ export const LeafletMap = React.forwardRef<WebView, {
   // Create inline HTML with Leaflet
   const generateMapHTML = () => {
     console.log('Generating map HTML for coordinates:', latitude, longitude);
+    console.log('Officer coordinates:', officerLatitude, officerLongitude);
 
     // Process polygon coordinates
     const polygonCoordsString = polygonCoordinates && polygonCoordinates.length >= 3
       ? polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',')
       : '';
+
+    // Determine if we should auto-fit bounds
+    const shouldAutoFit = autoFitBounds && officerLatitude && officerLongitude;
 
     // Create HTML with embedded Leaflet CSS and JS
     const html = `<!DOCTYPE html>
@@ -91,6 +101,7 @@ export const LeafletMap = React.forwardRef<WebView, {
         console.log('Initializing Leaflet map...');
 
         var map = null;
+        var alertMarker = null;
         var officerMarker = null;
 
         function initMap() {
@@ -107,8 +118,9 @@ export const LeafletMap = React.forwardRef<WebView, {
                 }
 
                 // Initialize map
+                var initialCenter = [${latitude}, ${longitude}];
                 map = L.map('map', {
-                    center: [${latitude}, ${longitude}],
+                    center: initialCenter,
                     zoom: ${zoom},
                     zoomControl: true
                 });
@@ -131,11 +143,70 @@ export const LeafletMap = React.forwardRef<WebView, {
                 console.log('Geofence polygon added');
                 ` : ''}
 
-                // Add center marker
-                L.marker([${latitude}, ${longitude}]).addTo(map)
-                    .bindPopup('<b>📍 Center Location</b><br/>Lat: ${latitude.toFixed(6)}<br/>Lng: ${longitude.toFixed(6)}');
+                // Add alert marker (red)
+                alertMarker = L.marker([${latitude}, ${longitude}], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color: #dc2626; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'></div>",
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    })
+                }).addTo(map);
+                alertMarker.bindPopup('<b>🔴 Alert Location</b><br/>${markerTitle}<br/>Lat: ${latitude.toFixed(6)}<br/>Lng: ${longitude.toFixed(6)}');
+
+                // Add officer marker (blue) if coordinates provided
+                ${officerLatitude && officerLongitude ? `
+                officerMarker = L.marker([${officerLatitude}, ${officerLongitude}], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color: #2563eb; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'></div>",
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    })
+                }).addTo(map);
+                officerMarker.bindPopup('<b>🔵 Your Location</b><br/>Lat: ${officerLatitude.toFixed(6)}<br/>Lng: ${officerLongitude.toFixed(6)}');
+                ` : ''}
+
+                // Auto-fit bounds to show both markers
+                ${shouldAutoFit ? `
+                var group = new L.featureGroup([alertMarker]);
+                if (officerMarker) {
+                    group.addLayer(officerMarker);
+                }
+                map.fitBounds(group.getBounds().pad(0.1));
+                console.log('Map auto-fitted to show both markers');
+                ` : ''}
 
                 window.mapInstance = map;
+                window.updateOfficerMarker = function(lat, lng) {
+                    if (officerMarker) {
+                        officerMarker.setLatLng([lat, lng]);
+                        console.log('Officer marker updated to:', lat, lng);
+                        
+                        // Auto-fit bounds if needed
+                        ${shouldAutoFit ? `
+                        var group = new L.featureGroup([alertMarker, officerMarker]);
+                        map.fitBounds(group.getBounds().pad(0.1));
+                        ` : ''}
+                    } else {
+                        // Create officer marker if it doesn't exist
+                        officerMarker = L.marker([lat, lng], {
+                            icon: L.divIcon({
+                                className: 'custom-div-icon',
+                                html: "<div style='background-color: #2563eb; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'></div>",
+                                iconSize: [16, 16],
+                                iconAnchor: [8, 8]
+                            })
+                        }).addTo(map);
+                        officerMarker.bindPopup('<b>🔵 Your Location</b><br/>Lat: ' + lat.toFixed(6) + '<br/>Lng: ' + lng.toFixed(6));
+                        
+                        // Auto-fit bounds
+                        ${shouldAutoFit ? `
+                        var group = new L.featureGroup([alertMarker, officerMarker]);
+                        map.fitBounds(group.getBounds().pad(0.1));
+                        ` : ''}
+                    }
+                };
 
                 // Notify React Native that map is loaded
                 if (window.ReactNativeWebView) {
@@ -171,32 +242,12 @@ export const LeafletMap = React.forwardRef<WebView, {
 
                 if (data.type === 'updateOfficerMarker' && map) {
                     console.log('📍 Updating officer location:', data.latitude, data.longitude);
-                    console.log('🗺️ Map instance exists:', !!map);
-
-                    if (officerMarker) {
-                        // Update existing marker
-                        console.log('🔄 Updating existing officer marker position');
-                        officerMarker.setLatLng([data.latitude, data.longitude]);
-                        officerMarker.bringToFront();
+                    
+                    // Use the global updateOfficerMarker function
+                    if (window.updateOfficerMarker) {
+                        window.updateOfficerMarker(data.latitude, data.longitude);
                     } else {
-                        console.log('🆕 Creating new officer marker');
-                        // Create new officer marker - SIMPLIFIED FOR VISIBILITY
-                        var icon = L.divIcon({
-                            html: '<div style="background-color: #FF3B30; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; font-size: 16px;">👮</div>',
-                            className: 'officer-marker',
-                            iconSize: [36, 36],
-                            iconAnchor: [18, 18]
-                        });
-
-                        officerMarker = L.marker([data.latitude, data.longitude], {
-                            icon: icon,
-                            zIndexOffset: 1000
-                        }).addTo(map);
-
-                        officerMarker.bindPopup('<b>🚔 Security Officer</b><br/>📍 Live Location Tracking<br/>⚡ Updates every 3 seconds<br/>🎯 GPS High Accuracy Mode<br/>🛡️ Active Security Patrol');
-
-                        console.log('✅ Officer marker created at:', [data.latitude, data.longitude]);
-                        console.log('🎯 Marker added to map successfully');
+                        console.error('❌ updateOfficerMarker function not available');
                     }
                 }
 
