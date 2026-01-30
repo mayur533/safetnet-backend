@@ -61,8 +61,8 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
                             # Check if point is within circular geofence
                             from django.contrib.gis.measure import Distance
                             center_point = Point(geofence.center_longitude, geofence.center_latitude, srid=4326)
-                            distance = alert_location.distance(center_point) * 111320  # Approximate conversion to meters
-                            if distance.distance <= (geofence.radius or 1000):  # Default 1km radius
+                            distance_meters = alert_location.distance(center_point) * 111320  # Approximate conversion to meters
+                            if distance_meters <= (geofence.radius or 1000):  # Default 1km radius
                                 matching_geofence = geofence
                                 break
                         elif geofence.geofence_type == 'polygon':
