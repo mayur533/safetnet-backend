@@ -73,6 +73,27 @@ class Geofence(models.Model):
         default='circle',
         help_text='Type of geofence: circle or polygon'
     )
+    # Fields for circle geofences
+    center_latitude = models.DecimalField(
+        max_digits=10, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text='Center latitude for circle geofences'
+    )
+    center_longitude = models.DecimalField(
+        max_digits=11, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text='Center longitude for circle geofences'
+    )
+    radius = models.IntegerField(
+        null=True, 
+        blank=True,
+        help_text='Radius in meters for circle geofences'
+    )
+    # Fields for polygon geofences
     polygon_json = models.JSONField(help_text="GeoJSON polygon coordinates")
     organization = models.ForeignKey(
         Organization,

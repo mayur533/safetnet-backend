@@ -25,6 +25,7 @@ interface LocationData {
   latitude: number;
   longitude: number;
   accuracy?: number;
+  timestamp?: string; // Optional timestamp for location updates
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -57,7 +58,7 @@ export const AlertRespondMapScreen = () => {
   // Refs for cleanup
   const watchIdRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
-  const locationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch alert details
   useEffect(() => {
@@ -187,7 +188,7 @@ export const AlertRespondMapScreen = () => {
     console.log('📡 Starting location tracking with 10-second intervals...');
 
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
+      (position: any) => {
         const now = Date.now();
 
         // Throttle updates to once every 10 seconds
@@ -205,7 +206,7 @@ export const AlertRespondMapScreen = () => {
           lastUpdateRef.current = now;
         }
       },
-      (error) => {
+      (error: any) => {
         console.error('❌ Location tracking error:', error);
       },
       {

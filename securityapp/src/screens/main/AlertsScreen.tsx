@@ -27,7 +27,11 @@ interface AlertsScreenProps {
   // Add any props if needed
 }
 
-export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref: any) => {
+interface AlertsScreenRef {
+  fetchAlertsWithRetry: () => void;
+}
+
+export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((props, ref) => {
   const navigation = useNavigation();
 
   // Use Zustand alerts store

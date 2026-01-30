@@ -1,6 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Modal, TextInput, ScrollView, ActivityIndicator, Alert as RNAlert } from 'react-native';
 import { AlertsScreen } from './AlertsScreen';
+
+type AlertsScreenRef = React.RefObject<{
+  fetchAlertsWithRetry: () => void;
+}>;
 import { BottomTabNavigator } from '../../components/navigation/BottomTabNavigator';
 import { colors } from '../../utils/colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -26,7 +30,9 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const { createAlert: storeCreateAlert } = useAlertsStore();
 
   // Ref to access AlertsScreen methods
-  const alertsScreenRef = useRef<any>(null);
+  const alertsScreenRef = useRef<{
+    fetchAlertsWithRetry: () => void;
+  }>(null);
 
   // Toast function
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {

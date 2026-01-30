@@ -24,6 +24,7 @@ export interface Alert {
   original_alert_type?: 'general' | 'warning' | 'emergency';
   priority: 'high' | 'medium' | 'low';
   message: string;
+  description?: string; // Optional description field
   location: {
     latitude: number;
     longitude: number;
