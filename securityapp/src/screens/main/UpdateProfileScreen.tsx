@@ -15,7 +15,6 @@ import { updateOfficerProfile } from '../../store/slices/authSlice';
 import { profileService } from '../../api/services/profileService';
 import { colors } from '../../utils/colors';
 import { shadows, spacing, typography } from '../../utils';
-import Toast from 'react-native-toast-message';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const UpdateProfileScreen = ({ navigation, route }: any) => {
@@ -53,36 +52,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
         );
         setEmail(profile.email_id || profile.email || profile.officer_email || officer.email_id || '');
         
-        // Extract phone number from all possible backend fields (same as ProfileScreen)
-        const phoneNumber = 
-          // Direct profile fields
-          profile.mobile ||
-          profile.phone ||
-          profile.officer_phone ||
-          profile.phone_number ||
-          profile.contact_number ||
-          profile.contact_phone ||
-          profile.phone_no ||
-          profile.contact ||
-          // Nested user object fields
-          (profile.user && profile.user.mobile) ||
-          (profile.user && profile.user.phone) ||
-          (profile.user && profile.user.phone_number) ||
-          (profile.user && profile.user.contact_number) ||
-          // SecurityOfficer model fields
-          (profile.security_officer && profile.security_officer.mobile) ||
-          (profile.security_officer && profile.security_officer.phone) ||
-          // Officer profile fields
-          (profile.officer && profile.officer.mobile) ||
-          (profile.officer && profile.officer.phone) ||
-          // Fallback to Redux officer data
-          officer.mobile ||
-          '';
+        // Extract phone number - API returns it in 'phone' field
+        const phoneNumber = profile.phone || officer.mobile || '';
         
         console.log('[UpdateProfileScreen] Phone number extraction:', {
-          'profile.mobile': profile.mobile,
-          'profile.user.mobile': profile.user && profile.user.mobile,
-          'profile.security_officer.mobile': profile.security_officer && profile.security_officer.mobile,
+          'profile.phone': profile.phone,
           'officer.mobile': officer.mobile,
           'extracted_phone': phoneNumber,
         });
@@ -108,107 +82,65 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
   const handleSave = async () => {
     if (!(officer && officer.security_id)) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Officer ID not found',
-      });
+      Alert.alert('Error', 'Officer ID not found');
       return;
     }
 
     // Basic validation
     if (!name.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Name is required',
-      });
+      Alert.alert('Validation Error', 'Name is required');
       return;
     }
 
     if (!email.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Email is required',
-      });
+      Alert.alert('Validation Error', 'Email is required');
       return;
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Please enter a valid email address',
-      });
+      Alert.alert('Validation Error', 'Please enter a valid email address');
       return;
     }
 
+    setIsSaving(true);
+
     try {
-      setIsSaving(true);
-      console.log('[UpdateProfileScreen] Updating profile with:', {
-        security_id: officer.security_id,
-        name: name.trim(),
-        email_id: email.trim(),
-        mobile: mobile.trim(),
-        badge_number: badgeNumber.trim(),
-        shift_schedule: shiftSchedule.trim(),
-      });
-
-      // Prepare update payload
-      const updateData: any = {
-        name: name.trim(),
-        email_id: email.trim(),
-      };
-
-      if (mobile.trim()) {
-        updateData.mobile = mobile.trim();
-      }
-      if (badgeNumber.trim()) {
-        updateData.badge_number = badgeNumber.trim();
-      }
-      if (shiftSchedule.trim()) {
-        updateData.shift_schedule = shiftSchedule.trim();
-      }
-
-      // Call update API
-      const response = await profileService.updateProfile(officer.security_id, updateData);
+      console.log('[UpdateProfileScreen] Starting profile update...');
+      console.log('[UpdateProfileScreen] Officer data:', officer);
       
-      console.log('[UpdateProfileScreen] Profile update response:', response);
-
-      // Update Redux store with the new profile data
-      dispatch(updateOfficerProfile({
+      const updateData = {
         name: name.trim(),
-        email_id: email.trim(),
-        mobile: mobile.trim() || '',
-        badge_number: badgeNumber.trim() || '',
+        email: email.trim(),
+        phone: mobile.trim(),  // Send as 'phone' field for backend
+        badge_number: badgeNumber.trim(),
         shift_schedule: shiftSchedule.trim() || '',
-      }));
+      };
+      
+      console.log('[UpdateProfileScreen] Sending update data:', JSON.stringify(updateData, null, 2));
 
-      Toast.show({
-        type: 'success',
-        text1: 'Success',
-        text2: 'Profile updated successfully',
-      });
+      await profileService.updateProfile(officer.security_id, updateData);
+      
+      console.log('[UpdateProfileScreen] Update successful!');
 
-      // Navigate back after a short delay to allow toast to show
-      setTimeout(() => {
-        navigation.goBack();
-      }, 1000);
+      Alert.alert('Success', 'Profile updated successfully', [
+        { 
+          text: 'OK', 
+          onPress: () => {
+            // Navigate back and trigger refresh
+            navigation.goBack();
+          }
+        }
+      ]);
+
     } catch (error: any) {
       console.error('[UpdateProfileScreen] Error updating profile:', error);
-      const errorMessage = (error.response && error.response.data && error.response.data.message) ||
-                          (error.response && error.response.data && error.response.data.error) ||
-                          error.message ||
+      const errorMessage = error?.response?.data?.message ||
+                          error?.message ||
                           'Failed to update profile';
       
-      Toast.show({
-        type: 'error',
-        text1: 'Update Failed',
-        text2: errorMessage,
-      });
+      Alert.alert('Update Failed', errorMessage);
     } finally {
       setIsSaving(false);
     }

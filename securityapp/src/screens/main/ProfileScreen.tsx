@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -14,15 +16,19 @@ import { typography, spacing, shadows } from '../../utils';
 import { profileService } from '../../api/services/profileService';
 import { SecurityOfficer } from '../../types/user.types';
 export const ProfileScreen = () => {
+  const navigation = useNavigation();
   const [officer, setOfficer] = useState<SecurityOfficer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Fetch profile data on component mount
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  // Fetch profile data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🔄 ProfileScreen focused, fetching fresh data...');
+      fetchProfile();
+    }, [])
+  );
 
   const fetchProfile = async () => {
     try {
@@ -76,27 +82,9 @@ export const ProfileScreen = () => {
     );
   };
 
-  const handleEditProfile = async () => {
-    if (!officer) return;
-
-    Alert.alert(
-      'Edit Profile',
-      'Profile editing feature is not yet implemented. This will be added in a future update.',
-      [{ text: 'OK' }]
-    );
-
-    // TODO: Implement profile editing with PATCH API
-    // const updates = { /* user input */ };
-    // try {
-    //   setIsUpdating(true);
-    //   await profileService.updateProfile(officer.security_id, updates);
-    //   await fetchProfile(); // Refresh data
-    //   Alert.alert('Success', 'Profile updated successfully!');
-    // } catch (error: any) {
-    //   Alert.alert('Error', error.message || 'Failed to update profile');
-    // } finally {
-    //   setIsUpdating(false);
-    // }
+  const handleEditProfile = () => {
+    // Navigate to UpdateProfileScreen
+    (navigation as any).navigate('UpdateProfile');
   };
 
   // Loading state
@@ -182,10 +170,6 @@ export const ProfileScreen = () => {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Contact Information</Text>
-            <TouchableOpacity style={styles.cardHeaderRight} onPress={handleEditProfile}>
-              <Icon name="edit" size={20} color={colors.primary} />
-              <Text style={styles.cardSubtitle}>Edit</Text>
-            </TouchableOpacity>
           </View>
           <Text style={styles.body}>Email: {officer.email_id}</Text>
           <Text style={styles.body}>Mobile: {officer.mobile}</Text>
@@ -194,10 +178,6 @@ export const ProfileScreen = () => {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Work Details</Text>
-            <TouchableOpacity style={styles.cardHeaderRight} onPress={handleEditProfile}>
-              <Icon name="edit" size={20} color={colors.primary} />
-              <Text style={styles.cardSubtitle}>Edit</Text>
-            </TouchableOpacity>
           </View>
           <Text style={styles.body}>Badge Number: {officer.badge_number}</Text>
           <Text style={styles.body}>Shift: {officer.shift_schedule || 'Day Shift'}</Text>
@@ -218,6 +198,12 @@ export const ProfileScreen = () => {
           <Text style={styles.body}>Last login: {officer.last_login ? new Date(officer.last_login).toLocaleDateString() : 'N/A'}</Text>
         </View>
       </View>
+
+      {/* Update Profile Button */}
+      <TouchableOpacity style={styles.updateProfileButton} onPress={handleEditProfile}>
+        <Icon name="edit" size={20} color={colors.white} />
+        <Text style={styles.updateProfileButtonText}>Update Profile</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutButtonText}>Logout</Text>
@@ -378,6 +364,21 @@ const styles = StyleSheet.create({
   },
   inactiveStatus: {
     color: colors.emergencyRed,
+  },
+  updateProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    padding: spacing.base,
+    marginHorizontal: spacing.base,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  updateProfileButtonText: {
+    ...typography.buttonMedium,
+    color: colors.white,
   },
   logoutButton: {
     flexDirection: 'row',

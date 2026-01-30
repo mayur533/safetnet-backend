@@ -1,3 +1,17 @@
+export interface Geofence {
+  id: string;
+  name: string;
+  description?: string;
+  center_latitude: number;
+  center_longitude: number;
+  radius?: number;
+  polygon_json?: string;
+  geofence_type: 'circle' | 'polygon';
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface Alert {
   id: number; // Backend returns integer IDs
   log_id: string;
@@ -17,8 +31,9 @@ export interface Alert {
   };
   distance?: number;
   timestamp: string;
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'completed' | 'resolved' | 'cancelled';
   geofence_id: string;
+  geofence?: Geofence; // Optional full geofence object
   created_at: string;
   updated_at?: string;
 }

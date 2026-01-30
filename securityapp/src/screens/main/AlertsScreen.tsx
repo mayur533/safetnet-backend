@@ -16,7 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Alert } from '../../types/alert.types';
-import { useAlertsStore, debugAlertPersistence } from '../../store/alertsStore';
+import { useAlertsStore } from '../../store/alertsStore';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
 import { colors } from '../../utils/colors';
@@ -50,6 +50,21 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
   const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general'>('security');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
+  
+  // Location input state
+  const [useCustomLocation, setUseCustomLocation] = useState(false);
+  const [customLatitude, setCustomLatitude] = useState('');
+  const [customLongitude, setCustomLongitude] = useState('');
+
+  // Delete confirmation modal state
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [alertToDelete, setAlertToDelete] = useState<Alert | null>(null);
+  const [deletingAlert, setDeletingAlert] = useState(false);
+
+  // Toast message state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
   // Reset filter and fetch alerts when screen comes into focus
   useFocusEffect(
@@ -90,11 +105,6 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
           
           // Force fetch fresh data
           await fetchAlerts();
-          // Debug alert persistence after fetch
-          setTimeout(() => {
-            console.log('🔍 DEBUG: Alert persistence after screen focus:');
-            debugAlertPersistence();
-          }, 1000);
         } catch (error) {
           console.error('❌ Error clearing alerts cache:', error);
           await fetchAlerts();
@@ -140,36 +150,66 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
     (navigation as any).navigate('AlertRespondMap', { alertId: alert.id });
   };
 
-  const handleDelete = async (alert: Alert) => {
+  const handleDelete = (alert: Alert) => {
+    console.log('📱 AlertsScreen: Showing delete confirmation for alert:', alert.id);
+    setAlertToDelete(alert);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!alertToDelete) return;
+
     try {
-      console.log('📱 AlertsScreen: handleDelete called for alert:', alert.id);
-      await storeDeleteAlert(alert.id);
+      console.log('📱 AlertsScreen: Confirming delete for alert:', alertToDelete.id);
+      setDeletingAlert(true);
+      await storeDeleteAlert(alertToDelete.id);
       console.log('✅ AlertsScreen: Alert deleted successfully');
-      RNAlert.alert('Success', 'Alert deleted successfully!');
+      setDeleteModalVisible(false);
+      setAlertToDelete(null);
+      showToast('Alert deleted successfully!', 'success');
     } catch (error: any) {
       console.error('❌ AlertsScreen: Failed to delete alert:', error);
       const errorMessage = error?.message || 'Failed to delete alert. Please try again.';
-      RNAlert.alert('Error', errorMessage);
+      showToast(errorMessage, 'error');
+    } finally {
+      setDeletingAlert(false);
     }
   };
 
+  const cancelDelete = () => {
+    console.log('📱 AlertsScreen: Cancelled delete for alert:', alertToDelete?.id);
+    setDeleteModalVisible(false);
+    setAlertToDelete(null);
+  };
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+    
+    // Auto-hide after 2 seconds
+    setTimeout(() => {
+      setToastVisible(false);
+    }, 2000);
+  };
+
   const handleSolve = async (alert: Alert) => {
+    console.log('🔧 AlertsScreen: Solve button pressed for alert:', alert.id);
     try {
-      console.log('✅ Resolving alert:', alert.id);
       // TODO: Use storeResolveAlert once TypeScript issue is resolved
       await storeUpdateAlert(alert.id, { status: 'completed' });
       console.log('✅ Alert resolved successfully');
-      RNAlert.alert('Success', 'Alert marked as solved!');
+      showToast('Alert marked as solved!', 'success');
     } catch (error) {
       console.error('❌ Failed to resolve alert:', error);
-      RNAlert.alert('Error', 'Failed to mark alert as solved. Please try again.');
+      showToast('Failed to mark alert as solved. Please try again.', 'error');
     }
   };
 
   // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
-      RNAlert.alert('Error', 'Please enter an alert message');
+      showToast('Please enter an alert message', 'error');
       return;
     }
 
@@ -177,11 +217,44 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
     console.log('🚨 AlertsScreen: Creating new alert...');
 
     try {
-      // Create alert via store
+      // Get current location for the alert
+      let locationData = {};
+      if (useCustomLocation && customLatitude && customLongitude) {
+        // Use custom location provided by user
+        locationData = {
+          latitude: parseFloat(customLatitude),
+          longitude: parseFloat(customLongitude),
+          location: `Custom: ${customLatitude}, ${customLongitude}`
+        };
+        console.log('📍 Using custom location for alert:', locationData);
+      } else {
+        // Use GPS location
+        try {
+          const { locationService } = await import('../../api/services/geofenceService');
+          const currentLocation = await locationService.getCurrentLocation();
+          locationData = {
+            latitude: currentLocation.latitude,
+            longitude: currentLocation.longitude,
+            location: `GPS: ${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`
+          };
+          console.log('📍 Using GPS location for alert:', locationData);
+        } catch (locationError) {
+          console.log('⚠️ Could not get current location, using default:', locationError);
+          // Use default location if GPS fails
+          locationData = {
+            latitude: 18.5204,
+            longitude: 73.8567,
+            location: 'Default Location (Pune)'
+          };
+        }
+      }
+
+      // Create alert via store with location data
       await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+        ...locationData
       });
 
       // Reset form and close modal
@@ -194,10 +267,10 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
       console.log('🔄 Refreshing alerts list after creating new alert...');
       await fetchAlerts();
 
-      RNAlert.alert('Success', 'Alert created successfully!');
+      showToast('Alert created successfully!', 'success');
     } catch (error) {
       console.error('Error creating alert:', error);
-      RNAlert.alert('Error', 'Failed to create alert. Please try again.');
+      showToast('Failed to create alert. Please try again.', 'error');
     } finally {
       setCreatingAlert(false);
     }
@@ -205,11 +278,35 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
 
   // Filter alerts based on selected section
   const getFilteredAlerts = () => {
+    // CRITICAL: Log exact counts for debugging
+    console.log('🔍 CRITICAL DEBUG - AlertsScreen Analysis:');
+    console.log(`   📊 Total alerts in alertsStore: ${alerts.length}`);
+    console.log(`   📊 Selected filter: ${selectedFilter}`);
+    console.log(`   📊 Filtered alerts count: ${alerts.length} (all filter)`);
+    
     if (selectedFilter === 'all') return alerts;
-    if (selectedFilter === 'emergency') return alerts.filter(alert => alert.alert_type === 'emergency' || alert.priority === 'high');
-    if (selectedFilter === 'pending') return alerts.filter(alert => alert.status === 'pending' || !alert.status);
-    if (selectedFilter === 'accepted') return alerts.filter(alert => alert.status === 'accepted');
-    if (selectedFilter === 'completed') return alerts.filter(alert => alert.status === 'completed');
+    if (selectedFilter === 'emergency') {
+      const filtered = alerts.filter(alert => alert.alert_type === 'emergency' || alert.priority === 'high');
+      console.log(`   📊 Emergency filtered count: ${filtered.length}`);
+      return filtered;
+    }
+    if (selectedFilter === 'pending') {
+      const filtered = alerts.filter(alert => alert.status === 'pending' || !alert.status);
+      console.log(`   📊 Pending filtered count: ${filtered.length}`);
+      return filtered;
+    }
+    if (selectedFilter === 'accepted') {
+      const filtered = alerts.filter(alert => alert.status === 'accepted');
+      console.log(`   📊 Accepted filtered count: ${filtered.length}`);
+      return filtered;
+    }
+    if (selectedFilter === 'completed') {
+      const filtered = alerts.filter(alert => 
+        alert.status === 'completed' || alert.status === 'resolved'
+      );
+      console.log(`   📊 Completed filtered count: ${filtered.length}`);
+      return filtered;
+    }
     return alerts;
   };
 
@@ -283,13 +380,6 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
             <View style={[styles.statBadge, { backgroundColor: colors.primary }]}>
               <Text style={[styles.statText, { color: colors.white }]}>{alerts.length}</Text>
             </View>
-            {/* Debug button */}
-            <TouchableOpacity 
-              style={[styles.statBadge, { backgroundColor: colors.emergencyRed, marginLeft: 8 }]}
-              onPress={() => (navigation as any).navigate('DebugAlerts')}
-            >
-              <Icon name="bug-report" size={12} color={colors.white} />
-            </TouchableOpacity>
             {/* Hard reset button */}
             <TouchableOpacity 
               style={[styles.statBadge, { backgroundColor: '#FF9800', marginLeft: 4 }]}
@@ -510,14 +600,73 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
                   backgroundColor: colors.lightGrayBg,
                   color: colors.darkText
                 }]}
-                placeholder="Additional details..."
+                placeholder="Enter detailed description..."
                 placeholderTextColor={colors.mediumText}
                 value={alertDescription}
                 onChangeText={setAlertDescription}
                 multiline
-                numberOfLines={4}
-                maxLength={500}
+                numberOfLines={2}
+                maxLength={300}
               />
+
+              {/* Location Input */}
+              <View style={styles.locationSection}>
+                <TouchableOpacity
+                  style={styles.locationToggle}
+                  onPress={() => setUseCustomLocation(!useCustomLocation)}
+                >
+                  <Icon 
+                    name={useCustomLocation ? "location-on" : "location-off"} 
+                    size={20} 
+                    color={useCustomLocation ? colors.primary : colors.mediumText} 
+                  />
+                  <Text style={[styles.locationToggleText, { 
+                    color: useCustomLocation ? colors.primary : colors.darkText 
+                  }]}>
+                    {useCustomLocation ? "Using Custom Location" : "Use Custom Location"}
+                  </Text>
+                </TouchableOpacity>
+
+                {useCustomLocation && (
+                  <View style={styles.locationInputs}>
+                    <View style={styles.locationInputRow}>
+                      <Text style={[styles.inputLabel, { color: colors.darkText }]}>Latitude *</Text>
+                      <TextInput
+                        style={[styles.textInput, styles.locationInput, {
+                          borderColor: colors.border,
+                          backgroundColor: colors.lightGrayBg,
+                          color: colors.darkText
+                        }]}
+                        placeholder="18.5204"
+                        placeholderTextColor={colors.mediumText}
+                        value={customLatitude}
+                        onChangeText={setCustomLatitude}
+                        keyboardType="numeric"
+                        maxLength={10}
+                      />
+                    </View>
+                    <View style={styles.locationInputRow}>
+                      <Text style={[styles.inputLabel, { color: colors.darkText }]}>Longitude *</Text>
+                      <TextInput
+                        style={[styles.textInput, styles.locationInput, {
+                          borderColor: colors.border,
+                          backgroundColor: colors.lightGrayBg,
+                          color: colors.darkText
+                        }]}
+                        placeholder="73.8567"
+                        placeholderTextColor={colors.mediumText}
+                        value={customLongitude}
+                        onChangeText={setCustomLongitude}
+                        keyboardType="numeric"
+                        maxLength={10}
+                      />
+                    </View>
+                    <Text style={styles.locationHelpText}>
+                      Enter the exact GPS coordinates where you want to create the alert
+                    </Text>
+                  </View>
+                )}
+              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -556,6 +705,82 @@ export const AlertsScreen: React.FC<AlertsScreenProps> = forwardRef((props, ref:
           </View>
         </View>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={cancelDelete}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.white }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Delete Alert</Text>
+              <TouchableOpacity
+                onPress={cancelDelete}
+                style={styles.closeButton}
+              >
+                <Icon name="close" size={24} color={colors.mediumText} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.deleteConfirmationContainer}>
+                <Icon name="warning" size={48} color={colors.emergencyRed} style={styles.deleteWarningIcon} />
+                <Text style={[styles.deleteConfirmationText, { color: colors.darkText }]}>
+                  Are you sure you want to delete this alert?
+                </Text>
+                {alertToDelete && (
+                  <View style={styles.alertPreviewContainer}>
+                    <Text style={[styles.alertPreviewLabel, { color: colors.mediumText }]}>
+                      Alert Details:
+                    </Text>
+                    <Text style={[styles.alertPreviewMessage, { color: colors.darkText }]}>
+                      {alertToDelete.message?.substring(0, 100)}
+                      {alertToDelete.message && alertToDelete.message.length > 100 ? '...' : ''}
+                    </Text>
+                    <Text style={[styles.alertPreviewMeta, { color: colors.mediumText }]}>
+                      Type: {alertToDelete.alert_type} • Status: {alertToDelete.status}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.lightGrayBg }]}
+                  onPress={cancelDelete}
+                  disabled={deletingAlert}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.darkText }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.deleteButton, { backgroundColor: colors.emergencyRed }]}
+                  onPress={confirmDelete}
+                  disabled={deletingAlert}
+                >
+                  {deletingAlert ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Delete</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Toast Message */}
+      {toastVisible && (
+        <View style={[
+          styles.toastContainer,
+          { backgroundColor: toastType === 'success' ? colors.successGreen : colors.emergencyRed }
+        ]}>
+          <Text style={styles.toastMessage}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 });
@@ -813,17 +1038,125 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     minHeight: 48,
   },
-  cancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
+  // Toast styles
+  toastContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    backgroundColor: colors.successGreen,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
   },
-  modalButtonText: {
-    ...typography.buttonSmall,
+  toastMessage: {
+    ...typography.body,
+    color: colors.white,
     fontWeight: '600',
     fontSize: 14,
   },
+  // Missing styles for location inputs
+  locationSection: {
+    marginBottom: spacing.md,
+  },
+  locationToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    backgroundColor: colors.lightGrayBg,
+    marginBottom: spacing.sm,
+  },
+  locationToggleText: {
+    ...typography.body,
+    marginLeft: spacing.sm,
+    fontWeight: '500',
+  },
+  locationInputs: {
+    marginTop: spacing.sm,
+  },
+  locationInputRow: {
+    marginBottom: spacing.md,
+  },
+  locationInput: {
+    marginTop: spacing.xs,
+  },
+  locationHelpText: {
+    ...typography.caption,
+    color: colors.mediumText,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
+  },
+  // Missing button styles
+  cancelButton: {
+    borderWidth: 1,
+  },
+  modalButtonText: {
+    ...typography.buttonMedium,
+    fontWeight: '600',
+  },
   buttonIcon: {
     marginRight: spacing.xs,
+  },
+  // Missing confirmation modal styles
+  deleteConfirmationContainer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  deleteWarningIcon: {
+    marginBottom: spacing.md,
+  },
+  deleteConfirmationText: {
+    ...typography.body,
+    color: colors.darkText,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    lineHeight: 20,
+  },
+  alertPreviewContainer: {
+    backgroundColor: colors.lightGrayBg,
+    padding: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  alertPreviewLabel: {
+    ...typography.caption,
+    color: colors.mediumText,
+    marginBottom: spacing.xs,
+    fontWeight: '500',
+  },
+  alertPreviewMessage: {
+    ...typography.body,
+    color: colors.darkText,
+    marginBottom: spacing.sm,
+    fontWeight: '500',
+  },
+  alertPreviewMeta: {
+    ...typography.caption,
+    color: colors.mediumText,
+    fontStyle: 'italic',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
+  },
+  deleteButton: {
+    backgroundColor: colors.emergencyRed,
+    flex: 1,
   },
 });
 

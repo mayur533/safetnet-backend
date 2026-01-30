@@ -13,12 +13,19 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAlertsStore } from '../../store/alertsStore';
 import { useGeofenceStore } from '../../store/geofenceStore';
 import { alertService } from '../../api/services/alertService';
-import { geofenceService, locationService, LocationData, LiveLocationSession } from '../../api/services/geofenceService';
+import { geofenceService, locationService, LiveLocationSession } from '../../api/services/geofenceService';
 import { Alert } from '../../types/alert.types';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import { formatExactTime } from '../../utils/helpers';
-import LeafletMap from '../../components/maps/LeafletMap';
+import { LeafletMap } from '../../components/maps/LeafletMap';
+
+// Define LocationData interface
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -33,7 +40,7 @@ export const AlertRespondMapScreen = () => {
   const route = useRoute<AlertRespondMapScreenRouteProp>();
   const { alertId } = route.params || {};
 
-  const { resolveAlert } = useAlertsStore();
+  const { resolveAlert, updateAlert: storeUpdateAlert } = useAlertsStore();
   const { updateLocation } = useGeofenceStore();
 
   // State
@@ -70,6 +77,13 @@ export const AlertRespondMapScreen = () => {
         setAlert(alertData);
 
         console.log('✅ Alert details fetched:', alertData);
+        console.log('📍 Alert location data:', {
+          location: alertData.location,
+          latitude: alertData.location?.latitude,
+          longitude: alertData.location?.longitude,
+          hasCoordinates: !!(alertData.location?.latitude && alertData.location?.longitude)
+        });
+        console.log('🗺️ Full alert object:', JSON.stringify(alertData, null, 2));
       } catch (error: any) {
         console.error('❌ Failed to fetch alert details:', error);
         setError(error.message || 'Failed to load alert details');
@@ -104,24 +118,9 @@ export const AlertRespondMapScreen = () => {
     getCurrentLocation();
   }, []);
 
-  // Handle accept button press
-  const handleAccept = async () => {
-    if (!alert) return;
-
-    RNAlert.alert(
-      'Accept Alert Response',
-      `Are you sure you want to accept and respond to this ${alert.alert_type} alert? This will start live location tracking.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept & Respond',
-          style: 'default',
-          onPress: async () => {
-            await acceptAlertResponse();
-          },
-        },
-      ]
-    );
+  // Handle accept alert - no confirmation needed
+  const handleAcceptAlert = async () => {
+    await acceptAlertResponse();
   };
 
   // Accept alert response
@@ -132,24 +131,19 @@ export const AlertRespondMapScreen = () => {
       setIsAccepting(true);
       console.log('📞 Accepting alert response for ID:', alert.id);
 
-      // Resolve/accept the alert response
-      await resolveAlert(alert.id);
+      // Change status to 'accepted' instead of 'completed'
+      await storeUpdateAlert(alert.id, { status: 'accepted' });
 
       // Start live location session
       await startLiveLocationSession();
 
-      console.log('✅ Alert response accepted successfully');
+      console.log('✅ Alert response accepted successfully - Status changed to "accepted"');
 
       RNAlert.alert(
         'Response Accepted',
-        'You are now responding to this alert. Live location tracking has started.',
+        'You are now responding to this alert. The alert has been moved to the Accepted section.',
         [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.goBack();
-            },
-          },
+          { text: 'OK', onPress: () => navigation.goBack() }
         ]
       );
     } catch (error: any) {
@@ -293,34 +287,53 @@ export const AlertRespondMapScreen = () => {
   }
 
   // Check if alert has coordinates
-  const hasCoordinates = alert.location?.latitude && alert.location?.longitude;
+  const hasCoordinates = alert?.location?.latitude && alert?.location?.longitude;
 
-  // Prepare map markers
-  const markers = [];
+  // Get geofence coordinates for the map
+  const getGeofenceCoordinates = () => {
+    if (!alert?.geofence) return null;
 
-  // Alert location marker
-  if (hasCoordinates) {
-    markers.push({
-      id: `alert-${alert.id}`,
-      latitude: alert.location.latitude,
-      longitude: alert.location.longitude,
-      title: `${alert.alert_type.toUpperCase()} Alert`,
-      description: alert.message,
-      icon: alert.alert_type === 'emergency' ? 'warning' : 'notification-important'
-    });
-  }
+    const geofence = alert.geofence;
+    if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
+      // Parse polygon coordinates
+      try {
+        const polygon = JSON.parse(geofence.polygon_json);
+        if (polygon.type === 'Polygon' && polygon.coordinates && polygon.coordinates[0]) {
+          return polygon.coordinates[0].map((coord: number[]) => ({
+            latitude: coord[1], // GeoJSON is [longitude, latitude]
+            longitude: coord[0]
+          }));
+        }
+      } catch (error) {
+        console.error('Error parsing polygon coordinates:', error);
+      }
+    } else if (geofence.geofence_type === 'circle') {
+      // Create a circle approximation using polygon points
+      const centerLat = geofence.center_latitude;
+      const centerLng = geofence.center_longitude;
+      const radius = geofence.radius || 1000; // Default 1km
+      const points = [];
+      const sides = 32; // Number of points to approximate circle
+      
+      for (let i = 0; i <= sides; i++) {
+        const angle = (i / sides) * 2 * Math.PI;
+        const lat = centerLat + (radius / 111320) * Math.cos(angle); // Approximate conversion
+        const lng = centerLng + (radius / (111320 * Math.cos(centerLat * Math.PI / 180))) * Math.sin(angle);
+        points.push({ latitude: lat, longitude: lng });
+      }
+      
+      return points;
+    }
+    
+    return null;
+  };
 
-  // Officer location marker
-  if (officerLocation) {
-    markers.push({
-      id: 'officer',
-      latitude: officerLocation.latitude,
-      longitude: officerLocation.longitude,
-      title: 'Your Location',
-      description: `Accuracy: ±${officerLocation.accuracy?.toFixed(1) || 'N/A'}m`,
-      icon: 'person'
-    });
-  }
+  const geofenceCoordinates = getGeofenceCoordinates();
+
+  console.log('🗺️ Geofence Debug Info:');
+  console.log('   Alert geofence:', alert?.geofence);
+  console.log('   Geofence coordinates:', geofenceCoordinates);
+  console.log('   Has coordinates:', hasCoordinates);
 
   return (
     <View style={styles.container}>
@@ -375,14 +388,45 @@ export const AlertRespondMapScreen = () => {
       {/* Map */}
       <View style={styles.mapContainer}>
         {hasCoordinates ? (
-          <LeafletMap
-            latitude={alert.location.latitude}
-            longitude={alert.location.longitude}
-            zoom={15}
-            height={screenHeight * 0.5}
-            markers={markers}
-            showGeofenceCenter={false}
-          />
+          <>
+            {/* Location Info Bar */}
+            <View style={styles.locationInfoBar}>
+              <Icon name="location-on" size={16} color={colors.primary} />
+              <Text style={styles.locationInfoText}>
+                {alert.location.latitude.toFixed(6)}, {alert.location.longitude.toFixed(6)}
+              </Text>
+              <Text style={styles.locationAccuracyText}>
+                GPS: ±10m accuracy
+              </Text>
+            </View>
+            
+            <LeafletMap
+              latitude={alert.location.latitude}
+              longitude={alert.location.longitude}
+              zoom={18} // Very high zoom for street-level precision
+              height={screenHeight * 0.45} // Adjust height for info bar
+              showMarker={true}
+              markerTitle={`${alert.alert_type?.toUpperCase() || 'ALERT'}: ${alert.message?.substring(0, 30) || 'Location'}`}
+              polygonCoordinates={geofenceCoordinates}
+              mapKey={`alert-${alert.id}-${Date.now()}`} // Force re-render
+            />
+            
+            {/* Debug coordinates overlay */}
+            <View style={styles.debugOverlay}>
+              <Text style={styles.debugText}>
+                📍 LAT: {alert.location.latitude.toFixed(8)}
+              </Text>
+              <Text style={styles.debugText}>
+                📍 LNG: {alert.location.longitude.toFixed(8)}
+              </Text>
+              <Text style={styles.debugText}>
+                🗺️ ZOOM: 18 (Street Level)
+              </Text>
+              <Text style={styles.debugText}>
+                🎯 MAP: {alert.location.latitude.toFixed(4)}, {alert.location.longitude.toFixed(4)}
+              </Text>
+            </View>
+          </>
         ) : (
           <View style={[styles.mapPlaceholder, styles.centered]}>
             <Icon name="location-off" size={48} color={colors.mediumText} />
@@ -397,7 +441,7 @@ export const AlertRespondMapScreen = () => {
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.acceptButton, isAccepting && styles.acceptButtonDisabled]}
-          onPress={handleAccept}
+          onPress={handleAcceptAlert}
           disabled={isAccepting}
         >
           {isAccepting ? (
@@ -583,5 +627,43 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.white,
     fontWeight: '600',
+  },
+  // Location info styles
+  locationInfoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  locationInfoText: {
+    ...typography.caption,
+    color: colors.darkText,
+    marginLeft: spacing.xs,
+    flex: 1,
+    fontFamily: 'monospace',
+  },
+  locationAccuracyText: {
+    ...typography.caption,
+    color: colors.mediumText,
+    fontSize: 10,
+  },
+  // Debug overlay styles
+  debugOverlay: {
+    position: 'absolute',
+    top: 100,
+    right: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: spacing.xs,
+    borderRadius: 4,
+    zIndex: 1000,
+  },
+  debugText: {
+    ...typography.caption,
+    color: colors.white,
+    fontSize: 10,
+    fontFamily: 'monospace',
   },
 });

@@ -26,21 +26,8 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
 
   const handleDelete = () => {
     console.log('🗑️ AlertCard: Delete button pressed for alert:', alert.id);
-    RNAlert.alert(
-      'Delete Alert',
-      'Are you sure you want to delete this alert?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            console.log('✅ AlertCard: User confirmed delete, calling onDelete for alert:', alert.id);
-            onDelete && onDelete(alert);
-          },
-        },
-      ]
-    );
+    // Directly call onDelete without showing RNAlert - let the parent handle confirmation
+    onDelete && onDelete(alert);
   };
 
   // Get alert type description

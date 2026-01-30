@@ -37,6 +37,19 @@ apiClient.interceptors.request.use(
         config.headers.Authorization = `Bearer ${token}`;
       }
 
+      // Debug logging for profile updates
+      if (config.url?.includes('/profile/') && config.method === 'patch') {
+        console.log(' [API] Profile Update Request:', JSON.stringify({
+          url: config.baseURL + config.url,
+          method: config.method,
+          data: config.data,
+          headers: {
+            ...config.headers,
+            Authorization: config.headers.Authorization ? '[REDACTED]' : 'NONE'
+          }
+        }, null, 2));
+      }
+
       return config;
     } catch (error) {
       console.error('[API] Error in request interceptor:', error);
@@ -49,6 +62,15 @@ apiClient.interceptors.request.use(
 // Response interceptor - Handle token refresh and errors
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
+    // Debug logging for profile updates
+    if (response.config.url?.includes('/profile/') && response.config.method === 'patch') {
+      console.log(' [API] Profile Update Response:', {
+        status: response.status,
+        data: response.data,
+        headers: response.headers
+      });
+    }
+    
     // Return clean response format
     return {
       ...response,

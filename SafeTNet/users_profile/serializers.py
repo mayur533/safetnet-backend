@@ -308,9 +308,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
             except (ValueError, TypeError):
                 raise serializers.ValidationError('Invalid location data.')
         
+        # Handle phone number update if provided
+        phone = self.initial_data.get('phone')
+        if phone is not None:
+            instance.phone = phone
+        
         # Remove fields that don't exist on the model
         validated_data.pop('name', None)
-        validated_data.pop('phone', None)
         validated_data.pop('plantype', None)
         validated_data.pop('planexpiry', None)
         

@@ -58,6 +58,8 @@ export const DashboardScreen = () => {
     error: alertsError,
     fetchAlerts,
     getRecentAlerts,
+    getPendingAlertsCount,
+    getResolvedAlertsCount,
     updateAlert: storeUpdateAlert
   } = useAlertsStore();
 
@@ -78,14 +80,66 @@ export const DashboardScreen = () => {
     }
   };
 
-  // Fetch dashboard data when screen comes into focus
+  // Fetch dashboard data when screen comes into focus (but not on initial mount)
   useFocusEffect(
     useCallback(() => {
-      console.log('🏠 Dashboard: Screen focused, fetching dashboard data...');
-      fetchDashboardData();
-      // Recent alerts are now included in the dashboard API response
-    }, [])
+      console.log('🏠 Dashboard: Screen focused, refreshing data...');
+      
+      const fetchFocusData = async () => {
+        try {
+          // Only fetch alerts if they're not already loaded to avoid unnecessary calls
+          const shouldFetchAlerts = alerts.length === 0;
+          
+          await Promise.all([
+            fetchDashboardData(),
+            ...(shouldFetchAlerts ? [fetchAlerts()] : [])
+          ]);
+          
+          if (shouldFetchAlerts) {
+            setAlertsLoaded(true);
+          }
+          console.log('✅ Dashboard: Focus data fetch completed');
+        } catch (error) {
+          console.error('❌ Dashboard: Focus data fetch failed:', error);
+          setAlertsLoaded(true);
+        }
+      };
+      
+      fetchFocusData();
+    }, [alerts.length]) // Only depend on alerts length
   );
+
+  // Initial fetch when component mounts
+  useEffect(() => {
+    console.log('🏠 Dashboard: Component mounted, doing initial fetch...');
+    setAlertsLoaded(false);
+    
+    const fetchInitialData = async () => {
+      try {
+        // Add timeout to prevent indefinite loading
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Dashboard fetch timeout')), 10000)
+        );
+        
+        // Fetch both in parallel with timeout
+        await Promise.race([
+          Promise.all([
+            fetchDashboardData(),
+            fetchAlerts()
+          ]),
+          timeoutPromise
+        ]);
+        
+        setAlertsLoaded(true);
+        console.log('✅ Dashboard: Initial data fetch completed');
+      } catch (error) {
+        console.error('❌ Dashboard: Initial data fetch failed:', error);
+        setAlertsLoaded(true); // Still set to true to avoid infinite loading
+      }
+    };
+    
+    fetchInitialData();
+  }, []); // Remove fetchAlerts dependency to prevent re-renders
 
   // Test network connectivity
   const testNetworkConnectivity = async () => {
@@ -115,27 +169,11 @@ export const DashboardScreen = () => {
 
 
   const handleRespond = async (alert: Alert) => {
-    RNAlert.alert(
-      'Respond to Alert',
-      `Accept and respond to alert from ${alert.user_name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept',
-          onPress: async () => {
-            try {
-              console.log('📞 Accepting alert response from Dashboard:', alert.id);
-              await storeUpdateAlert(alert.id, { status: 'accepted' });
-              console.log('✅ Alert accepted successfully from Dashboard');
-              RNAlert.alert('Success', 'Alert accepted! Check the Alerts page for more actions.');
-            } catch (error) {
-              console.error('❌ Failed to accept alert from Dashboard:', error);
-              RNAlert.alert('Error', 'Failed to accept alert. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    console.log('📞 Dashboard: Navigate to respond page for alert:', alert.id);
+    
+    // Navigate to AlertRespondMap with the alert ID
+    // This will show the exact location map just like from AlertsScreen
+    (navigation as any).navigate('AlertRespondMap', { alertId: String(alert.id) });
   };
 
   const handleSettingsPress = () => {
@@ -145,17 +183,38 @@ export const DashboardScreen = () => {
     // Calculate stats from dashboard API data - no fallback dummy data
   const stats = dashboardData?.stats || null;
 
+  // State for alerts loading
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
+
   // Get recent alerts from alertsStore instead of dashboard API
   const recentAlerts = getRecentAlerts(5);
+  const pendingAlertsCount = getPendingAlertsCount();
+  const resolvedAlertsCount = getResolvedAlertsCount();
+  
+  // CRITICAL: Log exact counts for debugging
+  console.log('🔍 CRITICAL DEBUG - Dashboard Analysis:');
+  console.log(`   📊 Total alerts in store: ${alerts.length}`);
+  console.log(`   📊 Recent alerts shown: ${recentAlerts.length}`);
+  console.log(`   📊 Pending alerts count: ${pendingAlertsCount}`);
+  console.log(`   📊 Resolved alerts count: ${resolvedAlertsCount}`);
+  console.log(`   📊 Alerts loaded state: ${alertsLoaded}`);
+  console.log(`   📊 Alerts loading: ${isLoadingAlerts}`);
+  console.log(`   📊 Dashboard stats - Active (frontend): ${alerts.length}, Resolved (backend): ${stats?.resolved_today}`);
+  
+  if (recentAlerts.length > 0) {
+    const newestAlertId = recentAlerts[0]?.id;
+    const newestAlertMessage = recentAlerts[0]?.message?.substring(0, 40);
+    console.log(`   📋 Newest alert: ID:${newestAlertId} "${newestAlertMessage}..."`);
+  }
 
   // Show loading state
-  if (isLoadingDashboard) {
+  if (isLoadingDashboard || !alertsLoaded) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
         <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7 }]}>
-          Fetching dashboard data from SafeTNet backend
+          Fetching dashboard data and alerts from SafeTNet backend
         </Text>
       </View>
     );
@@ -229,17 +288,17 @@ export const DashboardScreen = () => {
         <View style={styles.statsSection}>
           <View style={styles.statsCard}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.active_sos_alerts}</Text>
+              <Text style={styles.statValue}>{alerts.length}</Text>
               <Text style={styles.statLabel}>Active</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.pendingValue]}>{stats.assigned_cases}</Text>
-              <Text style={styles.statLabel}>Cases</Text>
+              <Text style={[styles.statValue, styles.pendingValue]}>{getPendingAlertsCount()}</Text>
+              <Text style={styles.statLabel}>Pending</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, styles.resolvedValue]}>{stats.resolved_today}</Text>
+              <Text style={[styles.statValue, styles.resolvedValue]}>{resolvedAlertsCount}</Text>
               <Text style={styles.statLabel}>Resolved</Text>
             </View>
           </View>

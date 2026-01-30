@@ -17,16 +17,33 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
 
+  // Toast message state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+
   // Use Zustand alerts store
   const { createAlert: storeCreateAlert } = useAlertsStore();
 
   // Ref to access AlertsScreen methods
   const alertsScreenRef = useRef<any>(null);
 
+  // Toast function
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+    
+    // Auto-hide after 2 seconds
+    setTimeout(() => {
+      setToastVisible(false);
+    }, 2000);
+  };
+
   // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
-      RNAlert.alert('Error', 'Please enter an alert message');
+      showToast('Please enter an alert message', 'error');
       return;
     }
 
@@ -60,7 +77,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       setAlertType('security');
       setCreateModalVisible(false);
 
-      RNAlert.alert('Success', 'Alert created successfully!');
+      showToast('Alert created successfully!', 'success');
 
       console.log('🎯 Alert verified and will appear in:');
       console.log('   📱 Alerts page (full list - synced with backend)');
@@ -68,7 +85,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       console.log('   💾 Backend database (persists across app restarts)');
     } catch (error) {
       console.error('Error creating alert:', error);
-      RNAlert.alert('Error', 'Failed to create alert. Please try again.');
+      showToast('Failed to create alert. Please try again.', 'error');
     } finally {
       setCreatingAlert(false);
     }
@@ -215,6 +232,16 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
           </View>
         </View>
       </Modal>
+
+      {/* Toast Message */}
+      {toastVisible && (
+        <View style={[
+          styles.toastContainer,
+          { backgroundColor: toastType === 'success' ? colors.successGreen : colors.emergencyRed }
+        ]}>
+          <Text style={styles.toastMessage}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -352,6 +379,33 @@ const styles = StyleSheet.create({
   },
   buttonIcon: {
     marginRight: spacing.xs,
+  },
+  // Toast styles
+  toastContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    backgroundColor: colors.successGreen,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  toastMessage: {
+    ...typography.buttonSmall,
+    color: colors.white,
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 

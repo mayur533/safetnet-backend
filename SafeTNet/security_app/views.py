@@ -618,8 +618,11 @@ class DashboardView(OfficerOnlyMixin, APIView):
         now = timezone.now()
         week_ago = now - timedelta(days=7)
         
-        # Total SOS alerts handled by this officer
-        total_sos_handled = SOSAlert.objects.filter(assigned_officer=officer).count()
+        # Total SOS alerts handled by this officer (only active, non-deleted)
+        total_sos_handled = SOSAlert.objects.filter(
+            assigned_officer=officer, 
+            is_deleted=False
+        ).count()
         
         # Active cases assigned to this officer
         active_cases = Case.objects.filter(officer=officer, status__in=['open', 'accepted']).count()

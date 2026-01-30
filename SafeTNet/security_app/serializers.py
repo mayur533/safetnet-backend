@@ -39,12 +39,52 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         
+        # CRITICAL FIX: Automatically assign the alert to the current officer
+        # This ensures the officer can see their own created alerts
+        officer = self.context['request'].user
+        validated_data['assigned_officer'] = officer
+        print(f"✅ Automatically assigned alert to officer: {officer.username}")
+        
         # Automatically assign the officer's first geofence if no geofence is provided
         if not validated_data.get('geofence'):
-            officer = self.context['request'].user
             if officer.geofences.exists():
-                validated_data['geofence'] = officer.geofences.first()
-                print(f"✅ Automatically assigned geofence: {validated_data['geofence'].name}")
+                # Try to assign geofence based on location coordinates
+                if validated_data.get('location_lat') and validated_data.get('location_long'):
+                    # Find geofence that contains the alert location
+                    from django.contrib.gis.geos import Point
+                    alert_location = Point(validated_data['location_long'], validated_data['location_lat'], srid=4326)
+                    
+                    # Find the geofence that contains this point
+                    matching_geofence = None
+                    for geofence in officer.geofences.all():
+                        if geofence.geofence_type == 'circle':
+                            # Check if point is within circular geofence
+                            from django.contrib.gis.measure import Distance
+                            center_point = Point(geofence.center_longitude, geofence.center_latitude, srid=4326)
+                            distance = alert_location.distance(center_point) * 111320  # Approximate conversion to meters
+                            if distance.distance <= (geofence.radius or 1000):  # Default 1km radius
+                                matching_geofence = geofence
+                                break
+                        elif geofence.geofence_type == 'polygon':
+                            # Check if point is within polygon geofence
+                            if geofence.polygon_json:
+                                from django.contrib.gis.geos import GEOSGeometry
+                                polygon = GEOSGeometry(geofence.polygon_json)
+                                if polygon.contains(alert_location):
+                                    matching_geofence = geofence
+                                    break
+                    
+                    if matching_geofence:
+                        validated_data['geofence'] = matching_geofence
+                        print(f"✅ Automatically assigned geofence based on location: {matching_geofence.name}")
+                    else:
+                        # Fallback to first geofence if location doesn't match any
+                        validated_data['geofence'] = officer.geofences.first()
+                        print(f"⚠️ Location doesn't match any geofence, assigned first geofence: {validated_data['geofence'].name}")
+                else:
+                    # No coordinates provided, use first geofence
+                    validated_data['geofence'] = officer.geofences.first()
+                    print(f"✅ No location provided, assigned first geofence: {validated_data['geofence'].name}")
             else:
                 print("⚠️ Officer has no geofences, alert will not be visible to any officer")
         

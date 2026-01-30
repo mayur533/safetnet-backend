@@ -15,6 +15,13 @@ export const alertService = {
       
       let alertsData: any[] = [];
 
+      // CRITICAL: Handle different response structures
+      console.log('🔍 CRITICAL DEBUG - Raw Response Analysis:');
+      console.log(`   📊 Response type: ${typeof response.data}`);
+      console.log(`   📊 Response keys: ${Object.keys(response.data)}`);
+      console.log(`   📊 Has results: ${!!response.data.results}`);
+      console.log(`   📊 Is array: ${Array.isArray(response.data)}`);
+      
       // Handle paginated response (Django REST Framework style)
       if (response.data.results && Array.isArray(response.data.results)) {
         alertsData = response.data.results;
@@ -26,7 +33,7 @@ export const alertService = {
           pageSize: response.data.results?.length || 0
         });
         
-        // If there are more pages, fetch them all
+        // CRITICAL: If there are more pages, fetch them all
         if (response.data.next) {
           console.log('🔄 Fetching additional pages...');
           let nextPage = response.data.next;
@@ -38,7 +45,7 @@ export const alertService = {
               if (nextPageResponse.data.results && Array.isArray(nextPageResponse.data.results)) {
                 allAlerts = [...allAlerts, ...nextPageResponse.data.results];
                 nextPage = nextPageResponse.data.next;
-                console.log(`📄 Fetched page ${allAlerts.length / response.data.results.length}, total alerts: ${allAlerts.length}`);
+                console.log(`📄 Fetched page ${Math.ceil(allAlerts.length / response.data.results.length)}, total alerts: ${allAlerts.length}`);
               } else {
                 break;
               }
@@ -55,7 +62,7 @@ export const alertService = {
         alertsData = response.data;
         console.log('📄 Direct array response detected');
       } else {
-        console.warn('Unexpected API response format for getAlerts');
+        console.warn('⚠️ Unexpected API response format for getAlerts');
         console.log('🔍 Full response data:', response.data);
         return [];
       }
@@ -107,10 +114,26 @@ export const alertService = {
       console.log('✅ Fetched alerts:', transformedAlerts.length, 'alerts');
       console.log('🕒 Latest alert timestamp:', transformedAlerts.length > 0 ? 
         transformedAlerts[0].created_at : 'No alerts');
+      
+      // CRITICAL: Log exact counts for debugging
+      console.log('🔍 CRITICAL DEBUG - API Response Analysis:');
+      console.log(`   📊 Total alerts from API: ${transformedAlerts.length}`);
+      console.log(`   📊 Response structure: ${response.data.results ? 'PAGINATED' : 'DIRECT_ARRAY'}`);
+      console.log(`   📊 Full response keys: ${Object.keys(response.data)}`);
+      
+      if (response.data.results) {
+        console.log(`   📊 Pagination count: ${response.data.count}`);
+        console.log(`   📊 Current page size: ${response.data.results.length}`);
+      }
+      
       return transformedAlerts;
     } catch (error: any) {
-      console.error('Failed to fetch alerts:', error.message || error);
-      console.error('Error details:', error.response?.data || error);
+      console.error('❌ Failed to fetch alerts:', error.message || error);
+      console.error('🔍 Error details:', error.response?.data || error);
+      
+      // CRITICAL: NO FALLBACK - return empty array to force error visibility
+      // This ensures we don't show stale cached alerts when API fails
+      console.log('🚨 CRITICAL: API failed - returning empty array to prevent stale data');
       return [];
     }
   },
@@ -199,8 +222,54 @@ export const alertService = {
   // Get alert by ID
   getAlertById: async (id: string): Promise<Alert> => {
     try {
+      console.log(`📡 GET /sos/${id} - Fetching alert details`);
       const response = await apiClient.get(API_ENDPOINTS.GET_SOS.replace('{id}', String(id)));
-      return response.data;
+      
+      // Transform backend data to match frontend Alert interface
+      const alertData = response.data;
+      console.log('🔍 Raw backend alert data:', alertData);
+      
+      // Transform location fields to location object
+      if (alertData.location_lat && alertData.location_long) {
+        const lat = parseFloat(alertData.location_lat);
+        const lng = parseFloat(alertData.location_long);
+        
+        alertData.location = {
+          latitude: lat,
+          longitude: lng,
+          address: alertData.location_address || `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        };
+        
+        console.log('✅ Transformed location object:', alertData.location);
+        console.log('📍 Exact GPS coordinates:', {
+          latitude: lat,
+          longitude: lng,
+          precision: '6 decimal places (≈1m accuracy)'
+        });
+      } else {
+        console.warn('⚠️ No location coordinates found in alert data');
+        alertData.location = {
+          latitude: 0,
+          longitude: 0,
+          address: 'Unknown location - GPS coordinates missing'
+        };
+      }
+      
+      // Ensure geofence data is properly included
+      if (alertData.geofence_id && !alertData.geofence) {
+        console.log('🗺️ Alert has geofence_id but no geofence object - backend should include full geofence data');
+      }
+      
+      console.log('🎯 Final alert data for map:', {
+        id: alertData.id,
+        hasLocation: !!(alertData.location?.latitude && alertData.location?.longitude),
+        coordinates: alertData.location?.latitude && alertData.location?.longitude 
+          ? `${alertData.location.latitude}, ${alertData.location.longitude}`
+          : 'None',
+        geofence: alertData.geofence?.name || 'None'
+      });
+      
+      return alertData;
     } catch (error) {
       console.error('Error fetching alert:', error);
       throw error;

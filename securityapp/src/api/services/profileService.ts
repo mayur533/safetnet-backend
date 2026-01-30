@@ -49,10 +49,16 @@ export const profileService = {
 
   updateProfile: async (securityId: string, updates: Partial<SecurityOfficer>) => {
     try {
+      console.log('[profileService] Updating profile for securityId:', securityId);
+      console.log('[profileService] Update data:', JSON.stringify(updates, null, 2));
+      
       const response = await apiClient.patch(API_ENDPOINTS.UPDATE_PROFILE, updates);
+      
+      console.log('[profileService] Update response:', response.data);
       return { result: 'success', msg: 'Profile updated successfully' };
     } catch (error: any) {
-      console.error('Failed to update profile:', error.message || error);
+      console.error('[profileService] Failed to update profile:', error);
+      console.error('[profileService] Error response:', error?.response?.data);
       throw error;
     }
   },
