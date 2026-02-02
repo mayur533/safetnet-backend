@@ -800,7 +800,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                           backgroundColor: colors.lightGrayBg,
                           color: colors.darkText
                         }]}
-                        placeholder="18.5204"
+                        placeholder="Latitude"
                         placeholderTextColor={colors.mediumText}
                         value={customLatitude}
                         onChangeText={setCustomLatitude}
@@ -816,7 +816,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                           backgroundColor: colors.lightGrayBg,
                           color: colors.darkText
                         }]}
-                        placeholder="73.8567"
+                        placeholder="Longitude"
                         placeholderTextColor={colors.mediumText}
                         value={customLongitude}
                         onChangeText={setCustomLongitude}

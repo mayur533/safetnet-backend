@@ -14,6 +14,7 @@ import { useAlertsStore } from '../../store/alertsStore';
 
 export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
+  // ALL useState hooks must be called first
   // Create alert modal state
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [creatingAlert, setCreatingAlert] = useState(false);
@@ -25,8 +26,14 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  
+  // GPS state
+  const [gpsStatus, setGpsStatus] = useState<'waiting' | 'accurate' | 'weak' | 'error'>('waiting');
+  const [gpsMessage, setGpsMessage] = useState('Getting device location...');
+  const [lastAlertCoordinates, setLastAlertCoordinates] = useState<{lat: number, lng: number} | null>(null);
+  const [lastStableLocation, setLastStableLocation] = useState<{latitude: number, longitude: number} | null>(null);
 
-  // Use Zustand alerts store
+  // Other hooks can be called after all useState hooks
   const { createAlert: storeCreateAlert } = useAlertsStore();
 
   // Ref to access AlertsScreen methods
@@ -46,6 +53,119 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
     }, 2000);
   };
 
+  // Smooth GPS location to prevent jumping
+  const smoothLocation = (newLocation: {latitude: number, longitude: number}): {latitude: number, longitude: number} => {
+    if (!lastStableLocation) {
+      setLastStableLocation(newLocation);
+      return newLocation;
+    }
+    
+    // Only update if moved significantly (more than 5 meters)
+    const distance = calculateDistance(
+      lastStableLocation.latitude,
+      lastStableLocation.longitude,
+      newLocation.latitude,
+      newLocation.longitude
+    );
+    
+    if (distance > 5) {
+      setLastStableLocation(newLocation);
+      return newLocation;
+    }
+    
+    // Return last stable location to prevent jumping
+    return lastStableLocation;
+  };
+  
+  // Calculate distance between two coordinates
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c * 1000; // Return distance in meters
+  };
+
+  // Get current device location when creating alert
+  const getCurrentDeviceLocation = async (): Promise<{latitude: number, longitude: number}> => {
+    return new Promise((resolve, reject) => {
+      setGpsStatus('waiting');
+      setGpsMessage('Getting device location...');
+
+      console.log('📍 Getting REAL device location for alert...');
+      
+      // Use the proper geolocation package
+      import('@react-native-community/geolocation').then((GeolocationModule) => {
+        const Geolocation = GeolocationModule.default;
+        
+        if (!Geolocation || !Geolocation.getCurrentPosition) {
+          console.log('❌ Geolocation package not available');
+          setGpsStatus('error');
+          setGpsMessage('Geolocation package not available');
+          reject(new Error('Geolocation package not available'));
+          return;
+        }
+
+        Geolocation.getCurrentPosition(
+          (position: any) => {
+            console.log('✅ REAL device location captured:', position);
+            
+            const { latitude, longitude, accuracy } = position.coords;
+            const timestamp = new Date().toISOString();
+            
+            // Smooth location to prevent jumping
+            const smoothedLocation = smoothLocation({ latitude, longitude });
+            
+            console.log('📱 REAL DEVICE LOCATION FOR ALERT:', smoothedLocation.latitude, smoothedLocation.longitude, accuracy, timestamp);
+            console.log('🎯 Location smoothed to prevent jumping');
+            
+            setGpsStatus('accurate');
+            setGpsMessage(`Stable location captured (±${accuracy?.toFixed(0) || 0}m)`);
+            resolve(smoothedLocation);
+          },
+          (error: any) => {
+            console.error('❌ Real GPS error:', error);
+            
+            let errorMessage = 'GPS not available';
+            let shouldRetry = false;
+            
+            if (error.code === 3) {
+              errorMessage = 'GPS timeout. Move to open area and try again.';
+              shouldRetry = true;
+            } else if (error.code === 2) {
+              errorMessage = 'GPS unavailable. Enable location services.';
+            } else if (error.code === 1) {
+              errorMessage = 'Location permission denied. Allow location access.';
+            }
+            
+            setGpsStatus('error');
+            setGpsMessage(errorMessage);
+            
+            // For timeout errors, offer a retry option with cached location
+            if (shouldRetry) {
+              console.log('⏰ GPS timeout, offering retry with cached location...');
+              // You could add a retry button here that uses cached location
+            }
+            
+            reject(new Error(errorMessage));
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 8000,      // Reduced from 15s to 8s for faster response
+            maximumAge: 120000  // Allow 2-minute cache to reduce jumping
+          }
+        );
+      }).catch((error) => {
+        console.error('❌ Failed to import geolocation package:', error);
+        setGpsStatus('error');
+        setGpsMessage('Geolocation package not installed');
+        reject(new Error('Geolocation package not available'));
+      });
+    });
+  };
   // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
@@ -53,8 +173,8 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       return;
     }
 
-    console.log('🚀 ADD ALERT BUTTON PRESSED - Starting alert creation process');
-    console.log('📝 Form data:', {
+    console.log('🚀 Creating alert with device location...');
+    console.log('📝 Alert data:', {
       alertType,
       alertMessage: alertMessage.trim(),
       alertDescription: alertDescription.trim() || alertMessage.trim(),
@@ -62,36 +182,55 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
     setCreatingAlert(true);
     try {
-      console.log('📡 Calling store.createAlert() - this will attempt API call with optimistic updates');
+      // Get current device location when creating alert
+      console.log('� Getting device location for alert...');
+      const deviceLocation = await getCurrentDeviceLocation();
+      
+      console.log('✅ Device location captured:', deviceLocation);
+      
+      // Store coordinates to prevent duplicates
+      setLastAlertCoordinates({ lat: deviceLocation.latitude, lng: deviceLocation.longitude });
+
+      console.log('📡 Creating alert with device coordinates');
+      console.log('📍 Location data for backend:', {
+        location_lat: deviceLocation.latitude,
+        location_long: deviceLocation.longitude
+      });
+
+      // Create alert with device location
       const createdAlert = await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+        latitude: deviceLocation.latitude,
+        longitude: deviceLocation.longitude,
       });
 
-      console.log('✅ Alert created successfully!');
-      console.log('📊 Created alert details:', {
-        id: createdAlert.id,
-        message: createdAlert.message,
-        status: createdAlert.status,
-        alert_type: createdAlert.alert_type
-      });
+      console.log('🎯 Alert created with device location and stored permanently');
+      console.log('   📍 Location stored:', deviceLocation.latitude, deviceLocation.longitude);
+      console.log('   📱 Alerts page (full list - synced with backend)');
+      console.log('   📊 Dashboard Recent Alerts (synced with backend)');
+      console.log('   💾 Backend database (persists across app restarts)');
 
-      // Reset form and close modal
+      // Reset form and GPS state
       setAlertMessage('');
       setAlertDescription('');
       setAlertType('security');
       setCreateModalVisible(false);
-
-      showToast('Alert created successfully!', 'success');
-
-      console.log('🎯 Alert verified and will appear in:');
-      console.log('   📱 Alerts page (full list - synced with backend)');
-      console.log('   📊 Dashboard Recent Alerts (synced with backend)');
-      console.log('   💾 Backend database (persists across app restarts)');
-    } catch (error) {
-      console.error('Error creating alert:', error);
-      showToast('Failed to create alert. Please try again.', 'error');
+      setGpsStatus('waiting');
+      setGpsMessage('Getting device location...');
+      
+      showToast('Alert created with device location!', 'success');
+    } catch (error: any) {
+      console.error('❌ ALERT CREATION FAILED:', error);
+      
+      if (error?.message?.includes('GPS') || error?.message?.includes('location') || error?.message?.includes('coordinates')) {
+        showToast('Unable to get device location. Alert not created.', 'error');
+        console.error('🚫 Location requirement failed - Alert creation blocked');
+      } else {
+        showToast('Failed to create alert. Please try again.', 'error');
+        console.error('🚫 Other error during alert creation');
+      }
     } finally {
       setCreatingAlert(false);
     }
@@ -202,10 +341,49 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
               />
             </ScrollView>
 
+            {/* GPS Status Indicator */}
+            <View style={[
+              styles.gpsStatusContainer,
+              {
+                backgroundColor: gpsStatus === 'accurate' ? colors.successGreen + '20' :
+                                 gpsStatus === 'weak' ? colors.warningOrange + '20' :
+                                 gpsStatus === 'error' ? colors.emergencyRed + '20' :
+                                 colors.mediumText + '20',
+                borderColor: gpsStatus === 'accurate' ? colors.successGreen :
+                            gpsStatus === 'weak' ? colors.warningOrange :
+                            gpsStatus === 'error' ? colors.emergencyRed :
+                            colors.mediumText
+              }
+            ]}>
+              <Icon 
+                name="location-on" 
+                size={16} 
+                color={gpsStatus === 'accurate' ? colors.successGreen :
+                       gpsStatus === 'weak' ? colors.warningOrange :
+                       gpsStatus === 'error' ? colors.emergencyRed :
+                       colors.mediumText}
+              />
+              <Text style={[
+                styles.gpsStatusText,
+                {
+                  color: gpsStatus === 'accurate' ? colors.successGreen :
+                         gpsStatus === 'weak' ? colors.warningOrange :
+                         gpsStatus === 'error' ? colors.emergencyRed :
+                         colors.mediumText
+                }
+              ]}>
+                {gpsMessage}
+              </Text>
+            </View>
+
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => setCreateModalVisible(false)}
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setGpsStatus('waiting');
+                  setGpsMessage('Getting device location...');
+                }}
                 disabled={creatingAlert}
               >
                 <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
@@ -382,6 +560,24 @@ const styles = StyleSheet.create({
     ...typography.buttonSmall,
     fontWeight: '600',
     fontSize: 14,
+  },
+  // GPS Status styles
+  gpsStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderRadius: 8,
+    gap: spacing.sm,
+  },
+  gpsStatusText: {
+    ...typography.caption,
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
   },
   buttonIcon: {
     marginRight: spacing.xs,

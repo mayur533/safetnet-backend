@@ -168,52 +168,15 @@ const tryFallbackGPS = (resolve: Function, reject: Function, startTime: number, 
       useRandomCoordinates(resolve, reject, startTime);
     }
   } catch (error) {
-    console.error('❌ Fallback geolocation not available, using random coordinates...');
+    console.error('❌ Fallback geolocation not available, no fallback coordinates allowed...');
     useRandomCoordinates(resolve, reject, startTime);
   }
 };
 
-// More realistic fallback coordinates
+// No fallback coordinates - require real GPS data only
 const useRandomCoordinates = (resolve: Function, reject: Function, startTime: number) => {
-  console.log('🎲 Using fallback coordinates as last resort...');
-  
-  // Use a fixed location in Pune for consistency during development
-  // This represents a realistic location in Pune, India
-  const fallbackLat = 18.5204;  // Pune city center
-  const fallbackLng = 73.8567;  // Pune city center
-  
-  // Add small random variation to simulate movement
-  const randomLatOffset = (Math.random() - 0.5) * 0.01;  // ±0.005 degrees (~500m)
-  const randomLngOffset = (Math.random() - 0.5) * 0.01;  // ±0.005 degrees (~500m)
-  
-  const finalLat = fallbackLat + randomLatOffset;
-  const finalLng = fallbackLng + randomLngOffset;
-  
-  const endTime = Date.now();
-  const acquisitionTime = endTime - startTime;
-  
-  console.log(`📍 Fallback GPS Location Generated`);
-  console.log(`   🏢 Base location: ${fallbackLat}, ${fallbackLng} (Pune Center)`);
-  console.log(`   🎲 Small variation: ${randomLatOffset.toFixed(6)}, ${randomLngOffset.toFixed(6)}`);
-  console.log(`   📍 Final coordinates: ${finalLat.toFixed(8)}, ${finalLng.toFixed(8)}`);
-  console.log(`   ⏱️ Acquisition time: ${acquisitionTime}ms`);
-  
-  const locationData: LocationData = {
-    latitude: finalLat,
-    longitude: finalLng,
-    accuracy: 50 + Math.random() * 100, // 50-150m accuracy (more realistic for fallback)
-    timestamp: new Date().toISOString(),
-    address: `Fallback GPS: ${finalLat.toFixed(6)}, ${finalLng.toFixed(6)} (Pune)`
-  };
-
-  console.log('✅ Fallback GPS location acquired:');
-  console.log(`   📍 Coordinates: ${locationData.latitude.toFixed(8)}, ${locationData.longitude.toFixed(8)}`);
-  console.log(`   🎯 Accuracy: ±${locationData.accuracy?.toFixed(1)}m`);
-  console.log(`   ⏱️ Acquisition time: ${acquisitionTime}ms`);
-  console.log(`   🕐 GPS timestamp: ${locationData.timestamp}`);
-  console.log(`   📍 Note: Using fallback location (GPS unavailable)`);
-
-  resolve(locationData);
+  console.log('❌ No GPS available - fallback coordinates are not allowed');
+  reject(new Error('GPS coordinates are required. Please enable location services and try again.'));
 };
 
 // Location service methods for live location tracking

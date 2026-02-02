@@ -306,8 +306,8 @@ export const alertService = {
       alert_type: alertData.alert_type === 'general' ? 'normal' : alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
-      location_lat: alertData.latitude || alertData.location_lat || 18.5204,
-      location_long: alertData.longitude || alertData.location_long || 73.8567,
+      location_lat: alertData.latitude || alertData.location_lat,
+      location_long: alertData.longitude || alertData.location_long,
       location: alertData.location || 'Current Location',
       priority: alertData.priority || 'medium',
     };
@@ -316,6 +316,11 @@ export const alertService = {
     console.log('   📤 Sending latitude:', apiData.location_lat);
     console.log('   📤 Sending longitude:', apiData.location_long);
     console.log('   📍 Location source:', apiData.location);
+
+    // Validate that we have actual GPS coordinates
+    if (!apiData.location_lat || !apiData.location_long) {
+      throw new Error('GPS coordinates are required to create an alert. Please enable location services.');
+    }
 
     try {
       console.log('📡 Creating alert with data:', apiData);

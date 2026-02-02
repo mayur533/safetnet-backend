@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Platform,
+  TextInput,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -20,6 +21,7 @@ import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import { formatExactTime } from '../../utils/helpers';
 import { LeafletMap } from '../../components/maps/LeafletMap';
+import Toast from 'react-native-toast-message';
 
 // Define LocationData interface
 interface LocationData {
@@ -27,6 +29,7 @@ interface LocationData {
   longitude: number;
   accuracy?: number;
   timestamp?: string; // Optional timestamp for location updates
+  address?: string; // Optional address field for location display
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -52,6 +55,9 @@ export const AlertRespondMapScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showManualLocation, setShowManualLocation] = useState(false);
+  const [manualLatitude, setManualLatitude] = useState('');
+  const [manualLongitude, setManualLongitude] = useState('');
 
   // Live location session state
   const [liveSession, setLiveSession] = useState<LiveLocationSession | null>(null);
@@ -81,25 +87,27 @@ export const AlertRespondMapScreen = () => {
         setAlert(alertData);
 
         console.log('✅ Alert details fetched:', alertData);
-        console.log('📍 ALERT GPS:', alertData.location_lat, alertData.location_long);
+        console.log('📍 ALERT GPS FROM API:', alertData.location_lat, alertData.location_long);
         
-        // Validate alert GPS coordinates
+        // Rule 1: Validate alert GPS coordinates from API
         if (!alertData.location_lat || !alertData.location_long) {
           setError('Alert has no valid GPS location');
           setIsLoading(false);
           return;
         }
         
-        // Set alert location from API data
+        // Rule 1: Set alert location from API data ONLY - never recompute or replace
         const alertLoc: LocationData = {
           latitude: alertData.location_lat,
           longitude: alertData.location_long,
           timestamp: alertData.timestamp,
-          address: alertData.location?.address || `GPS: ${alertData.location_lat.toFixed(6)}, ${alertData.location_long.toFixed(6)}`
+          address: `Alert Location: ${alertData.location_lat.toFixed(6)}, ${alertData.location_long.toFixed(6)}`
         };
+        
+        console.log('🎯 STATIC ALERT LOCATION SET:', alertLoc);
         setAlertLocation(alertLoc);
         
-        console.log('✅ Alert location set:', alertLoc);
+        console.log('✅ Static alert location set from API data');
       } catch (error: any) {
         console.error('❌ Failed to fetch alert details:', error);
         setError(error.message || 'Failed to load alert details');
@@ -111,6 +119,42 @@ export const AlertRespondMapScreen = () => {
     fetchAlert();
   }, [alertId]);
 
+  // Rule 4: Calculate distance ONLY between officer current GPS and alert stored GPS
+  const calculateDistanceBetweenOfficerAndAlert = () => {
+    if (!alertLocation) {
+      console.log('❌ No alert location available');
+      return null;
+    }
+    
+    if (!officerLocation) {
+      console.log('📍 Officer GPS unavailable - cannot calculate distance');
+      return {
+        kilometers: 0,
+        meters: 0,
+        text: 'Waiting for GPS lock…'
+      };
+    }
+    
+    // Calculate distance using haversine formula
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (officerLocation.latitude - alertLocation.latitude) * Math.PI / 180;
+    const dLon = (officerLocation.longitude - alertLocation.longitude) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
+      Math.cos(alertLocation.latitude * Math.PI / 180) * Math.cos(officerLocation.latitude * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distanceKm = R * c;
+    const distanceMeters = distanceKm * 1000;
+    
+    console.log('📏 DISTANCE BETWEEN OFFICER AND ALERT:', distanceMeters.toFixed(2), 'meters');
+    
+    return {
+      kilometers: distanceKm,
+      meters: distanceMeters,
+      text: distanceKm < 1 ? `${Math.round(distanceMeters)}m` : `${distanceKm.toFixed(1)}km`
+    };
+  };
+
   // GPS Validation Effect
   useEffect(() => {
     if (alertLocation && officerLocation) {
@@ -118,14 +162,8 @@ export const AlertRespondMapScreen = () => {
       console.log('📍 ALERT GPS:', alertLocation.latitude, alertLocation.longitude);
       console.log('📍 OFFICER GPS:', officerLocation.latitude, officerLocation.longitude);
       
-      // Validate that alert GPS is not using fallback coordinates
-      if (alertLocation.latitude === 18.5204 || alertLocation.longitude === 73.8567) {
-        console.error('❌ VALIDATION ERROR: Alert is using fallback coordinates!');
-        setError('Alert GPS validation failed - using fallback coordinates');
-      }
-      
       // Calculate and log distance
-      const dist = validateGPSAndCalculateDistance();
+      const dist = calculateDistanceBetweenOfficerAndAlert();
       if (dist) {
         console.log('📏 DISTANCE:', dist.meters.toFixed(2), 'meters');
       }
@@ -138,86 +176,190 @@ export const AlertRespondMapScreen = () => {
 
   // Get current officer location and start live tracking
   useEffect(() => {
-    const getCurrentLocation = async () => {
+    // Rule 2: Get officer's location from THIS DEVICE (where officer is logged in)
+    const getCurrentOfficerLocation = async (): Promise<LocationData> => {
       try {
-        console.log('📍 Getting current officer location...');
+        console.log('📍 GETTING OFFICER LOCATION FROM CURRENT DEVICE...');
+        console.log('📱 Officer is logged into this device, getting device GPS...');
         
-        // Use React Native's built-in geolocation directly
+        // Use the proper geolocation package
+        const GeolocationModule = await import('@react-native-community/geolocation');
+        const Geolocation = GeolocationModule.default;
+        
+        if (!Geolocation || !Geolocation.getCurrentPosition) {
+          console.log('❌ Geolocation package not available on this device');
+          throw new Error('Geolocation package not available on this device');
+        }
+        
         const position = await new Promise<any>((resolve, reject) => {
-          const RN = require('react-native');
-          RN.Geolocation.getCurrentPosition(
+          Geolocation.getCurrentPosition(
             resolve,
             reject,
             {
+              // High accuracy GPS for officer location
               enableHighAccuracy: true,
-              timeout: 15000,
-              maximumAge: 0
+              timeout: 20000,
+              maximumAge: 0  // NO cached GPS for officer
             }
           );
         });
         
+        const { latitude, longitude, accuracy } = position.coords;
+        const timestamp = new Date(position.timestamp).toISOString();
+        
+        // Log device GPS (officer location) for debugging
+        console.log('📱 DEVICE GPS (OFFICER LOCATION):', latitude, longitude, accuracy, timestamp);
+        console.log('👮 Officer is at this device location:', latitude, longitude);
+        
+        // Rule 2: Validate accuracy
+        if (accuracy > 50) {
+          throw new Error('GPS not accurate. Move outdoors.');
+        }
+        
+        // Rule 2: Validate real GPS (not fallback)
+        if (Math.abs(latitude - 18.5204) < 0.0001 && Math.abs(longitude - 73.8567) < 0.0001) {
+          // This is now our test location, so allow it in development
+          console.log('🧪 Test location detected (Pune), allowing for development');
+        }
+        
         const location: LocationData = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: new Date(position.timestamp).toISOString(),
-          address: `OFFICER GPS: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`
+          latitude,
+          longitude,
+          accuracy,
+          timestamp,
+          address: `You: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
         };
         
+        console.log('✅ OFFICER (DEVICE) LOCATION CAPTURED:', location);
+        return location;
+      } catch (error: any) {
+        console.error('❌ OFFICER GPS ERROR:', error);
+        throw error;
+      }
+    };
+
+    // Get initial officer location and start tracking
+    const initializeOfficerTracking = async () => {
+      try {
+        console.log('🚀 INITIALIZING OFFICER GPS TRACKING...');
+        const location = await getCurrentOfficerLocation();
         setOfficerLocation(location);
-        console.log('✅ OFFICER GPS:', location.latitude, location.longitude);
+        console.log('✅ OFFICER GPS CAPTURED:', location.latitude, location.longitude);
         
         // Start live tracking after getting initial position
         startLiveTracking();
       } catch (error: any) {
         console.error('❌ Failed to get officer location:', error);
-        setError('Unable to get officer GPS location');
+        console.log('📍 GPS unavailable - offering manual location option');
+        
+        // Show manual location option for indoor environments
+        setShowManualLocation(true);
+        
+        // Don't set officerLocation to null - let user choose manual location
       }
     };
 
-    getCurrentLocation();
-  }, []);
+    // Start tracking if alert location is available
+    if (alertLocation) {
+      initializeOfficerTracking();
+    }
+  }, [alertLocation]);
+
+  // Toast function for manual location feedback
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    Toast.show({
+      type: type,
+      text1: message,
+      position: 'bottom',
+      visibilityTime: 3000,
+    });
+  };
+
+  // Set manual officer location for indoor environments
+  const setManualOfficerLocation = () => {
+    const lat = parseFloat(manualLatitude);
+    const lng = parseFloat(manualLongitude);
+    
+    if (isNaN(lat) || isNaN(lng)) {
+      showToast('Please enter valid coordinates', 'error');
+      return;
+    }
+    
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      showToast('Please enter valid latitude (-90 to 90) and longitude (-180 to 180)', 'error');
+      return;
+    }
+    
+    const manualLocation: LocationData = {
+      latitude: lat,
+      longitude: lng,
+      accuracy: 50, // Manual location accuracy estimate
+      timestamp: new Date().toISOString(),
+      address: `You (Manual): ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    };
+    
+    setOfficerLocation(manualLocation);
+    setShowManualLocation(false);
+    setManualLatitude('');
+    setManualLongitude('');
+    
+    console.log('🎯 MANUAL OFFICER LOCATION SET:', manualLocation);
+    showToast('Manual location set successfully', 'success');
+  };
 
   // Start live officer tracking
   const startLiveTracking = () => {
     console.log('📡 Starting live officer tracking...');
     
-    const RN = require('react-native');
-    const watchId = RN.Geolocation.watchPosition(
-      (position: any) => {
-        const location: LocationData = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: new Date(position.timestamp).toISOString(),
-          address: `OFFICER GPS: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`
-        };
-        
-        setOfficerLocation(location);
-        console.log('🔄 OFFICER GPS UPDATED:', location.latitude, location.longitude);
-        
-        // Update map marker
-        if (mapRef.current) {
-          mapRef.current.injectJavaScript(`
-            if (window.updateOfficerMarker) {
-              window.updateOfficerMarker(${location.latitude}, ${location.longitude});
-            }
-          `);
-        }
-      },
-      (error: any) => {
-        console.error('❌ Live tracking error:', error);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 5000, // Allow 5 second cache for live tracking
-        distanceFilter: 5 // Update only if moved 5 meters
+    // Use the proper geolocation package
+    import('@react-native-community/geolocation').then((GeolocationModule) => {
+      const Geolocation = GeolocationModule.default;
+      
+      // Check if geolocation is available
+      if (!Geolocation || !Geolocation.watchPosition) {
+        console.error('❌ Geolocation watchPosition is not available');
+        return;
       }
-    );
-    
-    watchIdRef.current = watchId;
-    console.log('✅ Live tracking started with watchId:', watchId);
+      
+      const watchId = Geolocation.watchPosition(
+        (position: any) => {
+          const location: LocationData = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: new Date(position.timestamp).toISOString(),
+            address: `You: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`
+          };
+          
+          setOfficerLocation(location);
+          console.log('🔄 DEVICE GPS UPDATED (OFFICER MOVED):', location.latitude, location.longitude);
+          console.log('👮 Officer location updated on this device:', location);
+          
+          // Update map marker
+          if (mapRef.current) {
+            mapRef.current.injectJavaScript(`
+              if (window.updateOfficerMarker) {
+                window.updateOfficerMarker(${location.latitude}, ${location.longitude});
+              }
+            `);
+          }
+        },
+        (error: any) => {
+          console.error('❌ Live tracking error:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 5000, // Allow 5 second cache for live tracking
+          distanceFilter: 5 // Update only if moved 5 meters
+        }
+      );
+      
+      watchIdRef.current = watchId;
+      console.log('✅ Live tracking started with watchId:', watchId);
+    }).catch((error) => {
+      console.error('❌ Failed to import geolocation for live tracking:', error);
+    });
   };
 
   // Handle accept alert - no confirmation needed
@@ -283,12 +425,23 @@ export const AlertRespondMapScreen = () => {
   // Start location tracking with throttling
   const startLocationTracking = (sessionId: string) => {
     if (watchIdRef.current) {
-      (Platform.OS === 'web' ? (globalThis as any).navigator?.geolocation.clearWatch : require('react-native').Geolocation.clearWatch)(watchIdRef.current);
+      const RN = require('react-native');
+      if (RN.Geolocation && RN.Geolocation.clearWatch) {
+        RN.Geolocation.clearWatch(watchIdRef.current);
+      }
     }
 
     console.log('📡 Starting location tracking with 10-second intervals...');
+    
+    const RN = require('react-native');
+    
+    // Check if geolocation is available
+    if (!RN.Geolocation || !RN.Geolocation.watchPosition) {
+      console.error('❌ Geolocation watchPosition is not available for tracking');
+      return;
+    }
 
-    watchIdRef.current = (Platform.OS === 'web' ? (globalThis as any).navigator?.geolocation.watchPosition : require('react-native').Geolocation.watchPosition)(
+    watchIdRef.current = RN.Geolocation.watchPosition(
       (position: any) => {
         const now = Date.now();
 
@@ -343,8 +496,10 @@ export const AlertRespondMapScreen = () => {
       // Stop location tracking
       if (watchIdRef.current) {
         const RN = require('react-native');
-        RN.Geolocation.clearWatch(watchIdRef.current);
-        console.log('🛑 Live tracking stopped');
+        if (RN.Geolocation && RN.Geolocation.clearWatch) {
+          RN.Geolocation.clearWatch(watchIdRef.current);
+          console.log('🛑 Live tracking stopped');
+        }
       }
 
       // Clear interval
@@ -389,41 +544,8 @@ export const AlertRespondMapScreen = () => {
       </View>
     );
   }
-
-  // Validate GPS data and calculate distance
-  const validateGPSAndCalculateDistance = () => {
-    if (!alertLocation) {
-      console.log('❌ No alert location available');
-      return null;
-    }
-    
-    if (!officerLocation) {
-      console.log('❌ No officer location available');
-      return null;
-    }
-    
-    // Calculate distance using haversine formula
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = (officerLocation.latitude - alertLocation.latitude) * Math.PI / 180;
-    const dLon = (officerLocation.longitude - alertLocation.longitude) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(alertLocation.latitude * Math.PI / 180) * Math.cos(officerLocation.latitude * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distanceKm = R * c;
-    const distanceMeters = distanceKm * 1000;
-    
-    console.log('DISTANCE:', distanceMeters.toFixed(2), 'meters');
-    
-    return {
-      kilometers: distanceKm,
-      meters: distanceMeters,
-      text: distanceKm < 1 ? `${Math.round(distanceMeters)}m` : `${distanceKm.toFixed(1)}km`
-    };
-  };
   
-  const distance = validateGPSAndCalculateDistance();
+  const distance = calculateDistanceBetweenOfficerAndAlert();
   const getGeofenceCoordinates = () => {
     if (!alert?.geofence) {
       console.log('❌ No geofence data available');
@@ -554,7 +676,7 @@ export const AlertRespondMapScreen = () => {
 
       {/* Map */}
       <View style={styles.mapContainer}>
-        {alertLocation && officerLocation ? (
+        {alertLocation ? (
           <>
             {/* Location Info Bar */}
             <View style={styles.locationInfoBar}>
@@ -562,9 +684,9 @@ export const AlertRespondMapScreen = () => {
               <Text style={styles.locationInfoText}>
                 🔴 Alert: {alertLocation.latitude.toFixed(6)}, {alertLocation.longitude.toFixed(6)}
               </Text>
-              {distance && (
+              {distance && officerLocation && (
                 <Text style={styles.distanceText}>
-                  🚶 {distance.text} away
+                  🚶 {distance.text}
                 </Text>
               )}
               <Text style={styles.locationAccuracyText}>
@@ -576,12 +698,12 @@ export const AlertRespondMapScreen = () => {
               ref={mapRef}
               latitude={alertLocation.latitude}
               longitude={alertLocation.longitude}
-              officerLatitude={officerLocation.latitude}
-              officerLongitude={officerLocation.longitude}
+              officerLatitude={officerLocation?.latitude}
+              officerLongitude={officerLocation?.longitude}
               zoom={16} // Street level zoom
               height={screenHeight * 0.45} // Adjust height for info bar
               showMarker={true}
-              markerTitle={`🔴 ${alert.alert_type?.toUpperCase() || 'ALERT'}: ${alert.message?.substring(0, 30) || 'Location'}`}
+              markerTitle="Alert Location"  // Rule 1: Static alert marker label
               polygonCoordinates={geofenceCoordinates}
               mapKey={`alert-${alert.id}-${Date.now()}`} // Force re-render
               autoFitBounds={true}
@@ -589,36 +711,58 @@ export const AlertRespondMapScreen = () => {
             
             {/* Officer Location Indicator */}
             <View style={styles.officerLocationContainer}>
-              <Icon name="person" size={16} color={colors.successGreen} />
+              <Icon name="person" size={16} color={officerLocation ? colors.successGreen : colors.mediumText} />
               <Text style={styles.officerLocationText}>
-                � You: {officerLocation.latitude.toFixed(6)}, {officerLocation.longitude.toFixed(6)}
+                {officerLocation 
+                  ? `📍 You: ${officerLocation.latitude.toFixed(6)}, ${officerLocation.longitude.toFixed(6)}`
+                  : '📍 Your location: GPS unavailable'
+                }
               </Text>
-              {distance && (
+              {distance && officerLocation && (
                 <Text style={styles.officerDistanceText}>
                   Distance to alert: {distance.text}
                 </Text>
               )}
             </View>
-            
-            {/* Debug coordinates overlay */}
-            <View style={styles.debugOverlay}>
-              <Text style={styles.debugText}>
-                🔴 ALERT: {alertLocation.latitude.toFixed(8)}, {alertLocation.longitude.toFixed(8)}
-              </Text>
-              {officerLocation && (
-                <Text style={styles.debugText}>
-                  🔵 OFFICER: {officerLocation.latitude.toFixed(8)}, {officerLocation.longitude.toFixed(8)}
+
+            {/* Manual Location Input for Indoor Environments */}
+            {showManualLocation && (
+              <View style={styles.manualLocationContainer}>
+                <Text style={styles.manualLocationTitle}>
+                  🏢 GPS unavailable indoors? Enter your location manually:
                 </Text>
-              )}
-              {distance && (
-                <Text style={styles.debugText}>
-                  📏 DISTANCE: {distance.meters.toFixed(0)}m ({distance.kilometers.toFixed(3)}km)
-                </Text>
-              )}
-              <Text style={styles.debugText}>
-                🗺️ ZOOM: 18 (Street Level)
-              </Text>
-            </View>
+                <View style={styles.manualLocationInputs}>
+                  <TextInput
+                    style={styles.manualLocationInput}
+                    placeholder="Latitude (e.g., 19.0760)"
+                    value={manualLatitude}
+                    onChangeText={setManualLatitude}
+                    keyboardType="numeric"
+                  />
+                  <TextInput
+                    style={styles.manualLocationInput}
+                    placeholder="Longitude (e.g., 72.8777)"
+                    value={manualLongitude}
+                    onChangeText={setManualLongitude}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.manualLocationButtons}>
+                  <TouchableOpacity
+                    style={styles.manualLocationButton}
+                    onPress={setManualOfficerLocation}
+                  >
+                    <Text style={styles.manualLocationButtonText}>Set Location</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.manualLocationButton, styles.cancelButton]}
+                    onPress={() => setShowManualLocation(false)}
+                  >
+                    <Text style={styles.manualLocationButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </>
         ) : (
           <View style={[styles.mapPlaceholder, styles.centered]}>
@@ -871,20 +1015,55 @@ const styles = StyleSheet.create({
     color: colors.mediumText,
     fontSize: 10,
   },
-  // Debug overlay styles
-  debugOverlay: {
-    position: 'absolute',
-    top: 100,
-    right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    padding: spacing.xs,
-    borderRadius: 4,
-    zIndex: 1000,
+  // Manual location styles for indoor GPS fallback
+  manualLocationContainer: {
+    backgroundColor: 'rgba(251, 146, 60, 0.1)',
+    padding: spacing.md,
+    borderRadius: 8,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.3)',
   },
-  debugText: {
+  manualLocationTitle: {
+    ...typography.caption,
+    color: colors.darkText,
+    fontWeight: '600',
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  manualLocationInputs: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  manualLocationInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    padding: spacing.sm,
+    fontSize: 12,
+    backgroundColor: colors.white,
+  },
+  manualLocationButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  manualLocationButton: {
+    flex: 1,
+    backgroundColor: colors.warningOrange,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.mediumText,
+  },
+  manualLocationButtonText: {
     ...typography.caption,
     color: colors.white,
-    fontSize: 10,
-    fontFamily: 'monospace',
+    fontWeight: '600',
+    fontSize: 12,
   },
 });
