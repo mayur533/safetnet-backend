@@ -20,8 +20,8 @@ export interface Alert {
   user_email: string;
   user_phone: string;
   user_image?: string;
-  alert_type: 'emergency' | 'normal' | 'security';
-  original_alert_type?: 'general' | 'warning' | 'emergency';
+  alert_type: 'emergency' | 'normal' | 'security' | 'area_user_alert';
+  original_alert_type?: 'general' | 'warning' | 'emergency' | 'area_user_alert';
   priority: 'high' | 'medium' | 'low';
   message: string;
   description?: string; // Optional description field
@@ -39,6 +39,10 @@ export interface Alert {
   geofence?: Geofence; // Optional full geofence object
   created_at: string;
   updated_at?: string;
+  // Area-based alert specific fields
+  affected_users_count?: number;
+  notification_sent?: boolean;
+  expires_at?: string;
 }
 
 export interface AlertResponse {

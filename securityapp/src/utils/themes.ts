@@ -98,52 +98,51 @@ export const lightTheme: ThemeColors = {
 
 export const darkTheme: ThemeColors = {
   // Primary colors
-  primary: '#0A84FF',
-  primaryDark: '#007AFF',
-  primaryLight: '#5AC8FA',
+  primary: '#3B82F6',
+  primaryDark: '#2563EB',
+  primaryLight: '#60A5FA',
 
   // Background colors
-  white: '#1C1C1E',
+  white: '#000000',
   background: '#000000',
-  surface: '#1C1C1E',
-  cardBackground: '#2C2C2E',
+  surface: '#111827',
+  cardBackground: '#000000',
 
   // Text colors
   darkText: '#FFFFFF',
-  mediumText: '#EBEBF5',
-  lightText: '#8E8E93',
+  mediumText: '#D1D5DB',
+  lightText: '#9CA3AF',
   textOnPrimary: '#FFFFFF',
 
   // Border and separator colors
-  border: '#38383A',
-  divider: '#38383A',
+  border: '#374151',
+  divider: '#374151',
 
   // Status colors
-  success: '#30D158',
-  warning: '#FF9F0A',
-  error: '#FF453A',
-  emergencyRed: '#FF453A',
+  success: '#10B981',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  emergencyRed: '#EF4444',
 
   // Special colors
-  lightGrayBg: '#1C1C1E',
-  mediumGray: '#8E8E93',
+  lightGrayBg: '#0F172A',
+  mediumGray: '#6B7280',
   shadow: '#000000',
 
   // Tab and navigation
-  tabBackground: '#1C1C1E',
-  tabActive: '#0A84FF',
-  tabInactive: '#8E8E93',
+  tabBackground: '#000000',
+  tabActive: '#3B82F6',
+  tabInactive: '#9CA3AF',
 
   // Input colors
-  inputBackground: '#2C2C2E',
-  inputBorder: '#38383A',
-  inputPlaceholder: '#8E8E93',
+  inputBackground: '#1F2937',
+  inputBorder: '#374151',
+  inputPlaceholder: '#9CA3AF',
 
   // Button colors
-  buttonPrimary: '#0A84FF',
-  buttonSecondary: '#48484A',
-  buttonDisabled: '#38383A',
+  buttonPrimary: '#3B82F6',
+  buttonSecondary: '#1F2937',
+  buttonDisabled: '#374151',
 };
 
 export type Theme = 'light' | 'dark';
-export { lightTheme, darkTheme };

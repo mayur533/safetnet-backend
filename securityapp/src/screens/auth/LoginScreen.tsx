@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,14 +10,18 @@ import {
   TextInput,
   Alert,
   Image,
+  Animated,
+  Dimensions,
+  ActivityIndicator,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService, testBackendConnectivity } from '../../api/services/authService';
 import { useAppDispatch } from '../../store/hooks';
 import { loginSuccess } from '../../store/slices/authSlice';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import type { SecurityOfficer } from '../../types/user.types';
 
 type AuthStackParamList = {
@@ -38,6 +42,291 @@ try {
 }
 
 export const LoginScreen = () => {
+  const colors = useColors();
+  const { width, height } = Dimensions.get('window');
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
+    },
+    // Premium gradient header
+    header: {
+      height: height * 0.35, // Further reduced height
+      paddingTop: 50, // Reduced padding
+      paddingBottom: 16, // Reduced padding
+      paddingHorizontal: 24, // Reduced padding
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: colors.primary,
+      borderBottomLeftRadius: 30, // Smaller radius
+      borderBottomRightRadius: 30,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    logoContainer: {
+      alignItems: 'center',
+      marginBottom: 8, // Reduced from 24 to make everything tighter
+      zIndex: 1,
+    },
+    logo: {
+      width: 100, // Further increased size
+      height: 100,
+      borderRadius: 25,
+      backgroundColor: 'transparent',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 0, // No space between icon and title
+      borderWidth: 0,
+      shadowColor: 'transparent',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      elevation: 0,
+    },
+    logoText: {
+      fontSize: 64, // Much larger icon
+      fontWeight: 'bold',
+      color: '#FFFFFF',
+      marginBottom: 8,
+      textShadowColor: 'rgba(0, 0, 0, 0.6)', // Stronger shadow
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 4,
+    },
+    appName: {
+      fontSize: 28,
+      fontWeight: '800', // Extra bold
+      color: '#FFFFFF',
+      marginBottom: 0, // Remove space between title lines
+      letterSpacing: 1.5,
+      textShadowColor: 'rgba(0, 0, 0, 0.4)',
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 4,
+      textAlign: 'center', // Center the text
+    },
+    subtitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#FFE4B5', // Light orange
+      textAlign: 'center',
+      letterSpacing: 0.8,
+      textShadowColor: 'rgba(0, 0, 0, 0.3)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 2,
+      marginTop: 0, // No margin since it's part of the title
+    },
+    // Premium form container
+    formContainer: {
+      backgroundColor: colors.white,
+      borderTopLeftRadius: 30, // Smaller radius
+      borderTopRightRadius: 30,
+      marginTop: -30,
+      paddingTop: 24, // Reduced padding
+      paddingHorizontal: 24, // Reduced padding
+      paddingBottom: 24, // Reduced padding
+      flex: 1,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: -6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    formHeader: {
+      alignItems: 'center',
+      marginBottom: 20, // Reduced margin
+    },
+    welcomeText: {
+      fontSize: 22, // Further reduced
+      fontWeight: 'bold',
+      color: colors.darkText,
+      marginBottom: 4,
+      textAlign: 'center',
+    },
+    welcomeSubtext: {
+      fontSize: 12, // Further reduced
+      fontWeight: '400',
+      color: colors.mediumText,
+      textAlign: 'center',
+      marginBottom: 20, // Reduced margin
+      lineHeight: 16,
+    },
+    inputContainer: {
+      marginBottom: 16, // Further reduced
+    },
+    inputLabel: {
+      fontSize: 14, // Reduced
+      fontWeight: '600',
+      color: colors.darkText,
+      marginBottom: 6, // Reduced margin
+      marginLeft: 4,
+    },
+    inputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.inputBackground,
+      borderRadius: 12, // Smaller radius
+      borderWidth: 2,
+      borderColor: colors.inputBorder,
+      paddingHorizontal: 16, // Reduced padding
+      paddingVertical: 2,
+      height: 44, // Reduced height
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.03,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    inputFocused: {
+      borderColor: colors.primary,
+      backgroundColor: colors.white,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    input: {
+      flex: 1,
+      fontSize: 14, // Reduced
+      color: colors.darkText,
+      paddingVertical: 10, // Reduced padding
+      paddingLeft: 6,
+      paddingRight: 6,
+      textAlignVertical: 'center',
+      lineHeight: 18, // Reduced line height
+      includeFontPadding: false,
+    },
+    inputIcon: {
+      marginRight: 12,
+    },
+    passwordContainer: {
+      position: 'relative',
+    },
+    passwordInput: {
+      flex: 1,
+      fontSize: 14, // Reduced
+      color: colors.darkText,
+      paddingVertical: 10, // Reduced padding
+      paddingLeft: 6,
+      paddingRight: 6,
+      textAlignVertical: 'center',
+      lineHeight: 18, // Reduced line height
+      includeFontPadding: false,
+    },
+    togglePassword: {
+      padding: 8,
+    },
+    // Premium button
+    loginButton: {
+      backgroundColor: colors.primary,
+      borderRadius: 12, // Smaller radius
+      paddingVertical: 12, // Reduced padding
+      alignItems: 'center',
+      marginBottom: 16, // Reduced margin
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    loginButtonText: {
+      color: colors.white,
+      fontSize: 14, // Reduced
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+    forgotPasswordContainer: {
+      alignItems: 'center',
+      marginTop: 8, // Reduced
+      marginBottom: 16, // Reduced
+    },
+    forgotPassword: {
+      fontSize: 12, // Reduced
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    footer: {
+      alignItems: 'center',
+      marginTop: 20,
+    },
+    versionText: {
+      fontSize: 10, // Reduced
+      color: colors.captionText,
+      textAlign: 'center',
+      marginTop: 4,
+    },
+    logoImage: {
+      width: 100, // Increased size
+      height: 100,
+      borderRadius: 25,
+    },
+    logoFallback: {
+      fontSize: 64, // Larger icon
+      color: '#FFFFFF',
+      textShadowColor: 'rgba(0, 0, 0, 0.6)', // Stronger shadow
+      textShadowOffset: { width: 0, height: 2 },
+      textShadowRadius: 4,
+    },
+    eyeIcon: {
+      padding: 8,
+    },
+    eyeIconText: {
+      fontSize: 16,
+      color: colors.mediumText,
+    },
+    // Loading overlay
+    loadingOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1000,
+    },
+    loadingText: {
+      marginTop: 16,
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    // Security badge
+    securityBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+      paddingHorizontal: 8, // Reduced
+      paddingVertical: 4, // Reduced
+      borderRadius: 12, // Reduced
+      marginTop: 8, // Reduced
+      alignSelf: 'center',
+    },
+    securityBadgeText: {
+      fontSize: 10, // Reduced
+      color: colors.successGreen,
+      fontWeight: '600',
+      marginLeft: 4,
+    },
+    form: {
+      flex: 1,
+    },
+  });
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -49,6 +338,32 @@ export const LoginScreen = () => {
   const passwordInputRef = useRef<TextInput>(null);
   const dispatch = useAppDispatch();
   const navigation = useNavigation<AuthNavigationProp>();
+
+  // Animation effect
+  useEffect(() => {
+    const startAnimations = () => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    };
+
+    startAnimations();
+  }, []);
 
 
   const handleLogin = async () => {
@@ -68,8 +383,8 @@ export const LoginScreen = () => {
       });
 
       // Check if login was successful
-      if (res.result !== 'success') {
-        throw new Error(res.msg || 'Invalid credentials');
+      if (!res.access || !res.user) {
+        throw new Error('Invalid login response');
       }
 
       // Extract tokens and user data (optimized - minimal processing)
@@ -227,76 +542,106 @@ export const LoginScreen = () => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header Section (40% of screen) */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            {logoSource ? (
-              <Image
-                source={logoSource}
-                style={styles.logoImage}
-                resizeMode="contain"
-              />
-            ) : (
-              <Text style={styles.logoFallback}>🛡️</Text>
-            )}
+      <View style={styles.scrollContent}>
+        {/* Premium Header Section */}
+        <Animated.View 
+          style={[
+            styles.header, 
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <View style={styles.logoContainer}>
+              <View style={styles.logo}>
+                {logoSource ? (
+                  <Image
+                    source={logoSource}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <Text style={styles.logoFallback}>🛡️</Text>
+                )}
+              </View>
+            </View>
+            <Text style={styles.appName}>SafeTNet</Text>
+            <Text style={styles.subtitle}>Security Officer Portal</Text>
+          </Animated.View>
+        </Animated.View>
+
+        {/* Premium Form Section */}
+        <Animated.View 
+          style={[
+            styles.formContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <View style={styles.formHeader}>
+            <Text style={styles.welcomeText}>Welcome Back</Text>
+            <Text style={styles.welcomeSubtext}>Sign in to access your security dashboard</Text>
           </View>
-          <Text style={styles.appName}>SafeTNet Security</Text>
-          <Text style={styles.subtitle}>Officer Portal</Text>
-        </View>
 
-        {/* Form Section (60% of screen) */}
-        <View style={styles.form}>
-          <Text style={styles.welcomeText}>Welcome Back</Text>
-          <Text style={styles.welcomeSubtext}>Sign in to continue monitoring</Text>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Badge ID or Email</Text>
+            <View style={[styles.inputWrapper, emailFocused && styles.inputFocused]}>
+              <Icon name="badge" size={18} color={emailFocused ? colors.primary : colors.mediumText} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your badge ID or email"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholderTextColor={colors.mediumText}
+                returnKeyType="next"
+                onSubmitEditing={() => {
+                  if (passwordInputRef.current) {
+                    passwordInputRef.current.focus();
+                  }
+                }}
+              />
+            </View>
+          </View>
 
-          <Text style={styles.inputLabel}>Badge ID or Email</Text>
-          <TextInput
-            style={[styles.input, emailFocused && styles.inputFocused]}
-            placeholder="Enter your badge ID or email"
-            value={email}
-            onChangeText={setEmail}
-            onFocus={() => setEmailFocused(true)}
-            onBlur={() => setEmailFocused(false)}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholderTextColor={colors.mediumGray}
-            returnKeyType="next"
-            onSubmitEditing={() => {
-              // Focus password field when Enter is pressed on email field
-              if (passwordInputRef.current) {
-                passwordInputRef.current.focus();
-              }
-            }}
-          />
-
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              ref={passwordInputRef}
-              style={[
-                styles.input,
-                styles.passwordInput,
-                passwordFocused && styles.inputFocused,
-              ]}
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={setPassword}
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
-              secureTextEntry={!showPassword}
-              placeholderTextColor={colors.mediumGray}
-              returnKeyType="go"
-              onSubmitEditing={handleLogin}
-              blurOnSubmit={false}
-            />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              <Text style={styles.eyeIconText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-            </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={[styles.inputWrapper, passwordFocused && styles.inputFocused]}>
+              <Icon name="lock" size={18} color={passwordFocused ? colors.primary : colors.mediumText} style={styles.inputIcon} />
+              <TextInput
+                ref={passwordInputRef}
+                style={[styles.input, styles.passwordInput]}
+                placeholder="Enter your password"
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                secureTextEntry={!showPassword}
+                placeholderTextColor={colors.mediumText}
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
+                blurOnSubmit={false}
+              />
+              <TouchableOpacity
+                style={styles.togglePassword}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Icon 
+                  name={showPassword ? 'visibility-off' : 'visibility'} 
+                  size={18} 
+                  color={colors.mediumText} 
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -312,154 +657,29 @@ export const LoginScreen = () => {
             disabled={isLoading}
           >
             <Text style={styles.loginButtonText}>
-              {isLoading ? 'LOGGING IN...' : 'LOGIN'}
+              {isLoading ? 'SIGNING IN...' : 'SIGN IN'}
             </Text>
           </TouchableOpacity>
 
-          <Text style={styles.versionText}>v2.2.0</Text>
+          {/* Security Badge */}
+          <View style={styles.securityBadge}>
+            <Icon name="verified-user" size={14} color={colors.successGreen} />
+            <Text style={styles.securityBadgeText}>Secure Connection</Text>
+          </View>
+
+          <Text style={styles.versionText}>Version 2.2.0</Text>
+        </Animated.View>
+      </View>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Authenticating...</Text>
         </View>
-      </ScrollView>
+      )}
     </KeyboardAvoidingView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.white,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  // Header Section (40% of screen)
-  header: {
-    backgroundColor: colors.secondary, // #1E3A8A
-    paddingTop: 80, // Account for status bar
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  logoContainer: {
-    width: 200,
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  logoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  logoFallback: {
-    fontSize: 80,
-    color: colors.white,
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: colors.white,
-    opacity: 0.7,
-    marginTop: 4,
-  },
-  // Form Section (60% of screen)
-  form: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    marginTop: -24, // Overlap with header
-    flex: 1,
-  },
-  welcomeText: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.darkText,
-    letterSpacing: -0.5,
-  },
-  welcomeSubtext: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: colors.lightText,
-    marginTop: 4,
-    marginBottom: 24,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.lightText,
-    marginBottom: 8,
-  },
-  input: {
-    height: 52,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border, // #E2E8F0
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    fontWeight: '400',
-    color: colors.darkText,
-    marginBottom: 16,
-  },
-  inputFocused: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: 16,
-    top: 14,
-    padding: 4,
-    zIndex: 1,
-  },
-  eyeIconText: {
-    fontSize: 20,
-    color: colors.mediumGray,
-  },
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
-    marginBottom: 24,
-  },
-  forgotPassword: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: colors.primary,
-    textAlign: 'right',
-  },
-  loginButton: {
-    height: 52,
-    backgroundColor: colors.primary, // #2563EB
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
-    letterSpacing: 0.5,
-  },
-  versionText: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: colors.captionText,
-    textAlign: 'center',
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-  },
-});
+export default LoginScreen;

@@ -16,6 +16,15 @@ export const LeafletMap = React.forwardRef<WebView, {
     latitude: number;
     longitude: number;
   }>;
+  multiplePolygons?: Array<{
+    id: string;
+    name: string;
+    coordinates: Array<{
+      latitude: number;
+      longitude: number;
+    }>;
+    color?: string;
+  }>;
   mapKey?: string;
   autoFitBounds?: boolean;
 }>(({
@@ -28,6 +37,7 @@ export const LeafletMap = React.forwardRef<WebView, {
   showMarker = true,
   markerTitle = 'Location',
   polygonCoordinates,
+  multiplePolygons,
   mapKey,
   autoFitBounds = true
 }, ref) => {
@@ -42,10 +52,47 @@ export const LeafletMap = React.forwardRef<WebView, {
   const generateMapHTML = () => {
     console.log('Generating map HTML for coordinates:', latitude, longitude);
     console.log('Officer coordinates:', officerLatitude, officerLongitude);
+    console.log('Multiple polygons count:', multiplePolygons?.length || 0);
 
-    // Process polygon coordinates
+    // Process single polygon coordinates (backward compatibility)
     const polygonCoordsString = polygonCoordinates && polygonCoordinates.length >= 3
       ? polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',')
+      : '';
+
+    // Process multiple polygons
+    const multiplePolygonsJS = multiplePolygons && multiplePolygons.length > 0
+      ? multiplePolygons.map(polygon => {
+          console.log('🗺️ Processing polygon:', polygon.name, 'with', polygon.coordinates.length, 'points');
+          const coordsString = polygon.coordinates.length >= 3
+            ? polygon.coordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',')
+            : '';
+          console.log('🗺️ Coords string for', polygon.name, ':', coordsString);
+          const color = polygon.color || '#3388ff';
+          
+          return `
+            console.log('🗺️ Adding polygon:', '${polygon.name}', 'with coords:', [${coordsString}]);
+            var polygon_${polygon.id} = L.polygon([${coordsString}], {
+              color: '${color}',
+              fillColor: '${color}',
+              fillOpacity: 0.2,
+              weight: 2
+            }).addTo(map);
+            
+            polygon_${polygon.id}.bindPopup('<div style="font-family: Arial, sans-serif;"><strong>${polygon.name}</strong><br/>Type: Assigned Zone</div>');
+            
+            // Add zone label
+            var center_${polygon.id} = polygon_${polygon.id}.getBounds().getCenter();
+            L.marker([center_${polygon.id}.lat, center_${polygon.id}.lng], {
+              icon: L.divIcon({
+                html: '<div style="background: ${color}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; white-space: nowrap;">${polygon.name}</div>',
+                className: 'zone-label',
+                iconSize: [80, 16],
+                iconAnchor: [40, 8]
+              })
+            }).addTo(map);
+            console.log('✅ Polygon added:', '${polygon.name}');
+          `;
+        }).join('\n')
       : '';
 
     // Determine if we should auto-fit bounds
@@ -131,7 +178,7 @@ export const LeafletMap = React.forwardRef<WebView, {
                     maxZoom: 19
                 }).addTo(map);
 
-                // Add polygon if coordinates provided
+                // Add polygon if coordinates provided (backward compatibility)
                 ${polygonCoordsString ? `
                 var coords = [${polygonCoordsString}];
                 L.polygon(coords, {
@@ -140,7 +187,13 @@ export const LeafletMap = React.forwardRef<WebView, {
                     fillOpacity: 0.2,
                     weight: 3
                 }).addTo(map);
-                console.log('Geofence polygon added');
+                console.log('Single geofence polygon added');
+                ` : ''}
+
+                // Add multiple polygons if provided
+                ${multiplePolygonsJS ? `
+                ${multiplePolygonsJS}
+                console.log('Multiple geofence polygons added');
                 ` : ''}
 
                 // Add alert marker (red)

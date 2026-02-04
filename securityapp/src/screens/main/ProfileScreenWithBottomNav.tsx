@@ -8,7 +8,7 @@ export const ProfileScreenWithBottomNav = ({ navigation }: any) => {
   const colors = useColors();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.lightGrayBg }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ProfileScreen />
       <BottomTabNavigator />
     </View>

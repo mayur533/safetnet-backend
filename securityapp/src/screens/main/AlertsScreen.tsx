@@ -19,9 +19,10 @@ import { Alert } from '../../types/alert.types';
 import { useAlertsStore } from '../../store/alertsStore';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import { alertService } from '../../api/services/alertService';
+import { alertServiceWithGeofenceFilter } from '../../api/services/alertServiceWithGeofenceFilter';
+import { useAppSelector } from '../../store/hooks';
 
 interface AlertsScreenProps {
   // Add any props if needed
@@ -33,6 +34,10 @@ interface AlertsScreenRef {
 
 export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((props, ref) => {
   const navigation = useNavigation();
+  const colors = useColors();
+  
+  // Get current officer for area-based filtering
+  const officer = useAppSelector((state) => state.auth.officer);
 
   // Use Zustand alerts store
   const {
@@ -51,11 +56,14 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
   // Create alert modal state (local to this screen)
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [creatingAlert, setCreatingAlert] = useState(false);
-  const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general'>('security');
+  const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general' | 'area_user_alert'>('security');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  
+  // Area-based alert specific state
+  const [alertExpiry, setAlertExpiry] = useState<string>('');
   
   // Location input state
   const [useCustomLocation, setUseCustomLocation] = useState(false);
@@ -117,7 +125,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
             console.log('⚠️ Redux persistor flush failed:', reduxError?.message);
           }
           
-          // Force fetch fresh data
+          // Force fetch fresh data with backend-authoritative filtering
           await fetchAlerts();
         } catch (error) {
           console.error('❌ Error clearing alerts cache:', error);
@@ -379,7 +387,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       console.log(`   Final priority: "${priority}"`);
 
       // STEP 4: Create alert with real GPS data
-      await storeCreateAlert({
+      const alertData: any = {
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
@@ -387,7 +395,14 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         latitude: locationData.latitude,
         longitude: locationData.longitude,
         location: locationData.location
-      });
+      };
+
+      // Add expiry for area-based alerts
+      if (alertType === 'area_user_alert' && alertExpiry) {
+        alertData.expires_at = alertExpiry;
+      }
+
+      await storeCreateAlert(alertData);
 
       console.log('✅ Alert created with real GPS coordinates:', {
         latitude: locationData.latitude,
@@ -399,6 +414,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       setAlertMessage('');
       setAlertDescription('');
       setAlertType('security');
+      setAlertExpiry('');
       setCreateModalVisible(false);
 
       // IMPORTANT: Refresh alerts list after creating to get fresh data
@@ -580,12 +596,13 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
       {/* Filter Sections - Horizontal Scrollable */}
       <View style={[styles.filterSection, {
-        backgroundColor: colors.white,
-        shadowColor: colors.darkText
+        backgroundColor: colors.lightGrayBg,
+        borderWidth: 1,
+        borderColor: colors.border
       }]}>
         <View style={styles.filterHeader}>
-          <Icon name="filter-list" size={16} color={colors.mediumText} />
-          <Text style={[styles.filterTitle, { color: colors.mediumText }]}>Filter by Status</Text>
+          <Icon name="filter-list" size={16} color={colors.darkText} />
+          <Text style={[styles.filterTitle, { color: colors.darkText }]}>Filter by Status</Text>
         </View>
         <ScrollView
           horizontal
@@ -595,8 +612,8 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         >
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'all' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
-            borderColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+            backgroundColor: selectedFilter === 'all' ? colors.primary : 'rgba(59, 130, 246, 0.15)',
+            borderColor: selectedFilter === 'all' ? colors.primary : colors.border
           }]}
           onPress={() => setSelectedFilter('all')}
         >
@@ -606,8 +623,8 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'emergency' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.1)',
-            borderColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.2)'
+            backgroundColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(239, 68, 68, 0.15)',
+            borderColor: selectedFilter === 'emergency' ? colors.emergencyRed : colors.border
           }]}
           onPress={() => setSelectedFilter('emergency')}
         >
@@ -617,30 +634,30 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'pending' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.1)',
-            borderColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.2)'
+            backgroundColor: selectedFilter === 'pending' ? colors.warning : 'rgba(245, 158, 11, 0.15)',
+            borderColor: selectedFilter === 'pending' ? colors.warning : colors.border
           }]}
           onPress={() => setSelectedFilter('pending')}
         >
-          <Icon name="schedule" size={16} color={selectedFilter === 'pending' ? colors.white : colors.warningOrange} style={styles.filterIcon} />
-          <Text style={[styles.filterText, { color: selectedFilter === 'pending' ? colors.white : colors.warningOrange }]}>Pending</Text>
+          <Icon name="schedule" size={16} color={selectedFilter === 'pending' ? colors.white : colors.warning} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'pending' ? colors.white : colors.warning }]}>Pending</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'accepted' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.1)',
-            borderColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.2)'
+            backgroundColor: selectedFilter === 'accepted' ? colors.success : 'rgba(16, 185, 129, 0.15)',
+            borderColor: selectedFilter === 'accepted' ? colors.success : colors.border
           }]}
           onPress={() => setSelectedFilter('accepted')}
         >
-          <Icon name="check-circle" size={16} color={selectedFilter === 'accepted' ? colors.white : colors.successGreen} style={styles.filterIcon} />
-          <Text style={[styles.filterText, { color: selectedFilter === 'accepted' ? colors.white : colors.successGreen }]}>Accepted</Text>
+          <Icon name="check-circle" size={16} color={selectedFilter === 'accepted' ? colors.white : colors.success} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'accepted' ? colors.white : colors.success }]}>Accepted</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'completed' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
-            borderColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+            backgroundColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.15)',
+            borderColor: selectedFilter === 'completed' ? colors.primary : colors.border
           }]}
           onPress={() => setSelectedFilter('completed')}
         >
@@ -710,6 +727,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                   { key: 'emergency', label: 'Emergency', color: colors.emergencyRed, icon: 'warning' },
                   { key: 'security', label: 'Security', color: colors.warningOrange, icon: 'security' },
                   { key: 'general', label: 'General', color: colors.primary, icon: 'info' },
+                  { key: 'area_user_alert', label: 'Area Evacuation', color: '#8B5CF6', icon: 'people' },
                 ].map((type) => (
                   <TouchableOpacity
                     key={type.key}
@@ -771,6 +789,32 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                 numberOfLines={2}
                 maxLength={300}
               />
+
+              {/* Area-based Alert Expiry */}
+              {alertType === 'area_user_alert' && (
+                <>
+                  <Text style={[styles.inputLabel, { color: colors.darkText }]}>
+                    Alert Expiry Time *
+                  </Text>
+                  <Text style={[styles.inputSubLabel, { color: colors.mediumText }]}>
+                    Set when this evacuation alert should expire
+                  </Text>
+                  <TextInput
+                    style={[styles.textInput, {
+                      borderColor: colors.border,
+                      backgroundColor: colors.lightGrayBg,
+                      color: colors.darkText
+                    }]}
+                    placeholder="YYYY-MM-DD HH:MM"
+                    placeholderTextColor={colors.mediumText}
+                    value={alertExpiry}
+                    onChangeText={setAlertExpiry}
+                  />
+                  <Text style={[styles.helperText, { color: colors.mediumText }]}>
+                    Example: 2024-12-31 23:59
+                  </Text>
+                </>
+              )}
 
               {/* Location Input */}
               <View style={styles.locationSection}>
@@ -1204,7 +1248,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 36,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#374151',
   },
   filterButtonActive: {
     shadowOffset: { width: 0, height: 2 },
@@ -1251,7 +1295,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '80%',
     minHeight: '60%',
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1260,7 +1304,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: '#E2E8F0',
   },
   modalTitle: {
     ...typography.screenHeader,
@@ -1279,7 +1323,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    color: '#000000',
+  },
+  inputSubLabel: {
+    ...typography.secondary,
+    fontSize: 14,
+    marginBottom: spacing.xs,
+    color: '#666666',
+  },
+  helperText: {
+    ...typography.caption,
+    fontSize: 12,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    color: '#666666',
   },
   textInput: {
     borderWidth: 1,
@@ -1297,7 +1354,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#E2E8F0',
     gap: spacing.md,
   },
   modalButton: {
@@ -1315,7 +1372,7 @@ const styles = StyleSheet.create({
     top: 50,
     left: 20,
     right: 20,
-    backgroundColor: colors.successGreen,
+    backgroundColor: '#10B981',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: 8,
@@ -1332,7 +1389,7 @@ const styles = StyleSheet.create({
   },
   toastMessage: {
     ...typography.body,
-    color: colors.white,
+    color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 14,
   },
@@ -1346,7 +1403,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: 8,
-    backgroundColor: colors.lightGrayBg,
+    backgroundColor: '#F8FAFC',
     marginBottom: spacing.sm,
   },
   locationToggleText: {
@@ -1365,7 +1422,7 @@ const styles = StyleSheet.create({
   },
   locationHelpText: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: '#64748B',
     marginTop: spacing.sm,
     fontStyle: 'italic',
   },
@@ -1390,34 +1447,34 @@ const styles = StyleSheet.create({
   },
   deleteConfirmationText: {
     ...typography.body,
-    color: colors.darkText,
+    color: '#0F172A',
     textAlign: 'center',
     marginBottom: spacing.lg,
     lineHeight: 20,
   },
   alertPreviewContainer: {
-    backgroundColor: colors.lightGrayBg,
+    backgroundColor: '#F8FAFC',
     padding: spacing.md,
     borderRadius: 8,
     marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E2E8F0',
   },
   alertPreviewLabel: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: '#64748B',
     marginBottom: spacing.xs,
     fontWeight: '500',
   },
   alertPreviewMessage: {
     ...typography.body,
-    color: colors.darkText,
+    color: '#0F172A',
     marginBottom: spacing.sm,
     fontWeight: '500',
   },
   alertPreviewMeta: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: '#64748B',
   },
   locationErrorContainer: {
     flexDirection: 'row',
@@ -1441,14 +1498,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   deleteButton: {
-    backgroundColor: colors.emergencyRed,
+    backgroundColor: '#EF4444',
     flex: 1,
   },
   inputGroup: {
     marginBottom: spacing.md,
   },
   updateButton: {
-    backgroundColor: colors.warningOrange,
+    backgroundColor: '#F97316',
     flex: 1,
   },
   // Alert type selector styles
@@ -1479,4 +1536,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

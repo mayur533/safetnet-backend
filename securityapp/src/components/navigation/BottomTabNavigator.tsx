@@ -40,7 +40,7 @@ export const BottomTabNavigator = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles(colors).container}>
       {tabs.map((tab) => {
         // Check if this tab is active
         const isActive = activeRoute === tab.name;
@@ -48,7 +48,7 @@ export const BottomTabNavigator = () => {
         return (
           <TouchableOpacity
             key={tab.name}
-            style={styles.tab}
+            style={styles(colors).tab}
             onPress={() => handleTabPress(tab.name)}
             activeOpacity={0.7}
           >
@@ -56,12 +56,12 @@ export const BottomTabNavigator = () => {
               name={(isActive && tab.activeIcon) ? tab.activeIcon : tab.icon}
               size={24}
               color={isActive ? colors.primary : colors.lightText}
-              style={styles.icon}
+              style={styles(colors).icon}
             />
-            <Text style={[styles.label, isActive && styles.activeLabel]}>
+            <Text style={[styles(colors).label, isActive && styles(colors).activeLabel]}>
               {tab.label}
             </Text>
-            {isActive && <View style={styles.activeIndicator} />}
+            {isActive && <View style={styles(colors).activeIndicator} />}
           </TouchableOpacity>
         );
       })}
@@ -69,12 +69,12 @@ export const BottomTabNavigator = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: colors.white,
+    backgroundColor: colors.tabBackground,
     borderTopWidth: 1,
-    borderTopColor: colors.borderGray,
+    borderTopColor: colors.border,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.base,
     justifyContent: 'space-around',
@@ -95,11 +95,11 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.caption,
-    color: colors.lightText,
+    color: colors.tabInactive,
     fontSize: 12,
   },
   activeLabel: {
-    color: colors.primary,
+    color: colors.tabActive,
     fontWeight: '600',
   },
   activeIndicator: {
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     marginLeft: -20,
     width: 40,
     height: 3,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.tabActive,
     borderRadius: 2,
   },
 });

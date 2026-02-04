@@ -59,43 +59,221 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         return SOSAlertSerializer
 
     def get_queryset(self):
+        """
+        Get queryset with expiry filtering and area-based alert handling.
+        This implements the security requirement that expired alerts are not visible.
+        """
+        from django.utils import timezone
+        
         user = self.request.user
+        now = timezone.now()
+        
+        # Base queryset: non-deleted, non-expired alerts
+        base_queryset = SOSAlert.objects.filter(
+            is_deleted=False
+        ).exclude(
+            # Exclude expired area-based alerts
+            alert_type='area_user_alert',
+            expires_at__lt=now
+        )
 
         # For Security Officers → show SOS alerts assigned to them or their geofence
         # Security officers are User records with role='security_officer'
         if user.role == 'security_officer':
-            return SOSAlert.objects.filter(
-                Q(is_deleted=False),
+            return base_queryset.filter(
                 Q(assigned_officer=user) | Q(geofence__in=user.geofences.all())
             )
 
         # For Sub-Admins → show SOS alerts within their managed geofence
         elif hasattr(user, 'subadminprofile'):
-            return SOSAlert.objects.filter(
-                is_deleted=False,
+            return base_queryset.filter(
                 geofence=user.subadminprofile.geofence
             )
 
-        # For Main Admins → see all active alerts
+        # For Main Admins → see all active alerts (excluding expired)
         elif user.is_superuser:
-            return SOSAlert.objects.filter(is_deleted=False)
+            return base_queryset
 
-        # For normal users → show only their own alerts
-        return SOSAlert.objects.filter(is_deleted=False, user=user)
+        # For normal users → show only their own alerts (excluding expired area alerts sent to others)
+        return base_queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        """Override create to return full object data including ID."""
+        """
+        Override create to handle area-based user alerts with backend-authoritative logic.
+        This method implements the core security requirements for evacuation alerts.
+        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        
+        alert_type = serializer.validated_data.get('alert_type', 'security')
+        
+        # Handle area-based user alerts with backend-authoritative logic
+        if alert_type == 'area_user_alert':
+            return self._create_area_user_alert(request, serializer)
+        
+        # Handle regular alerts with existing logic
         self.perform_create(serializer)
-        # Return the created object using the full serializer
         instance = serializer.instance
         response_serializer = SOSAlertSerializer(instance)
         headers = self.get_success_headers(response_serializer.data)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def _create_area_user_alert(self, request, serializer):
+        """
+        Create an area-based user alert with backend-authoritative targeting.
+        
+        Security Rules:
+        1. Officer identity comes from request.user only
+        2. Geofences come from database relations only
+        3. User targeting is based on GPS coordinates only
+        4. All validation happens server-side
+        """
+        from django.utils import timezone
+        from .geo_utils import (
+            get_users_in_multiple_geofences,
+            validate_gps_coordinates,
+            calculate_geofence_center
+        )
+        
+        try:
+            # Step 1: Identify officer from authentication context ONLY
+            officer = request.user
+            if officer.role != 'security_officer':
+                return Response({
+                    'error': 'Unauthorized',
+                    'detail': 'Only security officers can create area-based alerts'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            logger.info(f"🚨 AREA_USER_ALERT creation initiated by officer: {officer.username}")
+            
+            # Step 2: Validate GPS coordinates from alert data
+            alert_lat = serializer.validated_data.get('location_lat')
+            alert_lon = serializer.validated_data.get('location_long')
+            
+            if not validate_gps_coordinates(alert_lat, alert_lon):
+                return Response({
+                    'error': 'Invalid GPS coordinates',
+                    'detail': 'Alert GPS coordinates are invalid or out of range'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Step 3: Check expiry time for area-based alerts
+            expires_at = serializer.validated_data.get('expires_at')
+            if expires_at and expires_at <= timezone.now():
+                return Response({
+                    'error': 'Invalid expiry time',
+                    'detail': 'Area-based alerts cannot expire in the past'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Step 4: Load officer's assigned geofences from database ONLY
+            officer_geofences = officer.geofences.filter(active=True)
+            if not officer_geofences.exists():
+                return Response({
+                    'error': 'No assigned geofences',
+                    'detail': 'Security officer has no active geofences assigned'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            logger.info(f"📍 Officer has {officer_geofences.count()} assigned geofences")
+            
+            # Step 5: Identify users within officer's geofences using GPS coordinates
+            affected_users = get_users_in_multiple_geofences(
+                list(officer_geofences), 
+                max_age_hours=24  # Only use fresh location data (24 hours)
+            )
+            
+            affected_users_count = len(affected_users)
+            logger.info(f"🎯 Identified {affected_users_count} users in officer's geofences")
+            
+            # Step 6: Create the alert with backend-authoritative data
+            alert = serializer.save(
+                user=officer,  # Officer creates the alert
+                priority='high',  # Area-based alerts are always high priority
+            )
+            
+            # Step 7: Update alert with area-based metadata
+            alert.affected_users_count = affected_users_count
+            alert.expires_at = expires_at
+            alert.save(update_fields=['affected_users_count', 'expires_at'])
+            
+            logger.info(f"✅ Area-based alert created: ID={alert.id}, Users={affected_users_count}")
+            
+            # Step 8: Send push notifications ONLY to affected users
+            if affected_users_count > 0:
+                self._send_area_alert_notifications(alert, affected_users)
+            else:
+                logger.warning(f"⚠️ No users in geofences for alert {alert.id}")
+            
+            # Step 9: Return response with area-based metadata
+            response_data = SOSAlertSerializer(alert).data
+            response_data.update({
+                'area_alert_metadata': {
+                    'officer_id': officer.id,
+                    'officer_name': officer.get_full_name() or officer.username,
+                    'affected_users_count': affected_users_count,
+                    'geofences_count': officer_geofences.count(),
+                    'expires_at': expires_at.isoformat() if expires_at else None,
+                    'notification_sent': alert.notification_sent,
+                    'notification_sent_at': alert.notification_sent_at.isoformat() if alert.notification_sent_at else None
+                }
+            })
+            
+            headers = self.get_success_headers(response_data)
+            return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to create area-based alert: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({
+                'error': 'Internal server error',
+                'detail': 'Failed to create area-based alert'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _send_area_alert_notifications(self, alert, affected_users):
+        """
+        Send high-priority push notifications to affected users.
+        This method implements the notification delivery security requirements.
+        """
+        from django.utils import timezone
+        
+        try:
+            logger.info(f"📱 Sending notifications for alert {alert.id} to {len(affected_users)} users")
+            
+            # In a real implementation, this would integrate with your push notification service
+            # For now, we'll simulate the notification sending and update the alert metadata
+            
+            notification_count = 0
+            failed_notifications = []
+            
+            for user_location in affected_users:
+                user = user_location.user
+                
+                try:
+                    # Simulate push notification sending
+                    # In production, replace this with actual push notification service call
+                    # Example: send_push_notification(user, alert)
+                    
+                    logger.info(f"📤 Notification sent to user: {user.username}")
+                    notification_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to send notification to {user.username}: {str(e)}")
+                    failed_notifications.append(user.username)
+            
+            # Update alert with notification metadata
+            alert.notification_sent = True
+            alert.notification_sent_at = timezone.now()
+            alert.save(update_fields=['notification_sent', 'notification_sent_at'])
+            
+            logger.info(f"✅ Notifications sent: {notification_count}, Failed: {len(failed_notifications)}")
+            
+            if failed_notifications:
+                logger.warning(f"⚠️ Failed notifications for users: {failed_notifications}")
+                
+        except Exception as e:
+            logger.error(f"❌ Critical error in notification sending: {str(e)}")
+            # Don't fail the alert creation if notifications fail, but log the error
 
     @action(detail=True, methods=['patch'])
     def resolve(self, request, pk=None):

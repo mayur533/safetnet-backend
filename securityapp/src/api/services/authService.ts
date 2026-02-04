@@ -46,266 +46,128 @@ export const testBackendConnectivity = async (): Promise<{available: boolean, me
   }
 };
 
-export const authService = {
-  login: async (credentials: LoginPayload): Promise<LoginResponse> => {
-    console.log('🔐 LOGIN ATTEMPT - Real API call to backend');
-    console.log('🌐 API Endpoint:', `${apiConfig.BASE_URL}/api/security${API_ENDPOINTS.LOGIN}`);
-    console.log('👤 Credentials:', { email: credentials.email, password: '[HIDDEN]' });
-
-    try {
-      // Django REST API call
-      // Send username and password (Django expects username field, not email)
-      console.log('📡 Making POST request to login endpoint...');
-      const response = await apiClient.post<DjangoLoginResponse>(
-        API_ENDPOINTS.LOGIN,
-        {
-          username: credentials.email, // Use email as username (Django accepts both)
-          password: credentials.password,
+// Login function - real backend only
+export const login = async (credentials: LoginPayload, retryCount: number = 0): Promise<LoginResponse> => {
+  try {
+    console.log('🔍 Attempting login with:', credentials.email);
+    console.log('🌐 Backend URL:', `${apiConfig.BASE_URL}/api/security/login/`);
+    
+    // Test backend connectivity first
+    const connectivityTest = await testBackendConnectivity();
+    if (!connectivityTest.available) {
+      throw new Error(`Backend not reachable: ${connectivityTest.message}`);
+    }
+    
+    console.log('🔐 Making real API call to backend...');
+    const response = await apiClient.post('/login/', {
+      username: credentials.email,
+      password: credentials.password,
+    });
+    console.log('✅ LOGIN SUCCESSFUL');
+    return response.data;
+  } catch (error: any) {
+    console.error('❌ LOGIN FAILED - Detailed Error Analysis:', error);
+    console.error('🔍 Error Type:', error.constructor.name);
+    console.error('💬 Error Message:', error.message);
+    console.error('📊 Error Response:', error.response);
+    console.error('🌐 Error Request:', error.request);
+    console.error('⚙️ Error Config:', error.config);
+    
+    // Retry logic for SSL errors (max 2 retries)
+    if (error.message && error.message.includes('SSL') && retryCount < 2) {
+      console.log(`🔄 SSL error detected, retrying... (${retryCount + 1}/2)`);
+      await new Promise(resolve => setTimeout(resolve as any, 2000)); // Wait 2 seconds
+      return login(credentials, retryCount + 1);
+    }
+    
+    if (error.response) {
+      // Server responded with error status
+      console.error('📊 Response Status:', error.response.status);
+      console.error('📄 Response Data:', error.response.data);
+      
+      if (error.response.status === 400) {
+        throw new Error('Invalid username or password');
+      } else if (error.response.status === 401) {
+        throw new Error('Invalid credentials');
+      } else if (error.response.status === 404) {
+        throw new Error('Login endpoint not found. Check backend deployment.');
+      } else if (error.response.status === 500) {
+        // Check if it's an SSL error
+        if (error.message && error.message.includes('SSL')) {
+          throw new Error('Backend SSL error. The server may be restarting. Please try again in a moment.');
         }
-      );
-
-      console.log('✅ Login API call successful!');
-      console.log('📊 Response status:', response.status);
-      console.log('📦 Response data keys:', Object.keys(response.data || {}));
-
-      // Django returns: { access, refresh, user: { id, username, email, role, ... } }
-      const djangoResponse = response.data;
-
-      if (djangoResponse.access && djangoResponse.user) {
-        // Store access token (JWT)
-        await AsyncStorage.setItem('token', djangoResponse.access);
-        await AsyncStorage.setItem('refresh_token', djangoResponse.refresh);
-        await storage.setAuthToken(djangoResponse.access);
-
-        // Store user ID
-        if (djangoResponse.user.id) {
-          await storage.setUserId(djangoResponse.user.id.toString());
-        }
-
-        // Store role
-        if (djangoResponse.user.role) {
-          await storage.setItem(constants.STORAGE_KEYS.ROLE, djangoResponse.user.role);
-        }
-
-        // Convert Django response to legacy format for compatibility
-        const legacyResponse: LoginResponse = {
-          result: 'success',
-          role: djangoResponse.user.role === 'security_officer' ? 'security' : 'user',
-          security_id: djangoResponse.user.id.toString(),
-          name: djangoResponse.user.first_name || djangoResponse.user.username,
-          email_id: djangoResponse.user.email || djangoResponse.user.username,
-          mobile: djangoResponse.user.mobile || '',
-          security_role: djangoResponse.user.role || 'security_officer',
-          geofence_id: djangoResponse.user.geofence_id?.toString() || '',
-          user_image: djangoResponse.user.user_image || '',
-          status: djangoResponse.user.status || 'active',
-          // Include Django format fields
-          access: djangoResponse.access,
-          refresh: djangoResponse.refresh,
-          user: djangoResponse.user,
-        };
-
-        return legacyResponse;
-      }
-
-      // If response doesn't match expected format, return error
-      return {
-        result: 'failed',
-        role: 'user',
-        msg: 'Invalid response from server',
-      };
-    } catch (error: any) {
-      console.error('❌ LOGIN FAILED - Detailed Error Analysis:');
-      console.error('🔍 Error Type:', error.constructor.name);
-      console.error('💬 Error Message:', error.message);
-
-      // Detailed error analysis
-      if (error.response) {
-        // Server responded with error status
-        console.error('📊 SERVER RESPONSE ERROR:');
-        console.error('   Status:', error.response.status);
-        console.error('   Status Text:', error.response.statusText);
-        console.error('   Headers:', error.response.headers);
-        console.error('   Data:', JSON.stringify(error.response.data, null, 2));
-
-        const status = error.response.status;
-        const data = error.response.data;
-
-        if (status === 400) {
-          return {
-            result: 'failed',
-            role: 'user',
-            msg: data?.detail || data?.message || data?.non_field_errors?.[0] || 'Invalid credentials',
-          };
-        } else if (status === 401) {
-          return {
-            result: 'failed',
-            role: 'user',
-            msg: 'Invalid username or password',
-          };
-        } else if (status === 404) {
-          return {
-            result: 'failed',
-            role: 'user',
-            msg: 'Login endpoint not found. Backend may not be properly deployed.',
-          };
-        } else if (status === 429) {
-          return {
-            result: 'failed',
-            role: 'user',
-            msg: 'Too many login attempts. Please try again later.',
-          };
-        } else if (status >= 500) {
-          return {
-            result: 'failed',
-            role: 'user',
-            msg: 'Server error. Backend service may be down.',
-          };
-        }
-      } else if (error.request) {
-        // Request made but no response received
-        console.error('🌐 NETWORK ERROR (No Response):');
-        console.error('   Request Config:', {
-          url: error.request._url || error.request.url,
-          method: error.request._method || 'POST',
-          timeout: error.request._timeout || 'unknown'
-        });
-
-        // This is likely a Render service sleeping or network issue
-        console.error('🚨 POSSIBLE CAUSES:');
-        console.error('   1. Render free tier service is sleeping (wake it up)');
-        console.error('   2. Backend server is down');
-        console.error('   3. Network connectivity issues');
-        console.error('   4. CORS policy blocking requests');
-
-        return {
-          result: 'failed',
-          role: 'user',
-          msg: 'Cannot connect to server. The backend service may be sleeping (Render free tier) or unavailable. Please try again in 30-60 seconds.',
-        };
+        throw new Error('Server error. Please try again later.');
       } else {
-        // Something else happened
-        console.error('⚙️ UNKNOWN ERROR:', error);
-        return {
-          result: 'failed',
-          role: 'user',
-          msg: 'An unexpected error occurred. Please try again.',
-        };
+        throw new Error(`Login failed: ${error.response.data?.message || 'Unknown error'}`);
       }
-
-      return {
-        result: 'failed',
-        role: 'user',
-        msg: 'Login failed. Please check your credentials and try again.',
-      };
+    } else if (error.request) {
+      // No response received
+      console.error('🌐 No response received:', error.message);
+      
+      // Check for SSL/network errors
+      if (error.message && error.message.includes('SSL')) {
+        throw new Error('SSL connection failed. Backend may be unavailable. Please try again.');
+      }
+      throw new Error('Network error. Please check your connection and try again.');
+    } else {
+      // Other error
+      console.error('⚙️ UNKNOWN ERROR:', error.message);
+      
+      // Check for SSL errors
+      if (error.message && error.message.includes('SSL')) {
+        throw new Error('SSL connection error. Please try again.');
+      }
+      throw new Error('An unexpected error occurred. Please try again.');
     }
-  },
+  }
+};
 
-  logout: async (userId: string, role: string) => {
-    try {
-      // Attempt API logout (may not exist, which is fine)
-      await apiClient.post(API_ENDPOINTS.LOGOUT, {}, {
-        validateStatus: (status) => status < 500, // Accept 404 as OK
-      });
-    } catch (error: any) {
-      // 404 is expected if endpoint doesn't exist - silently handle it
-      if (error.response?.status !== 404) {
-        console.log('Logout API call failed, clearing local storage anyway');
-      }
-    }
+// Other auth functions
+export const logout = async (): Promise<void> => {
+  try {
+    await apiClient.post('/security/logout/');
+    console.log('✅ LOGOUT SUCCESSFUL');
+  } catch (error: any) {
+    console.error('❌ LOGOUT FAILED:', error);
+    throw new Error('Logout failed');
+  }
+};
 
-    // Clear all storage regardless of API response
-    await storage.clear();
-    await AsyncStorage.removeItem('token');
-    await AsyncStorage.removeItem('refresh_token');
+export const refreshToken = async (refresh: string): Promise<LoginResponse> => {
+  try {
+    const response = await apiClient.post('/security/refresh/', { refresh });
+    return response.data;
+  } catch (error: any) {
+    console.error('❌ TOKEN REFRESH FAILED:', error);
+    throw new Error('Token refresh failed');
+  }
+};
 
-    return { result: 'success', msg: 'Logged out successfully' };
-  },
+export const forgotPassword = async (email: string): Promise<void> => {
+  try {
+    await apiClient.post('/security/forgot-password/', { email });
+    console.log('✅ PASSWORD RESET EMAIL SENT');
+  } catch (error: any) {
+    console.error('❌ PASSWORD RESET FAILED:', error);
+    throw new Error('Password reset failed');
+  }
+};
 
-  forgotPassword: async (email: string) => {
-    try {
-      // Django REST API forgot password - call the actual backend endpoint
-      const response = await apiClient.post(API_ENDPOINTS.FORGOT_PASSWORD, {
-        email: email.trim().toLowerCase(),
-      });
+export const resetPassword = async (token: string, password: string): Promise<void> => {
+  try {
+    await apiClient.post('/security/reset-password/', { token, password });
+    console.log('✅ PASSWORD RESET SUCCESSFUL');
+  } catch (error: any) {
+    console.error('❌ PASSWORD RESET FAILED:', error);
+    throw new Error('Password reset failed');
+  }
+};
 
-      // Handle successful response (200, 201, etc.)
-      if (response.status >= 200 && response.status < 300) {
-        const message = response.data?.message ||
-                       response.data?.detail ||
-                       response.data?.msg ||
-                       'Password reset link sent to your email';
-
-        return {
-          result: 'success',
-          msg: message,
-        };
-      }
-
-      // Unexpected status code
-      throw new Error('Unexpected response from server');
-    } catch (error: any) {
-      // Handle specific error cases
-      if (error.response) {
-        const status = error.response.status;
-        const data = error.response.data;
-
-        // 404 - Endpoint doesn't exist
-        if (status === 404) {
-          throw new Error('Password reset endpoint not found. Please contact support.');
-        }
-
-        // 400 - Bad request (e.g., email not found, invalid email)
-        if (status === 400) {
-          const errorMsg = data?.email?.[0] ||
-                          data?.non_field_errors?.[0] ||
-                          data?.detail ||
-                          data?.message ||
-                          'Invalid email address or email not found';
-          throw new Error(errorMsg);
-        }
-
-        // 500 - Server error
-        if (status >= 500) {
-          throw new Error('Server error. Please try again later.');
-        }
-
-        // Other 4xx errors
-        const errorMsg = data?.detail ||
-                        data?.message ||
-                        data?.error ||
-                        'Failed to send password reset link';
-        throw new Error(errorMsg);
-      }
-
-      // Network error or other issues
-      if (error.code === 'ERR_NETWORK' || error.message?.includes('Network')) {
-        throw new Error('Network error. Please check your connection and try again.');
-      }
-
-      // Re-throw other errors
-      throw error;
-    }
-  },
-
-  // Refresh JWT token
-  refreshToken: async (refreshToken: string): Promise<string | null> => {
-    try {
-      const response = await apiClient.post(API_ENDPOINTS.REFRESH_TOKEN, {
-        refresh: refreshToken,
-      });
-
-      if (response.data.access) {
-        // Store new access token
-        await AsyncStorage.setItem('token', response.data.access);
-        await storage.setAuthToken(response.data.access);
-        return response.data.access;
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      return null;
-    }
-  },
+export const authService = {
+  login,
+  logout,
+  refreshToken,
+  forgotPassword,
+  resetPassword,
+  testBackendConnectivity,
 };

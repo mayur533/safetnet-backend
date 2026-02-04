@@ -13,11 +13,12 @@ import {
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { updateOfficerProfile } from '../../store/slices/authSlice';
 import { profileService } from '../../api/services/profileService';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import { shadows, spacing, typography } from '../../utils';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const UpdateProfileScreen = ({ navigation, route }: any) => {
+  const colors = useColors();
   const officer = useAppSelector((state) => state.auth.officer);
   const dispatch = useAppDispatch();
   const [isLoading, setIsLoading] = useState(false);
@@ -149,7 +150,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
@@ -158,10 +159,10 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.cardBackground, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -180,11 +181,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
       >
         {/* Name Field */}
         <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.darkText }]}>Full Name *</Text>
+          <Text style={[styles.label, { color: '#1F2937' }]}>Full Name *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
+            style={[styles.input, { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB', color: '#1F2937' }]}
             placeholder="Enter your full name"
-            placeholderTextColor={colors.inputPlaceholder}
+            placeholderTextColor="#9CA3AF"
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
@@ -193,11 +194,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Email Field */}
         <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.darkText }]}>Email *</Text>
+          <Text style={[styles.label, { color: '#1F2937' }]}>Email *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
+            style={[styles.input, { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB', color: '#1F2937' }]}
             placeholder="Enter your email"
-            placeholderTextColor={colors.inputPlaceholder}
+            placeholderTextColor="#9CA3AF"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -212,7 +213,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="Enter your phone number"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={mobile}
             onChangeText={setMobile}
             keyboardType="phone-pad"
@@ -225,7 +226,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="Enter badge number"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={badgeNumber}
             onChangeText={setBadgeNumber}
             autoCapitalize="characters"
@@ -238,7 +239,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="e.g., Morning Shift (6 AM - 2 PM)"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={shiftSchedule}
             onChangeText={setShiftSchedule}
             multiline
@@ -248,15 +249,15 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: isSaving ? colors.buttonDisabled : colors.buttonPrimary }, isSaving && styles.saveButtonDisabled]}
+          style={[styles.saveButton, { backgroundColor: isSaving ? '#E5E7EB' : '#2563EB' }, isSaving && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={isSaving}
           activeOpacity={0.8}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={[styles.saveButtonText, { color: colors.textOnPrimary }]}>SAVE CHANGES</Text>
+            <Text style={[styles.saveButtonText, { color: '#FFFFFF' }]}>SAVE CHANGES</Text>
           )}
         </TouchableOpacity>
 
@@ -276,18 +277,18 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: colors.darkText,
+    color: '#1F2937',
     fontWeight: '500',
   },
   header: {
@@ -297,9 +298,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 50,
     paddingBottom: 16,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E5E7EB',
+    borderBottomColor: '#E5E7EB',
     ...shadows.sm,
   },
   backButton: {
@@ -310,7 +311,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typography.screenHeader,
-    color: colors.darkText,
+    color: '#1F2937',
     fontSize: 18,
   },
   placeholder: {
@@ -329,22 +330,22 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.darkText,
+    color: '#1F2937',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.lightGrayBg || '#F9FAFB',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: colors.darkText,
+    color: '#1F2937',
     borderWidth: 1,
-    borderColor: colors.border || '#E5E7EB',
+    borderColor: '#E5E7EB',
   },
   saveButton: {
     height: 52,
-    backgroundColor: colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -358,22 +359,22 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.white,
+    color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   cancelButton: {
     height: 52,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.border || '#E5E7EB',
+    borderColor: '#E5E7EB',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.darkText,
+    color: '#1F2937',
     letterSpacing: 0.5,
   },
 });

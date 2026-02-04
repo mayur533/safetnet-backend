@@ -127,13 +127,18 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
             resolve(smoothedLocation);
           },
           (error: any) => {
-            console.error('❌ Real GPS error:', error);
+            // Reduce console noise for common GPS timeouts
+            if (error.code === 3) {
+              console.log('⏰ GPS timeout - trying faster fallback options...');
+            } else {
+              console.error('❌ GPS error:', error);
+            }
             
             let errorMessage = 'GPS not available';
             let shouldRetry = false;
             
             if (error.code === 3) {
-              errorMessage = 'GPS timeout. Move to open area and try again.';
+              errorMessage = 'GPS taking too long, using faster options...';
               shouldRetry = true;
             } else if (error.code === 2) {
               errorMessage = 'GPS unavailable. Enable location services.';
@@ -141,21 +146,68 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
               errorMessage = 'Location permission denied. Allow location access.';
             }
             
-            setGpsStatus('error');
+            setGpsStatus('waiting');
             setGpsMessage(errorMessage);
             
-            // For timeout errors, offer a retry option with cached location
+            // For timeout errors, try to get cached location as fallback
             if (shouldRetry) {
-              console.log('⏰ GPS timeout, offering retry with cached location...');
-              // You could add a retry button here that uses cached location
+              console.log('⏰ GPS timeout, trying cached location as fallback...');
+              
+              // Try to get cached location with very short timeout
+              Geolocation.getCurrentPosition(
+                (position) => {
+                  console.log('📍 Using cached GPS location as fallback');
+                  const { latitude, longitude, accuracy } = position.coords;
+                  
+                  if (accuracy > 100) {
+                    console.warn('⚠️ Cached GPS accuracy is poor:', accuracy, 'meters');
+                    setGpsStatus('weak');
+                    setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
+                  } else {
+                    console.log('✅ Cached GPS accuracy acceptable:', accuracy, 'meters');
+                    setGpsStatus('accurate');
+                    setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
+                  }
+                  
+                  resolve({
+                    latitude,
+                    longitude
+                  });
+                },
+                (fallbackError) => {
+                  console.log('❌ No cached location available either');
+                  setGpsStatus('weak');
+                  setGpsMessage('GPS unavailable - alert will be created without location');
+                  
+                  // Resolve with default location to allow alert creation
+                  resolve({
+                    latitude: 0,  // Default coordinates - will be handled by backend
+                    longitude: 0
+                  });
+                },
+                {
+                  enableHighAccuracy: false,  // Don't require high accuracy for fallback
+                  timeout: 5000,              // Very short timeout for cached location
+                  maximumAge: 300000          // Allow 5-minute old cached location
+                }
+              );
+              return; // Don't reject yet, wait for fallback
             }
             
-            reject(new Error(errorMessage));
+            // Final fallback - allow alert creation without GPS
+            setGpsStatus('weak');
+            setGpsMessage('GPS unavailable - alert will be created without location');
+            
+            // Resolve with default location to allow alert creation
+            resolve({
+              latitude: 0,  // Default coordinates - will be handled by backend
+              longitude: 0
+            });
           },
           {
-            enableHighAccuracy: true,
-            timeout: 8000,      // Reduced from 15s to 8s for faster response
-            maximumAge: 120000  // Allow 2-minute cache to reduce jumping
+            enableHighAccuracy: false,  // Start with lower accuracy for faster response
+            timeout: 8000,              // 8 seconds for alert creation (much faster!)
+            maximumAge: 30000          // Allow 30-second cache for faster response
           }
         );
       }).catch((error) => {

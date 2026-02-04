@@ -25,68 +25,103 @@ class SOSAlertSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'user', 'user_username', 'user_email', 'geofence', 'geofence_name',
             'alert_type', 'message', 'description', 'location_lat', 'location_long', 'status', 'priority',
-            'assigned_officer', 'assigned_officer_name', 'created_at', 'updated_at'
+            'assigned_officer', 'assigned_officer_name', 'created_at', 'updated_at',
+            # Area-based alert fields
+            'expires_at', 'affected_users_count', 'notification_sent', 'notification_sent_at'
         )
-        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_at', 'updated_at', 
+                           'affected_users_count', 'notification_sent', 'notification_sent_at')
 
 
 class SOSAlertCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SOSAlert
-        fields = ('id', 'alert_type', 'message', 'description', 'geofence', 'location_lat', 'location_long', 'priority', 'status', 'created_at')
+        fields = (
+            'id', 'alert_type', 'message', 'description', 'geofence', 
+            'location_lat', 'location_long', 'priority', 'status', 'created_at',
+            # Area-based alert fields
+            'expires_at'
+        )
         read_only_fields = ('id', 'status', 'created_at')
 
+    def validate_alert_type(self, value):
+        """Validate alert type is one of the allowed choices."""
+        valid_types = [choice[0] for choice in SOSAlert.ALERT_TYPE_CHOICES]
+        if value not in valid_types:
+            raise serializers.ValidationError(f"Invalid alert type. Must be one of: {valid_types}")
+        return value
+
+    def validate_expires_at(self, value):
+        """Validate expiry time for area-based alerts."""
+        if value is None:
+            return value
+        
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError("Expiry time cannot be in the past.")
+        
+        return value
+
+    def validate(self, attrs):
+        """Cross-field validation for area-based alerts."""
+        alert_type = attrs.get('alert_type')
+        expires_at = attrs.get('expires_at')
+        
+        # Area-based alerts require expiry time
+        if alert_type == 'area_user_alert' and not expires_at:
+            raise serializers.ValidationError({
+                'expires_at': 'Expiry time is required for area-based alerts.'
+            })
+        
+        # Regular alerts should not have expiry time
+        if alert_type != 'area_user_alert' and expires_at:
+            raise serializers.ValidationError({
+                'expires_at': 'Expiry time is only allowed for area-based alerts.'
+            })
+        
+        # Validate GPS coordinates for area-based alerts
+        if alert_type == 'area_user_alert':
+            lat = attrs.get('location_lat')
+            lon = attrs.get('location_long')
+            
+            if not lat or not lon:
+                raise serializers.ValidationError({
+                    'location_lat': 'GPS coordinates are required for area-based alerts.',
+                    'location_long': 'GPS coordinates are required for area-based alerts.'
+                })
+            
+            # Validate coordinate ranges
+            if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
+                raise serializers.ValidationError({
+                    'location_lat': 'Latitude must be between -90 and 90 degrees.',
+                    'location_long': 'Longitude must be between -180 and 180 degrees.'
+                })
+        
+        return attrs
+
     def create(self, validated_data):
+        """
+        Create alert with backend-authoritative logic.
+        For area-based alerts, the backend handles all geofence and user targeting.
+        """
         validated_data['user'] = self.context['request'].user
         
-        # CRITICAL FIX: Automatically assign the alert to the current officer
-        # This ensures the officer can see their own created alerts
-        officer = self.context['request'].user
-        validated_data['assigned_officer'] = officer
-        print(f"✅ Automatically assigned alert to officer: {officer.username}")
-        
-        # Automatically assign the officer's first geofence if no geofence is provided
-        if not validated_data.get('geofence'):
-            if officer.geofences.exists():
-                # Try to assign geofence based on location coordinates
-                if validated_data.get('location_lat') and validated_data.get('location_long'):
-                    # Find geofence that contains the alert location
-                    from django.contrib.gis.geos import Point
-                    alert_location = Point(validated_data['location_long'], validated_data['location_lat'], srid=4326)
-                    
-                    # Find the geofence that contains this point
-                    matching_geofence = None
-                    for geofence in officer.geofences.all():
-                        if geofence.geofence_type == 'circle':
-                            # Check if point is within circular geofence
-                            from django.contrib.gis.measure import Distance
-                            center_point = Point(geofence.center_longitude, geofence.center_latitude, srid=4326)
-                            distance_meters = alert_location.distance(center_point) * 111320  # Approximate conversion to meters
-                            if distance_meters <= (geofence.radius or 1000):  # Default 1km radius
-                                matching_geofence = geofence
-                                break
-                        elif geofence.geofence_type == 'polygon':
-                            # Check if point is within polygon geofence
-                            if geofence.polygon_json:
-                                from django.contrib.gis.geos import GEOSGeometry
-                                polygon = GEOSGeometry(geofence.polygon_json)
-                                if polygon.contains(alert_location):
-                                    matching_geofence = geofence
-                                    break
-                    
-                    if matching_geofence:
-                        validated_data['geofence'] = matching_geofence
-                        print(f"✅ Automatically assigned geofence based on location: {matching_geofence.name}")
-                    else:
-                        # Fallback to first geofence if location doesn't match any
-                        validated_data['geofence'] = officer.geofences.first()
-                        print(f"⚠️ Location doesn't match any geofence, assigned first geofence: {validated_data['geofence'].name}")
-                else:
-                    # No coordinates provided, use first geofence
+        # For area-based alerts, don't auto-assign geofence - backend will handle it
+        if validated_data.get('alert_type') == 'area_user_alert':
+            # Backend will determine geofence assignment based on officer's assigned areas
+            logger.info(f"🚨 Creating area-based alert, backend will handle geofence assignment")
+        else:
+            # Regular alerts: maintain existing geofence assignment logic
+            officer = self.context['request'].user
+            validated_data['assigned_officer'] = officer
+            
+            # Auto-assign geofence if not provided (existing logic)
+            if not validated_data.get('geofence'):
+                if officer.geofences.exists():
                     validated_data['geofence'] = officer.geofences.first()
-                    print(f"✅ No location provided, assigned first geofence: {validated_data['geofence'].name}")
-            else:
-                print("⚠️ Officer has no geofences, alert will not be visible to any officer")
+                    logger.info(f"✅ Assigned geofence: {validated_data['geofence'].name}")
+                else:
+                    logger.warning("⚠️ Officer has no geofences assigned")
         
         return super().create(validated_data)
 

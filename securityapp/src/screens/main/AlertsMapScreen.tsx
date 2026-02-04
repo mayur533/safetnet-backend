@@ -4,6 +4,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
 import { LeafletMap } from '../../components/maps/LeafletMap';
+import { officerGeofenceService } from '../../services/officerGeofenceService';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import { calculateDistance } from '../../utils/helpers';
@@ -43,6 +44,39 @@ export const AlertsMapScreen = () => {
   };
 
   const [isLoading, setIsLoading] = useState(false);
+
+  // Officer geofences state
+  const [officerGeofences, setOfficerGeofences] = useState<any[]>([]);
+  const [officerGeofenceCoords, setOfficerGeofenceCoords] = useState<any[]>([]);
+
+  // Fetch officer assigned geofences
+  useEffect(() => {
+    const fetchOfficerGeofences = async () => {
+      try {
+        console.log('🔍 Fetching officer assigned geofences for AlertsMapScreen...');
+        
+        // Mock officer ID - in real app, this would come from auth context
+        const mockOfficerId = 'officer_001';
+        
+        const geofences = await officerGeofenceService.getOfficerAssignedGeofences(mockOfficerId);
+        const geofenceCoords = await officerGeofenceService.getAllOfficerGeofenceCoordinates(mockOfficerId);
+        
+        setOfficerGeofences(geofences);
+        setOfficerGeofenceCoords(geofenceCoords);
+        
+        console.log('✅ Officer geofences fetched for AlertsMapScreen:', {
+          count: geofences.length,
+          names: geofences.map(g => g.name),
+          coordinatesCount: geofenceCoords.length
+        });
+        
+      } catch (error: any) {
+        console.error('❌ Failed to fetch officer geofences for AlertsMapScreen:', error);
+      }
+    };
+
+    fetchOfficerGeofences();
+  }, []);
 
   // Calculate distance between officer and alert location
   const distance = calculateDistance(
@@ -180,10 +214,18 @@ export const AlertsMapScreen = () => {
         <LeafletMap
           latitude={alert.location.latitude}
           longitude={alert.location.longitude}
+          officerLatitude={officerLocation.latitude}
+          officerLongitude={officerLocation.longitude}
           zoom={15}
           height={500}
           markerTitle={`Alert: ${alert.alert_type}`}
           showMarker={false} // We'll use custom markers in the HTML
+          multiplePolygons={officerGeofenceCoords.map(gf => ({
+            id: gf.id,
+            name: gf.name,
+            coordinates: gf.coordinates,
+            color: '#2563eb' // Blue for officer zones
+          }))}
         />
       </View>
 

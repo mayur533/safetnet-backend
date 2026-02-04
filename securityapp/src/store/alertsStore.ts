@@ -11,13 +11,14 @@ interface AlertsState {
   // Actions
   fetchAlerts: () => Promise<void>;
   createAlert: (alertData: {
-    alert_type: 'emergency' | 'security' | 'general';
+    alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
     latitude?: number;
     longitude?: number;
     location?: string;
     priority?: 'high' | 'medium' | 'low';
+    expires_at?: string; // For area-based alerts
   }) => Promise<Alert>;
   updateAlert: (id: string | number, updateData: Partial<Alert>) => Promise<void>;
   deleteAlert: (id: string | number) => Promise<void>;
@@ -42,7 +43,7 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
   error: null,
   lastUpdated: null,
 
-  // Fetch alerts from API with cache-busting
+  // Fetch alerts from API with backend-authoritative area filtering
   fetchAlerts: async () => {
     const { alerts, lastUpdated } = get();
     
@@ -60,12 +61,15 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      console.log('🔄 Fetching alerts from API with fresh data...');
-      const { alertService } = await import('../api/services/alertService');
-      const alerts = await alertService.getAlerts();
+      console.log('🔄 Fetching alerts from API with backend-authoritative area filtering...');
+      console.log(`🔐 Backend will identify officer from authentication context`);
+      
+      // Use the new backend-authoritative alert service
+      const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
+      const alerts = await alertServiceWithGeofenceFilter.getAlerts();
 
       // ALWAYS replace the alerts array with fresh data - never merge
-      console.log('🔄 Replacing entire alerts array with fresh data...');
+      console.log('🔄 Replacing entire alerts array with backend-filtered data...');
       set({
         alerts: alerts || [], // Always use fresh data, never merge with old
         isLoading: false,
@@ -73,18 +77,20 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${alerts.length} fresh alerts from API`);
+      console.log(`✅ Fetched ${alerts.length} backend-filtered alerts from API`);
       console.log(`🕒 Store updated at: ${new Date().toISOString()}`);
       console.log(`🔍 Store now contains ${get().alerts?.length || 0} alerts`);
       
       // CRITICAL: Log exact counts for debugging
-      console.log('🔍 CRITICAL DEBUG - Store Update Analysis:');
+      console.log('🗺️ BACKEND-AUTHORITATIVE FILTERING DEBUG - Store Update Analysis:');
+      console.log(`   🔐 Officer Identification: Backend (from auth context)`);
       console.log(`   📊 Alerts received from API: ${alerts.length}`);
       console.log(`   📊 Alerts stored in Zustand: ${get().alerts?.length || 0}`);
+      console.log(`   🗺️ Backend Filtering: AUTHENTICATED`);
       console.log(`   📊 Store replacement: ${alerts.length === (get().alerts?.length || 0) ? 'SUCCESS' : 'MISMATCH'}`);
       
       if (alerts.length > 0) {
-        console.log('📋 Latest alerts from API:');
+        console.log('📋 Latest backend-filtered alerts from API:');
         alerts.slice(0, 3).forEach((alert, index) => {
           console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status}) - ${alert.created_at}`);
         });
@@ -97,7 +103,7 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
         console.log('📊 Alert status distribution:', statusCounts);
       }
     } catch (error: any) {
-      console.error('❌ Failed to fetch alerts:', error);
+      console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error);
       
       // Handle specific error cases
       let errorMessage = 'Failed to fetch alerts';
@@ -127,9 +133,9 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
     console.log('🚀 Creating alert via API:', alertData);
 
     try {
-      // Make API call first (no optimistic updates)
-      const { alertService } = await import('../api/services/alertService');
-      const createdAlert = await alertService.createAlert(alertData);
+      // Make API call first (no optimistic updates) - use backend-authoritative service
+      const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
+      const createdAlert = await alertServiceWithGeofenceFilter.createAlert(alertData);
       console.log('✅ Alert created successfully via API:', createdAlert.id);
 
       // Add the real alert to the store
@@ -141,6 +147,16 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
 
       console.log('📦 Alert added to store with real data');
       console.log('🔄 Total alerts in store after creation:', get().alerts.length);
+      
+      // Log area-based alert specific information
+      if (createdAlert.alert_type === 'area_user_alert') {
+        console.log('📊 Area-based alert created:', {
+          id: createdAlert.id,
+          affected_users: createdAlert.affected_users_count,
+          notification_sent: createdAlert.notification_sent,
+          expires_at: createdAlert.expires_at
+        });
+      }
       
       // IMPORTANT: Fetch fresh data to ensure store is fully synchronized
       // This prevents issues where some alerts might be missing from the UI
@@ -358,7 +374,7 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
   getResolvedAlertsCount: () => {
     const { alerts } = get();
     return alerts.filter(alert => 
-      alert.status === 'completed' || alert.status === 'resolved'
+      alert.status === 'completed' || alert.status === 'resolved' || alert.status === 'accepted'
     ).length;
   },
 }));

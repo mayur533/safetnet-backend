@@ -2,21 +2,28 @@ import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
 import { Alert } from '../../types/alert.types';
 
-export const alertService = {
+export const alertServiceWithGeofenceFilter = {
 
-  // Get all alerts with cache-busting
+  // Get all alerts with backend-authoritative area filtering
+  // Backend automatically identifies officer from authentication context
   getAlerts: async (): Promise<Alert[]> => {
     try {
-      console.log('📡 GET /sos/ - Fetching alerts from API with cache-busting...');
+      console.log('📡 GET /sos/ - Fetching alerts with backend-authoritative area filtering...');
+      console.log('🔐 Backend will identify officer from authentication context');
       
-      // Add cache-busting timestamp to ensure fresh data
+      // Add cache-busting timestamp only
+      // Backend will handle officer identification and geofence filtering automatically
       const timestamp = Date.now();
-      const response = await apiClient.get(`${API_ENDPOINTS.LIST_SOS}?_t=${timestamp}`);
+      let apiUrl = `${API_ENDPOINTS.LIST_SOS}?_t=${timestamp}`;
+      
+      console.log(`🗺️ Backend filtering enabled - No frontend parameters needed`);
+      
+      const response = await apiClient.get(apiUrl);
       
       let alertsData: any[] = [];
 
-      // CRITICAL: Handle different response structures
-      console.log('🔍 CRITICAL DEBUG - Raw Response Analysis:');
+      // Handle different response structures
+      console.log('🔍 Backend Response Analysis:');
       console.log(`   📊 Response type: ${typeof response.data}`);
       console.log(`   📊 Response keys: ${Object.keys(response.data)}`);
       console.log(`   📊 Has results: ${!!response.data.results}`);
@@ -33,9 +40,9 @@ export const alertService = {
           pageSize: response.data.results?.length || 0
         });
         
-        // CRITICAL: If there are more pages, fetch them all
+        // If there are more pages, fetch them all (backend maintains filtering)
         if (response.data.next) {
-          console.log('🔄 Fetching additional pages...');
+          console.log('🔄 Fetching additional pages with backend filtering...');
           let nextPage = response.data.next;
           let allAlerts = [...alertsData];
           
@@ -67,23 +74,14 @@ export const alertService = {
         return [];
       }
 
-      console.log(`📥 Raw API response: ${alertsData.length} alerts`);
+      console.log(`📥 Backend-filtered alerts received: ${alertsData.length} alerts`);
       console.log(`📥 Response timestamp: ${new Date().toISOString()}`);
       
-      // Log full response structure for debugging
-      console.log('🔍 Full API response structure:', {
-        hasResults: !!response.data.results,
-        isArray: Array.isArray(response.data),
-        resultsLength: response.data.results?.length || 0,
-        directArrayLength: Array.isArray(response.data) ? response.data.length : 0,
-        fullResponse: response.data
-      });
-      
-      // Log first few alerts details
+      // Log filtered alerts details
       if (alertsData.length > 0) {
-        console.log('📋 First 3 alerts from API:');
+        console.log('📋 First 3 alerts from backend:');
         alertsData.slice(0, 3).forEach((alert, index) => {
-          console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Created:${alert.created_at}`);
+          console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Location:${alert.location_lat},${alert.location_long}`);
         });
       }
 
@@ -111,24 +109,21 @@ export const alertService = {
         updated_at: alert.updated_at
       }));
 
-      console.log('✅ Fetched alerts:', transformedAlerts.length, 'alerts');
+      console.log('✅ Backend-authoritative alerts processed:', transformedAlerts.length, 'alerts');
       console.log('🕒 Latest alert timestamp:', transformedAlerts.length > 0 ? 
         transformedAlerts[0].created_at : 'No alerts');
       
-      // CRITICAL: Log exact counts for debugging
-      console.log('🔍 CRITICAL DEBUG - API Response Analysis:');
-      console.log(`   📊 Total alerts from API: ${transformedAlerts.length}`);
-      console.log(`   📊 Response structure: ${response.data.results ? 'PAGINATED' : 'DIRECT_ARRAY'}`);
-      console.log(`   📊 Full response keys: ${Object.keys(response.data)}`);
-      
-      if (response.data.results) {
-        console.log(`   📊 Pagination count: ${response.data.count}`);
-        console.log(`   📊 Current page size: ${response.data.results.length}`);
-      }
+      // Log filtering results
+      console.log('🗺️ BACKEND-AUTHORITATIVE FILTERING RESULTS:');
+      console.log(`   🔐 Officer Identification: Backend (from auth context)`);
+      console.log(`   🗺️ Geofence Loading: Backend (from database)`);
+      console.log(`   📨 Alerts Received: ${transformedAlerts.length}`);
+      console.log(`   🔍 Backend Filtering: AUTHENTICATED`);
+      console.log(`   🛡️ Security: Frontend unaware of geofence logic`);
       
       return transformedAlerts;
     } catch (error: any) {
-      console.error('❌ Failed to fetch alerts:', error.message || error);
+      console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error.message || error);
       console.error('🔍 Error details:', error.response?.data || error);
       
       // Check for SSL connection errors
@@ -143,18 +138,23 @@ export const alertService = {
         return getMockAlerts();
       }
       
-      // CRITICAL: NO FALLBACK - return empty array to force error visibility
-      // This ensures we don't show stale cached alerts when API fails
-      console.log('🚨 CRITICAL: API failed - returning empty array to prevent stale data');
+      // Return empty array to force error visibility
+      console.log('🚨 Backend filtering failed - returning empty array');
       return [];
     }
   },
 
-  // Get recent alerts only
+  // Get recent alerts with backend-authoritative filtering
   getRecentAlerts: async (limit: number = 5): Promise<Alert[]> => {
     try {
-      console.log(`📡 GET /sos/ - Fetching all alerts and taking recent ${limit}`);
-      const response = await apiClient.get(API_ENDPOINTS.LIST_SOS);
+      console.log(`📡 GET /sos/ - Fetching recent alerts with backend-authoritative filtering (limit: ${limit})`);
+      
+      let apiUrl = API_ENDPOINTS.LIST_SOS;
+      
+      // Backend will handle all filtering based on authenticated officer
+      apiUrl += `?limit=${limit}`;
+      
+      const response = await apiClient.get(apiUrl);
       
       let alertsData: any[] = [];
 
@@ -167,17 +167,8 @@ export const alertService = {
         return [];
       }
 
-      // Sort by created_at timestamp (newest first) and take the limit
-      const sortedAlerts = alertsData.sort((a: any, b: any) => {
-        const dateA = new Date(a.created_at || a.timestamp).getTime();
-        const dateB = new Date(b.created_at || b.timestamp).getTime();
-        return dateB - dateA;
-      });
-
-      const recentAlerts = sortedAlerts.slice(0, limit);
-
-      // Transform the alerts to ensure they have the correct fields
-      const transformedAlerts = recentAlerts.map((alert: any) => ({
+      // Transform the alerts
+      const transformedAlerts = alertsData.map((alert: any) => ({
         ...alert,
         id: typeof alert.id === 'number' ? alert.id : parseInt(alert.id) || alert.pk || alert.alert_id,
         log_id: alert.log_id || '',
@@ -200,38 +191,44 @@ export const alertService = {
         updated_at: alert.updated_at
       }));
 
-      console.log(`✅ Fetched ${transformedAlerts.length} recent alerts`);
+      console.log(`✅ Fetched ${transformedAlerts.length} recent alerts with backend-authoritative filtering`);
       return transformedAlerts;
     } catch (error: any) {
-      console.error('❌ Failed to fetch recent alerts:', error.message || error);
+      console.error('❌ Failed to fetch recent alerts with backend-authoritative filtering:', error.message || error);
       return [];
     }
   },
 
-  // Get active alerts only
+  // Get active alerts with backend-authoritative filtering
   getActiveAlerts: async (): Promise<Alert[]> => {
     try {
-      const response = await apiClient.get(API_ENDPOINTS.GET_ACTIVE_SOS);
+      let apiUrl = API_ENDPOINTS.GET_ACTIVE_SOS;
+      
+      // Backend will identify officer and filter automatically
+      const response = await apiClient.get(apiUrl);
       return response.data;
     } catch (error) {
-      console.error('Error fetching active alerts:', error);
+      console.error('Error fetching active alerts with backend-authoritative filtering:', error);
       throw error;
     }
   },
 
-  // Get resolved alerts only
+  // Get resolved alerts with backend-authoritative filtering
   getResolvedAlerts: async (): Promise<Alert[]> => {
     try {
-      const response = await apiClient.get(API_ENDPOINTS.GET_RESOLVED_SOS);
+      let apiUrl = API_ENDPOINTS.GET_RESOLVED_SOS;
+      
+      // Backend will identify officer and filter automatically
+      const response = await apiClient.get(apiUrl);
       return response.data;
     } catch (error: any) {
-      console.error('Error fetching resolved alerts:', error);
+      console.error('Error fetching resolved alerts with backend-authoritative filtering:', error);
       console.error('Error details:', error.response?.data || error);
       return [];
     }
   },
 
-  // Get alert by ID
+  // Other methods remain the same as original alertService
   getAlertById: async (id: string): Promise<Alert> => {
     try {
       console.log(`📡 GET /sos/${id} - Fetching alert details`);
@@ -254,7 +251,6 @@ export const alertService = {
             parsed_lat: lat,
             parsed_lng: lng
           });
-          // Set to default invalid location
           alertData.location = {
             latitude: 0,
             longitude: 0,
@@ -268,12 +264,6 @@ export const alertService = {
           };
           
           console.log('✅ Transformed location object:', alertData.location);
-          console.log('📍 Exact GPS coordinates:', {
-            latitude: lat,
-            longitude: lng,
-            precision: '6 decimal places (≈1m accuracy)',
-            valid: true
-          });
         }
       } else {
         console.warn('⚠️ No location coordinates found in alert data');
@@ -284,20 +274,6 @@ export const alertService = {
         };
       }
       
-      // Ensure geofence data is properly included
-      if (alertData.geofence_id && !alertData.geofence) {
-        console.log('🗺️ Alert has geofence_id but no geofence object - backend should include full geofence data');
-      }
-      
-      console.log('🎯 Final alert data for map:', {
-        id: alertData.id,
-        hasLocation: !!(alertData.location?.latitude && alertData.location?.longitude),
-        coordinates: alertData.location?.latitude && alertData.location?.longitude 
-          ? `${alertData.location.latitude}, ${alertData.location.longitude}`
-          : 'None',
-        geofence: alertData.geofence?.name || 'None'
-      });
-      
       return alertData;
     } catch (error) {
       console.error('Error fetching alert:', error);
@@ -305,7 +281,6 @@ export const alertService = {
     }
   },
 
-  // Accept/respond to alert
   acceptAlert: async (id: string): Promise<Alert> => {
     try {
       const response = await apiClient.patch(API_ENDPOINTS.UPDATE_SOS.replace('{id}', String(id)), {
@@ -318,9 +293,8 @@ export const alertService = {
     }
   },
 
-  // Create alert
   createAlert: async (alertData: {
-    alert_type: 'emergency' | 'security' | 'general';
+    alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
     latitude?: number;
@@ -329,10 +303,13 @@ export const alertService = {
     location_long?: number;
     location?: string;
     priority?: 'high' | 'medium' | 'low';
+    expires_at?: string; // For area-based alerts
   }): Promise<Alert> => {
     // Format data to match backend expectations
-    const apiData = {
-      alert_type: alertData.alert_type === 'general' ? 'normal' : alertData.alert_type,
+    const apiData: any = {
+      alert_type: alertData.alert_type === 'general' ? 'normal' : 
+                  alertData.alert_type === 'area_user_alert' ? 'area_user_alert' : 
+                  alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
       location_lat: alertData.latitude || alertData.location_lat,
@@ -341,10 +318,17 @@ export const alertService = {
       priority: alertData.priority || 'medium',
     };
 
+    // Add expiry for area-based alerts
+    if (alertData.alert_type === 'area_user_alert' && alertData.expires_at) {
+      apiData.expires_at = alertData.expires_at;
+    }
+
     console.log('📍 GPS Alert Creation Debug:');
+    console.log('   📤 Alert Type:', apiData.alert_type);
     console.log('   📤 Sending latitude:', apiData.location_lat);
     console.log('   📤 Sending longitude:', apiData.location_long);
     console.log('   📍 Location source:', apiData.location);
+    console.log('   ⏰ Expires at:', apiData.expires_at || 'Not set');
 
     // Validate that we have actual GPS coordinates
     if (!apiData.location_lat || !apiData.location_long) {
@@ -353,17 +337,9 @@ export const alertService = {
 
     try {
       console.log('📡 Creating alert with data:', apiData);
-      console.log('📤 POST /sos/ request payload:', JSON.stringify(apiData, null, 2));
-
       const response = await apiClient.post(API_ENDPOINTS.CREATE_SOS, apiData);
 
-      console.log('📥 POST /sos/ response:', {
-        status: response.status,
-        data: response.data,
-        id: response.data.id,
-        alert_type: response.data.alert_type,
-        message: response.data.message
-      });
+      console.log('📥 POST /sos/ response:', response.data);
       console.log('✅ Alert created, response:', response.data);
 
       // Transform the response to ensure it matches our Alert interface
@@ -376,7 +352,7 @@ export const alertService = {
         user_email: response.data.user_email || '',
         user_phone: response.data.user_phone || '',
         alert_type: response.data.alert_type || apiData.alert_type,
-        priority: response.data.priority || (apiData.alert_type === 'emergency' ? 'high' : 'medium'),
+        priority: response.data.priority || (apiData.alert_type === 'emergency' || apiData.alert_type === 'area_user_alert' ? 'high' : 'medium'),
         message: response.data.message || apiData.message,
         location: response.data.location || {
           latitude: apiData.location_lat,
@@ -387,10 +363,21 @@ export const alertService = {
         status: response.data.status || 'pending',
         geofence_id: response.data.geofence_id || '',
         created_at: response.data.created_at || response.data.timestamp || new Date().toISOString(),
-        updated_at: response.data.updated_at
+        updated_at: response.data.updated_at,
+        // Area-based alert specific fields
+        affected_users_count: response.data.affected_users_count,
+        notification_sent: response.data.notification_sent,
+        expires_at: response.data.expires_at,
       };
 
       console.log('🔄 Transformed created alert:', createdAlert.id);
+      console.log('📊 Area-based alert info:', {
+        type: createdAlert.alert_type,
+        affected_users: createdAlert.affected_users_count,
+        notification_sent: createdAlert.notification_sent,
+        expires_at: createdAlert.expires_at
+      });
+      
       return createdAlert;
     } catch (error: any) {
       console.error('Failed to create alert:', error.message || error);
@@ -399,7 +386,6 @@ export const alertService = {
     }
   },
 
-  // Update alert
   updateAlert: async (id: string | number, updateData: Partial<Alert>): Promise<Alert> => {
     try {
       console.log('📡 Updating alert:', id, updateData);
@@ -455,7 +441,6 @@ export const alertService = {
     }
   },
 
-  // Delete alert
   deleteAlert: async (id: number): Promise<void> => {
     try {
       console.log('📡 Deleting alert:', id);
@@ -479,7 +464,6 @@ export const alertService = {
     }
   },
 
-  // Resolve alert
   resolveAlert: async (id: string | number): Promise<Alert> => {
     try {
       console.log('📡 Resolving alert:', id);
@@ -520,7 +504,6 @@ export const alertService = {
     }
   },
 
-  // Get dashboard data
   getDashboardData: async (): Promise<any> => {
     try {
       const response = await apiClient.get(API_ENDPOINTS.DASHBOARD);
@@ -596,43 +579,6 @@ const getMockAlerts = (): Alert[] => {
       },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    },
-    {
-      id: 998,
-      log_id: 'mock_002',
-      user_id: '2',
-      user_name: 'Another User',
-      user_email: 'another@example.com',
-      user_phone: '+0987654321',
-      alert_type: 'emergency',
-      priority: 'high',
-      message: 'Emergency situation',
-      description: 'Another mock alert for testing',
-      location: {
-        latitude: 18.5215,
-        longitude: 73.8575,
-        address: 'Mock Location 2, Pune'
-      },
-      location_lat: 18.5215,
-      location_long: 73.8575,
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      status: 'pending',
-      geofence_id: '8',
-      geofence: {
-        id: '8',
-        name: 'Test Zone 2',
-        description: 'Second test geofence',
-        center_latitude: 18.5215,
-        center_longitude: 73.8575,
-        radius: 300,
-        geofence_type: 'circle',
-        polygon_json: undefined,
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      created_at: new Date(Date.now() - 3600000).toISOString(),
-      updated_at: new Date(Date.now() - 3600000).toISOString(),
     }
   ];
   

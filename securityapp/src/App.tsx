@@ -5,6 +5,10 @@
  * @format
  */
 
+declare global {
+  var __REMOTEDEV__: boolean;
+}
+
 import React, { useEffect } from 'react';
 import { StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,14 +16,15 @@ import { Provider, useDispatch } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 import { store, persistor } from './store';
 import { AppNavigator } from './navigation/AppNavigator';
-import { ThemeProvider } from './contexts/ThemeContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginSuccess } from './store/slices/authSlice';
+import Toast from 'react-native-toast-message';
 
 // Disable debugger connections to prevent registration errors
 if (__DEV__) {
   // Disable remote debugging connections
-  console.disableDebugger = true;
+  (console as any).disableDebugger = true;
   // Prevent debugger WebSocket connections
   global.__REMOTEDEV__ = false;
 }
@@ -60,10 +65,14 @@ function AuthPersistenceWrapper({ children }: { children: React.ReactNode }) {
 
 // Component that uses theme context for status bar
 function AppContent() {
-  // Temporarily use light theme status bar to avoid ThemeProvider issues
+  const { currentTheme } = useTheme();
+  
   return (
     <AuthPersistenceWrapper>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar 
+        barStyle={currentTheme === 'dark' ? 'light-content' : 'dark-content'} 
+        backgroundColor={currentTheme === 'dark' ? '#000000' : '#FFFFFF'}
+      />
       <AppNavigator />
     </AuthPersistenceWrapper>
   );
@@ -77,6 +86,7 @@ function App() {
           <SafeAreaProvider>
             <AppContent />
           </SafeAreaProvider>
+          <Toast ref={(ref) => {}} />
         </ThemeProvider>
       </PersistGate>
     </Provider>

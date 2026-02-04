@@ -16,9 +16,6 @@ import {useSettingsStore} from './src/stores/settingsStore';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import AppNavigator from './src/navigation/AppNavigator';
 import {LightAppTheme, DarkAppTheme} from './src/theme/navigationThemes';
-import {getAsyncStorage} from './src/utils/asyncStorageInit';
-import {UpgradeModal} from './src/components/common/UpgradeModal';
-import {NetworkErrorToast} from './src/components/common/NetworkErrorToast';
 import {navigationRef} from './src/navigation/navigationRef';
 
 const RootStack = createStackNavigator();
@@ -33,20 +30,20 @@ function App(): React.JSX.Element {
   const systemScheme = useColorScheme();
 
   useEffect(() => {
-    // Initialize AsyncStorage first, then load app state
+    // Simplified initialization
     const initializeApp = async () => {
       try {
-        // Initialize AsyncStorage early
-        await getAsyncStorage();
-        console.log('✓ AsyncStorage initialized in App.tsx');
+        console.log('🚀 Starting app initialization...');
         
         // Load auth state on app start to restore session
         await loadAuth();
+        console.log('✅ Auth state loaded');
         
         // Load settings
         await loadSettings();
+        console.log('✅ Settings loaded');
       } catch (error) {
-        console.error('Error initializing app:', error);
+        console.error('❌ Error initializing app:', error);
       }
     };
     
@@ -104,7 +101,8 @@ function App(): React.JSX.Element {
         <SafeAreaProvider>
           <View style={[styles.loadingContainer, {backgroundColor: navigationTheme.colors.background}]}>
             <StatusBar barStyle={statusBarStyle} backgroundColor={navigationTheme.colors.background} />
-            {/* You can add a loading spinner here if needed */}
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={{marginTop: 10, color: resolvedScheme === 'dark' ? 'white' : 'black'}}>Loading...</Text>
           </View>
         </SafeAreaProvider>
       </SafeGestureHandlerRootView>
@@ -123,8 +121,6 @@ function App(): React.JSX.Element {
               <RootStack.Screen name="AuthStack" component={AuthNavigator} />
             )}
           </RootStack.Navigator>
-          <UpgradeModal />
-          <NetworkErrorToast />
         </NavigationContainer>
       </SafeAreaProvider>
     </SafeGestureHandlerRootView>

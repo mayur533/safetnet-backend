@@ -21,6 +21,13 @@ class SOSAlert(models.Model):
         ('high', 'High'),
     ]
 
+    ALERT_TYPE_CHOICES = [
+        ('emergency', 'Emergency'),
+        ('security', 'Security'),
+        ('general', 'General'),
+        ('area_user_alert', 'Area User Alert'),
+    ]
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -33,7 +40,11 @@ class SOSAlert(models.Model):
         blank=True,
         related_name='sos_alerts'
     )
-    alert_type = models.CharField(max_length=20, default='security')  # emergency, security, general
+    alert_type = models.CharField(
+        max_length=20, 
+        choices=ALERT_TYPE_CHOICES, 
+        default='security'
+    )
     message = models.TextField(blank=True, default='')
     description = models.TextField(blank=True, default='')
     location_lat = models.FloatField()
@@ -52,6 +63,26 @@ class SOSAlert(models.Model):
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # Area-based alert specific fields
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Expiry time for area-based alerts"
+    )
+    affected_users_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of users affected by this area-based alert"
+    )
+    notification_sent = models.BooleanField(
+        default=False,
+        help_text="Whether push notifications have been sent for this alert"
+    )
+    notification_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when notifications were sent"
+    )
 
     class Meta:
         ordering = ['-created_at']
@@ -231,3 +262,89 @@ class Notification(models.Model):
         self.is_read = True
         self.read_at = timezone.now()
         self.save(update_fields=['is_read', 'read_at'])
+
+
+class UserLocation(models.Model):
+    """
+    Stores the last known GPS coordinates of users for area-based alert targeting.
+    This model enables precise geographic targeting of evacuation alerts.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='last_location',
+        help_text="User whose location is being tracked"
+    )
+    latitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=8,
+        help_text="Last known latitude of the user"
+    )
+    longitude = models.DecimalField(
+        max_digits=11,
+        decimal_places=8,
+        help_text="Last known longitude of the user"
+    )
+    accuracy = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="GPS accuracy in meters"
+    )
+    altitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Altitude in meters above sea level"
+    )
+    speed = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Speed in meters per second"
+    )
+    heading = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Heading in degrees (0-360)"
+    )
+    location_timestamp = models.DateTimeField(
+        help_text="Timestamp when the GPS location was recorded"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'User Location'
+        verbose_name_plural = 'User Locations'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"UserLocation for {self.user.username}: {self.latitude}, {self.longitude}"
+
+    def update_location(self, latitude, longitude, accuracy=None, altitude=None, speed=None, heading=None, location_timestamp=None):
+        """Update user's GPS location with new coordinates."""
+        self.latitude = latitude
+        self.longitude = longitude
+        if accuracy is not None:
+            self.accuracy = accuracy
+        if altitude is not None:
+            self.altitude = altitude
+        if speed is not None:
+            self.speed = speed
+        if heading is not None:
+            self.heading = heading
+        if location_timestamp is not None:
+            self.location_timestamp = location_timestamp
+        else:
+            from django.utils import timezone
+            self.location_timestamp = timezone.now()
+        self.save()
+
+    def is_location_fresh(self, max_age_hours=24):
+        """Check if the location data is fresh enough for alert targeting."""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        if not self.location_timestamp:
+            return False
+        
+        age = timezone.now() - self.location_timestamp
+        return age.total_seconds() <= (max_age_hours * 3600)

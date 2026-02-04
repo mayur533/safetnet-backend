@@ -62,5 +62,19 @@ export const colors = {
   buttonDisabled: '#E2E8F0',
 };
 
-// Export static colors for light theme
-export const useColors = () => colors;
+// Theme-aware hook that uses the theme context
+export const useColors = () => {
+  try {
+    // Try to use theme context with proper import
+    const themeContext = require('../contexts/ThemeContext');
+    if (themeContext && themeContext.useTheme) {
+      const { useTheme } = themeContext;
+      const { colors: themeColors } = useTheme();
+      return themeColors;
+    }
+  } catch (error) {
+    // Fallback to static colors if theme context is not available
+    console.warn('Theme context not available, using static colors');
+  }
+  return colors;
+};
