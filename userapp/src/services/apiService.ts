@@ -18,8 +18,8 @@ getAsyncStorage().then((storage) => {
   console.error('Failed to initialize AsyncStorage in apiService:', error);
 });
 
-// API Base URL configuration - use local server for development
-const API_BASE_URL = 'http://127.0.0.1:8000/api/user';
+// API Base URL configuration - use live server
+const API_BASE_URL = 'https://safetnet-backend.onrender.com/api/user';
 
 // Get the working API base URL
 let cachedApiBaseUrl: string | null = null;

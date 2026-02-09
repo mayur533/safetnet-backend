@@ -1,6 +1,41 @@
 import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
 import { Alert } from '../../types/alert.types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Storage keys for local alerts
+const LOCAL_ALERTS_KEY = '@local_alerts';
+
+// Helper functions for local alert persistence
+const saveLocalAlert = async (alert: Alert): Promise<void> => {
+  try {
+    const existingLocalAlerts = await AsyncStorage.getItem(LOCAL_ALERTS_KEY);
+    const localAlerts: Alert[] = existingLocalAlerts ? JSON.parse(existingLocalAlerts) : [];
+    
+    // Add new local alert at the beginning
+    localAlerts.unshift(alert);
+    
+    // Limit to 50 local alerts
+    const limitedLocalAlerts = localAlerts.slice(0, 50);
+    
+    await AsyncStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(limitedLocalAlerts));
+    console.log('💾 Local alert saved:', alert.id);
+  } catch (error) {
+    console.error('❌ Failed to save local alert:', error);
+  }
+};
+
+const getLocalAlerts = async (): Promise<Alert[]> => {
+  try {
+    const existingLocalAlerts = await AsyncStorage.getItem(LOCAL_ALERTS_KEY);
+    const localAlerts: Alert[] = existingLocalAlerts ? JSON.parse(existingLocalAlerts) : [];
+    console.log('📂 Loaded local alerts:', localAlerts.length);
+    return localAlerts;
+  } catch (error) {
+    console.error('❌ Failed to load local alerts:', error);
+    return [];
+  }
+};
 
 export const alertServiceWithGeofenceFilter = {
 
@@ -79,7 +114,7 @@ export const alertServiceWithGeofenceFilter = {
       
       // Log filtered alerts details
       if (alertsData.length > 0) {
-        console.log('📋 First 3 alerts from backend:');
+        console.log(' First 3 alerts from backend:');
         alertsData.slice(0, 3).forEach((alert, index) => {
           console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Location:${alert.location_lat},${alert.location_long}`);
         });
@@ -102,6 +137,8 @@ export const alertServiceWithGeofenceFilter = {
           longitude: alert.longitude || alert.location_long || 0,
           address: alert.address || 'Unknown location'
         },
+        location_lat: alert.location_lat || alert.latitude || 0,
+        location_long: alert.location_long || alert.longitude || 0,
         timestamp: alert.timestamp || alert.created_at || new Date().toISOString(),
         status: alert.status || 'pending',
         geofence_id: alert.geofence_id || '',
@@ -109,37 +146,65 @@ export const alertServiceWithGeofenceFilter = {
         updated_at: alert.updated_at
       }));
 
+      // Sort alerts by created_at in descending order (most recent first)
+      transformedAlerts.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA; // Most recent first
+      });
+
+      // Always include local alerts
+      const localAlerts = await getLocalAlerts();
+      console.log(' Loading local alerts:', localAlerts.length);
+      
+      // Combine backend and local alerts
+      const allAlerts = [...transformedAlerts, ...localAlerts];
+      
+      // Sort combined alerts by created_at (most recent first)
+      allAlerts.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+
       console.log('✅ Backend-authoritative alerts processed:', transformedAlerts.length, 'alerts');
-      console.log('🕒 Latest alert timestamp:', transformedAlerts.length > 0 ? 
-        transformedAlerts[0].created_at : 'No alerts');
+      console.log('📱 Local alerts loaded:', localAlerts.length, 'alerts');
+      console.log('🔢 Total alerts (combined):', allAlerts.length, 'alerts');
+      console.log('🕒 Latest alert timestamp:', allAlerts.length > 0 ? 
+        allAlerts[0].created_at : 'No alerts');
+      console.log('📊 Alerts sorted by created_at (most recent first)');
+      console.log('🔝 First 3 alerts timestamps:');
+      allAlerts.slice(0, 3).forEach((alert, index) => {
+        console.log(`   ${index + 1}. ${alert.created_at} (${alert.id}) ${alert.isLocal ? '(LOCAL)' : '(BACKEND)'}`);
+      });
       
-      // Log filtering results
-      console.log('🗺️ BACKEND-AUTHORITATIVE FILTERING RESULTS:');
-      console.log(`   🔐 Officer Identification: Backend (from auth context)`);
-      console.log(`   🗺️ Geofence Loading: Backend (from database)`);
-      console.log(`   📨 Alerts Received: ${transformedAlerts.length}`);
-      console.log(`   🔍 Backend Filtering: AUTHENTICATED`);
-      console.log(`   🛡️ Security: Frontend unaware of geofence logic`);
-      
-      return transformedAlerts;
+      return allAlerts;
     } catch (error: any) {
       console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error.message || error);
       console.error('🔍 Error details:', error.response?.data || error);
       
       // Check for SSL connection errors
       if (error.message && error.message.includes('SSL connection has been closed unexpectedly')) {
-        console.log('🔐 SSL connection error detected - using mock data fallback');
-        return getMockAlerts();
+        console.log('🔐 SSL connection error detected - unable to fetch alerts');
+        throw new Error('SSL connection error. Please check your network connection and try again.');
       }
       
       // Check for network/connection errors
       if (error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') {
-        console.log('🌐 Network error detected - using mock data fallback');
-        return getMockAlerts();
+        console.log('🌐 Network error detected - unable to fetch alerts');
+        throw new Error('Network connection error. Please check your internet connection and try again.');
       }
       
-      // Return empty array to force error visibility
-      console.log('🚨 Backend filtering failed - returning empty array');
+      // Return empty array for other backend errors
+      console.log('🚨 Backend filtering failed - returning local alerts if available');
+      
+      // Try to return local alerts as fallback
+      const localAlerts = await getLocalAlerts();
+      if (localAlerts.length > 0) {
+        console.log('📱 Returning local alerts as fallback:', localAlerts.length);
+        return localAlerts;
+      }
+      
       return [];
     }
   },
@@ -191,13 +256,33 @@ export const alertServiceWithGeofenceFilter = {
         updated_at: alert.updated_at
       }));
 
-      console.log(`✅ Fetched ${transformedAlerts.length} recent alerts with backend-authoritative filtering`);
-      return transformedAlerts;
-    } catch (error: any) {
-      console.error('❌ Failed to fetch recent alerts with backend-authoritative filtering:', error.message || error);
-      return [];
-    }
-  },
+    // Sort alerts by created_at in descending order (most recent first)
+      transformedAlerts.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+
+      // Include local alerts in recent alerts
+      const localAlerts = await getLocalAlerts();
+      const allRecentAlerts = [...transformedAlerts, ...localAlerts];
+      
+      // Sort combined alerts and apply limit
+      allRecentAlerts.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      
+      const limitedAlerts = allRecentAlerts.slice(0, limit);
+
+      console.log(`✅ Fetched ${limitedAlerts.length} recent alerts (${transformedAlerts.length} backend + ${localAlerts.length} local)`);
+      return limitedAlerts;
+  } catch (error: any) {
+    console.error('❌ Failed to fetch recent alerts with backend-authoritative filtering:', error.message || error);
+    return [];
+  }
+},
 
   // Get active alerts with backend-authoritative filtering
   getActiveAlerts: async (): Promise<Alert[]> => {
@@ -297,24 +382,22 @@ export const alertServiceWithGeofenceFilter = {
     alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    latitude?: number;
-    longitude?: number;
-    location_lat?: number;
-    location_long?: number;
-    location?: string;
+    // Location fields removed - backend handles location assignment
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
   }): Promise<Alert> => {
-    // Format data to match backend expectations
-    const apiData: any = {
-      alert_type: alertData.alert_type === 'general' ? 'normal' : 
-                  alertData.alert_type === 'area_user_alert' ? 'area_user_alert' : 
-                  alertData.alert_type,
+    // Create API payload without location data - backend handles location assignment
+    const apiData: {
+      alert_type: string;
+      message: string;
+      description: string;
+      priority: string;
+      expires_at?: string;
+    } = {
+      alert_type: alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
-      location_lat: alertData.latitude || alertData.location_lat,
-      location_long: alertData.longitude || alertData.location_long,
-      location: alertData.location || 'Current Location',
+      // Location fields removed - backend handles location assignment
       priority: alertData.priority || 'medium',
     };
 
@@ -323,17 +406,15 @@ export const alertServiceWithGeofenceFilter = {
       apiData.expires_at = alertData.expires_at;
     }
 
-    console.log('📍 GPS Alert Creation Debug:');
+    console.log('📤 Alert Creation Debug (Backend-Authoritative):');
     console.log('   📤 Alert Type:', apiData.alert_type);
-    console.log('   📤 Sending latitude:', apiData.location_lat);
-    console.log('   📤 Sending longitude:', apiData.location_long);
-    console.log('   📍 Location source:', apiData.location);
-    console.log('   ⏰ Expires at:', apiData.expires_at || 'Not set');
+    console.log('   📤 Message:', apiData.message);
+    console.log('   📤 Priority:', apiData.priority);
+    console.log('   📤 Expires at:', apiData.expires_at || 'Not set');
+    console.log('   🚫 Location data removed - backend will handle location assignment');
 
-    // Validate that we have actual GPS coordinates
-    if (!apiData.location_lat || !apiData.location_long) {
-      throw new Error('GPS coordinates are required to create an alert. Please enable location services.');
-    }
+    // No location validation needed - backend handles location assignment
+    console.log('📤 Sending alert data without location - backend will handle location assignment');
 
     try {
       console.log('📡 Creating alert with data:', apiData);
@@ -355,9 +436,9 @@ export const alertServiceWithGeofenceFilter = {
         priority: response.data.priority || (apiData.alert_type === 'emergency' || apiData.alert_type === 'area_user_alert' ? 'high' : 'medium'),
         message: response.data.message || apiData.message,
         location: response.data.location || {
-          latitude: apiData.location_lat,
-          longitude: apiData.location_long,
-          address: apiData.location
+          latitude: 0,
+          longitude: 0,
+          address: 'Backend assigned location'
         },
         timestamp: response.data.timestamp || response.data.created_at || new Date().toISOString(),
         status: response.data.status || 'pending',
@@ -382,6 +463,106 @@ export const alertServiceWithGeofenceFilter = {
     } catch (error: any) {
       console.error('Failed to create alert:', error.message || error);
       console.error('Error details:', error.response?.data || error);
+      
+      // Check if this is a backend logger issue
+      if (error.message?.includes('logger') || error.response?.data?.message?.includes('logger')) {
+        console.error('🔍 BACKEND ISSUE: The server is missing logger import.');
+        console.error('📝 Backend team needs to add: import logging; logger = logging.getLogger(__name__)');
+        
+        // Temporary workaround: Create alert using a simplified approach
+        console.log('🔄 Attempting workaround for backend logger issue...');
+        
+        try {
+          // Try creating alert with minimal data to avoid logger usage
+          const simplifiedAlertData = {
+            alert_type: apiData.alert_type,
+            message: apiData.message,
+            priority: apiData.priority || 'medium',
+            // Location fields removed - backend handles location assignment
+          };
+          
+          console.log('📤 Sending simplified alert data:', simplifiedAlertData);
+          const response = await apiClient.post(API_ENDPOINTS.CREATE_SOS, simplifiedAlertData);
+          
+          console.log('✅ Alert created with workaround:', response.data);
+          
+          // Transform the response to ensure it matches our Alert interface
+          const createdAlert = {
+            ...response.data,
+            id: typeof response.data.id === 'number' ? response.data.id : parseInt(response.data.id) || response.data.pk || response.data.alert_id || Date.now(),
+            log_id: response.data.log_id || `workaround_${Date.now()}`,
+            user_id: response.data.user_id || '1',
+            user_name: response.data.user_name || 'Security Officer',
+            user_email: response.data.user_email || '',
+            user_phone: response.data.user_phone || '',
+            alert_type: response.data.alert_type || apiData.alert_type || 'security',
+            priority: response.data.priority || apiData.priority || 'medium',
+            message: response.data.message || apiData.message,
+            description: response.data.description || apiData.description || apiData.message,
+            location: response.data.location || {
+              latitude: 0,
+              longitude: 0,
+              address: 'Backend assigned location'
+            },
+            location_lat: response.data.location_lat || 0,
+            location_long: response.data.location_long || 0,
+            timestamp: response.data.timestamp || response.data.created_at || new Date().toISOString(),
+            status: response.data.status || 'pending',
+            geofence_id: response.data.geofence_id || '',
+            created_at: response.data.created_at || response.data.timestamp || new Date().toISOString(),
+            updated_at: response.data.updated_at || new Date().toISOString(),
+          };
+          
+          console.log('🔄 Transformed workaround alert:', createdAlert.id);
+          return createdAlert;
+          
+        } catch (workaroundError: any) {
+          console.error('❌ Workaround also failed:', workaroundError);
+          console.error('🔍 Workaround error details:', {
+            message: workaroundError?.message,
+            status: workaroundError?.response?.status,
+            data: workaroundError?.response?.data,
+            stack: workaroundError?.stack
+          });
+          
+          // If workaround fails, create a local alert that syncs later
+          console.log('📱 Creating local alert for later sync...');
+          
+          const localAlert = {
+            id: Date.now(), // Use number ID to match Alert interface
+            log_id: `local_${Date.now()}`,
+            user_id: '1',
+            user_name: 'Security Officer',
+            user_email: '',
+            user_phone: '',
+            alert_type: apiData.alert_type === 'general' ? 'normal' as const : apiData.alert_type as 'emergency' | 'security' | 'area_user_alert',
+            priority: (apiData.priority || 'medium') as 'high' | 'medium' | 'low',
+            message: apiData.message,
+            description: apiData.description || apiData.message,
+            location: {
+              latitude: 0,
+              longitude: 0,
+              address: 'Backend assigned location'
+            },
+            location_lat: 0,
+            location_long: 0,
+            timestamp: new Date().toISOString(),
+            status: 'pending' as const,
+            geofence_id: '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            isLocal: true, // Flag for local alerts
+          };
+          
+          console.log('✅ Local alert created for later sync:', localAlert.id);
+          
+          // Save local alert for persistence
+          await saveLocalAlert(localAlert);
+          
+          return localAlert;
+        }
+      }
+      
       throw error;
     }
   },
@@ -527,61 +708,4 @@ export const alertServiceWithGeofenceFilter = {
       };
     }
   },
-};
-
-// Mock alerts function for SSL/network error fallback
-const getMockAlerts = (): Alert[] => {
-  console.log('🎭 Using mock alerts data due to SSL/network issues');
-  
-  const mockAlerts: Alert[] = [
-    {
-      id: 999,
-      log_id: 'mock_001',
-      user_id: '1',
-      user_name: 'Test User',
-      user_email: 'test@example.com',
-      user_phone: '+1234567890',
-      alert_type: 'security',
-      priority: 'high',
-      message: 'Security assistance needed',
-      description: 'Mock alert for testing geofence display',
-      location: {
-        latitude: 18.5204,
-        longitude: 73.8567,
-        address: 'Mock Location, Pune'
-      },
-      location_lat: 18.5204,
-      location_long: 73.8567,
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      geofence_id: '7',
-      geofence: {
-        id: '7',
-        name: 'Jay Ganesh Vision',
-        description: 'Test geofence for mock data',
-        center_latitude: 18.5204,
-        center_longitude: 73.8567,
-        radius: 500,
-        geofence_type: 'polygon',
-        polygon_json: JSON.stringify({
-          type: 'Polygon',
-          coordinates: [[
-            [73.8560, 18.5200], // [longitude, latitude]
-            [73.8570, 18.5200],
-            [73.8570, 18.5210],
-            [73.8560, 18.5210],
-            [73.8560, 18.5200]
-          ]]
-        }),
-        status: 'active',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  ];
-  
-  console.log('✅ Generated', mockAlerts.length, 'mock alerts');
-  return mockAlerts;
 };

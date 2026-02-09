@@ -217,68 +217,33 @@ class ZoneTrackingService {
   }
 
   /**
-   * Check if a point is inside a zone (polygon or circle)
+   * Check if a point is inside a zone - DISABLED (backend handles geofence logic)
    */
   private isPointInZone(latitude: number, longitude: number, zone: Geofence): boolean {
-    try {
-      if (zone.geofence_type === 'polygon' && zone.polygon_json) {
-        return this.isPointInPolygon(latitude, longitude, zone.polygon_json);
-      } else if (zone.geofence_type === 'circle') {
-        return this.isPointInCircle(latitude, longitude, zone.center_latitude, zone.center_longitude, zone.radius || 1000);
-      }
-      return false;
-    } catch (error) {
-      console.error('❌ Error checking zone membership:', error);
-      return false;
-    }
+    console.log('🚫 Zone tracking disabled - frontend no longer handles geofence calculations');
+    // Backend handles all geofence logic, frontend should not perform zone detection
+    // Return false instead of performing calculations
+    return false;
   }
 
   /**
-   * Check if point is inside a polygon
+   * Check if point is inside a polygon - DISABLED (backend handles geofence logic)
    */
   private isPointInPolygon(latitude: number, longitude: number, polygonJson: string): boolean {
-    try {
-      const polygon = JSON.parse(polygonJson);
-      if (polygon.type !== 'Polygon' || !polygon.coordinates || !polygon.coordinates[0]) {
-        return false;
-      }
-
-      const coordinates = polygon.coordinates[0]; // Outer ring
-      const point = [longitude, latitude]; // GeoJSON format is [lng, lat]
-
-      // Ray casting algorithm
-      let inside = false;
-      for (let i = 0, j = coordinates.length - 1; i < coordinates.length; j = i++) {
-        const xi = coordinates[i][0], yi = coordinates[i][1];
-        const xj = coordinates[j][0], yj = coordinates[j][1];
-
-        const intersect = ((yi > point[1]) !== (yj > point[1]))
-          && (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-
-      return inside;
-    } catch (error) {
-      console.error('❌ Error parsing polygon:', error);
-      return false;
-    }
+    console.log('🚫 Zone tracking disabled - frontend no longer handles polygon calculations');
+    // Backend handles all geofence logic, frontend should not perform polygon detection
+    // Return false instead of performing calculations
+    return false;
   }
 
   /**
-   * Check if point is inside a circle
+   * Check if point is inside a circle - DISABLED (backend handles geofence logic)
    */
   private isPointInCircle(latitude: number, longitude: number, centerLat: number, centerLng: number, radius: number): boolean {
-    // Calculate distance using Haversine formula
-    const R = 6371000; // Earth's radius in meters
-    const dLat = (latitude - centerLat) * Math.PI / 180;
-    const dLon = (longitude - centerLng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(latitude * Math.PI / 180) * Math.cos(centerLat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = R * c;
-
-    return distance <= radius;
+    console.log('🚫 Zone tracking disabled - frontend no longer handles circle calculations');
+    // Backend handles all geofence logic, frontend should not perform circle detection
+    // Return false instead of performing calculations
+    return false;
   }
 
   /**

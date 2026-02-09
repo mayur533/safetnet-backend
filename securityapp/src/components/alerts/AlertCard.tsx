@@ -101,6 +101,35 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
 
   const badgeStyle = getBadgeStyle();
 
+  const getLeftAccentColor = () => {
+    // Emergency alerts get red
+    if (isEmergency) {
+      return colors.emergencyRed;
+    }
+    
+    // Completed/resolved alerts get green
+    if (isCompleted) {
+      return colors.successGreen;
+    }
+    
+    // Accepted alerts get orange
+    if (isAccepted) {
+      return colors.warningOrange;
+    }
+    
+    // Different colors based on alert type
+    switch (alert.alert_type) {
+      case 'security':
+        return colors.infoBlue;  // Blue for security
+      case 'area_user_alert':
+        return '#8B5CF6';  // Purple for area alerts
+      case 'normal':
+        return '#6B7280';  // Gray for normal
+      default:
+        return colors.infoBlue;  // Default blue
+    }
+  };
+
   // Get officer display name with fallbacks
   const getOfficerDisplayName = (): string => {
     // Priority 1: user_name (should contain full name like "John Doe")
@@ -143,17 +172,13 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
       style={[
         { backgroundColor: colors.cardBackground },
         styles(colors).card,
-        isEmergency && styles(colors).emergencyCard,
-        isCompleted && styles(colors).completedCard,
       ]}
     >
       <View
         style={[
           styles(colors).leftAccent,
           {
-            backgroundColor: isEmergency
-              ? colors.emergencyRed
-              : (isCompleted ? colors.successGreen : colors.infoBlue),
+            backgroundColor: getLeftAccentColor(),
           },
         ]}
       />
@@ -206,15 +231,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
             {getOfficerDisplayName()}
           </Text>
           
-          {/* Location indicator */}
-          {(alert.location_lat && alert.location_long) && (
-            <View style={styles(colors).locationContainer}>
-              <Icon name="location-on" size={12} color={colors.mediumText} />
-              <Text style={styles(colors).locationText}>
-                {alert.location_lat.toFixed(4)}, {alert.location_long.toFixed(4)}
-              </Text>
-            </View>
-          )}
+          {/* Location indicator removed - frontend no longer displays GPS coordinates */}
           <Text style={[styles(colors).message, isCompleted && styles(colors).completedText]} numberOfLines={2}>
             {alert.message}
           </Text>
@@ -311,7 +328,8 @@ const styles = (colors: any) => StyleSheet.create({
     ...shadows.emergency,
   },
   completedCard: {
-    opacity: 0.6,
+    // Remove opacity reduction to keep visual consistency
+    // opacity: 0.6,
   },
   leftAccent: {
     position: 'absolute',
@@ -400,17 +418,6 @@ const styles = (colors: any) => StyleSheet.create({
     letterSpacing: -0.2,
     marginBottom: 4,
   },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  locationText: {
-    fontSize: 11,
-    color: colors.mediumText,
-    marginLeft: 4,
-    fontStyle: 'italic',
-  },
   message: {
     fontSize: 14,
     fontWeight: '400',
@@ -428,10 +435,12 @@ const styles = (colors: any) => StyleSheet.create({
     fontWeight: '400',
     color: colors.lightText,
     marginTop: 2,
-    opacity: 0.8,
+    // Remove opacity reduction for visual consistency
+    // opacity: 0.8,
   },
   completedText: {
-    opacity: 0.7,
+    // Remove opacity reduction to keep visual consistency
+    // opacity: 0.7,
   },
   bottomButtonsContainer: {
     flexDirection: 'row',

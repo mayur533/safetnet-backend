@@ -115,8 +115,8 @@ export const darkTheme: ThemeColors = {
   textOnPrimary: '#FFFFFF',
 
   // Border and separator colors
-  border: '#374151',
-  divider: '#374151',
+  border: '#6B7280',
+  divider: '#6B7280',
 
   // Status colors
   success: '#10B981',

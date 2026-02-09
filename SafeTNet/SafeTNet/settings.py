@@ -45,6 +45,7 @@ ALLOWED_HOSTS.append('safetnet.onrender.com')
 ALLOWED_HOSTS.append('safetnet-backend.onrender.com')
 ALLOWED_HOSTS.append('192.168.0.125')  # Local network IP for device testing
 ALLOWED_HOSTS.append('192.168.1.26')   # Your current IP for device testing
+ALLOWED_HOSTS.append('192.168.0.100')   # Current machine IP for Android device
 
 # Add Render domain if on Render
 if os.getenv('RENDER'):

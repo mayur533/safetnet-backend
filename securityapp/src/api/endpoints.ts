@@ -64,6 +64,12 @@ export const API_ENDPOINTS = {
   UPDATE_LIVE_LOCATION: '/live_location/{session_id}/', // PATCH
   STOP_LIVE_LOCATION: '/live_location/{session_id}/', // DELETE
 
+  // ==================== ADMIN/SUBADMIN ASSIGNMENT ====================
+  // Geofence assignment APIs for subadmin functionality
+  ASSIGN_GEOFENCE_TO_OFFICER: '/admin/officers/{officer_id}/geofences/', // POST
+  DEACTIVATE_GEOFENCE_ASSIGNMENT: '/admin/officers/{officer_id}/geofences/{geofence_id}/', // PATCH
+  GET_OFFICER_GEOFENCES: '/officers/{officer_id}/geofences/', // GET
+
   // ==================== LEGACY/ADDITIONAL (not in documented API) ====================
   // These are kept for backward compatibility or may be used by frontend
   // NOTE: These endpoints may not exist - use live_location endpoints instead

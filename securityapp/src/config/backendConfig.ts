@@ -1,6 +1,6 @@
 // Backend Configuration
-// Local development URL
-const BACKEND_BASE_URL = 'http://127.0.0.1:8000';
+// Replace with your real Render URL, include the protocol
+const BACKEND_BASE_URL = 'https://safetnet.onrender.com';
 
 export default {
   BASE_URL: BACKEND_BASE_URL,

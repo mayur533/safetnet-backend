@@ -152,11 +152,20 @@ dependencies {
         implementation jscFlavor
     }
     
+    // Manually add react-native-safe-area-context dependency
+    implementation(project(':react-native-safe-area-context'))
+    // Manually add react-native-screens dependency
+    implementation(project(':react-native-screens'))
+    // Manually add react-native-linear-gradient dependency
+    implementation(project(':react-native-linear-gradient'))
+    // Manually add AsyncStorage dependency
+    implementation(project(':react-native-async-storage_async-storage'))
+    // Geolocation should be autolinked - removed manual dependency to avoid conflicts
+    // Manually add react-native-sensors dependency
+    implementation(project(':react-native-sensors'))
+
     // Google Play Services location provider for react-native-geolocation-service
     implementation("com.google.android.gms:play-services-location:21.0.1")
-    
-    // Manually add geolocation package to fix linking issue
-    implementation(project(':react-native-community-geolocation'))
     
     // React Native Maps - use autolinking instead of manual linking for New Architecture compatibility
     // implementation(project(':react-native-maps'))

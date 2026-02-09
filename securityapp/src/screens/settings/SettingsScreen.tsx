@@ -24,7 +24,6 @@ interface SettingItem {
   selectedTheme?: string;
   onThemeChange?: (theme: string) => void;
 }
-import { logout } from '../../store/slices/authSlice';
 import { authService } from '../../api/services';
 import { useTheme } from '../../contexts/ThemeContext';
 import { typography, spacing } from '../../utils';
@@ -48,73 +47,158 @@ export const SettingsScreen = ({ navigation }: any) => {
       paddingHorizontal: spacing.base,
       paddingTop: 50,
       paddingBottom: spacing.md,
-      backgroundColor: colors.white,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      backgroundColor: colors.cardBackground,
+      borderBottomLeftRadius: 24,
+      borderBottomRightRadius: 24,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
     },
     backButton: {
-      width: 40,
-      height: 40,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.background,
       justifyContent: 'center',
       alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
     },
     headerTitle: {
       ...typography.screenHeader,
       color: colors.darkText,
-      fontSize: 18,
+      fontSize: 24,
+      fontWeight: '700',
+      letterSpacing: -0.5,
     },
     placeholder: {
       width: 40,
     },
     scrollView: {
       flex: 1,
+      backgroundColor: colors.background,
     },
     section: {
+      paddingHorizontal: spacing.md,
       marginBottom: spacing.md,
-      paddingHorizontal: spacing.base,
     },
     sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: spacing.sm,
-      gap: spacing.sm,
+      marginBottom: spacing.md,
     },
     sectionIcon: {
-      marginRight: spacing.xs,
+      width: 28,
+      height: 28,
+      borderRadius: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: spacing.md,
     },
     sectionTitle: {
       ...typography.cardTitle,
-      color: colors.primary,
-      textTransform: 'uppercase',
-      fontSize: 12,
-      letterSpacing: 1,
+      color: colors.darkText,
+      fontSize: 18,
+      fontWeight: '700',
+      letterSpacing: -0.2,
     },
     sectionContent: {
-      borderRadius: 8,
-      borderWidth: 1,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 12,
+      padding: spacing.md,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+      overflow: 'hidden',
+    },
+    themeOptionsRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      marginTop: spacing.sm,
+    },
+    themeOptionContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.sm,
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: colors.border,
+      backgroundColor: colors.cardBackground,
+      marginHorizontal: 4,
+      minHeight: 80,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    selectedThemeOptionContainer: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 6,
+      transform: [{ scale: 1.02 }],
+    },
+    themeOptionIconContainer: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xs,
+    },
+    selectedThemeIconContainer: {
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    settingTitle: {
+      ...typography.body,
+      fontWeight: '600',
+      color: colors.darkText,
+      fontSize: 16,
+      flex: 1,
+    },
+    settingSubtitle: {
+      ...typography.caption,
+      marginTop: 4,
+      color: colors.mediumText,
+      fontSize: 13,
     },
     settingItem: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: spacing.md,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
       borderBottomWidth: 1,
+      backgroundColor: colors.cardBackground,
     },
     settingContent: {
       flex: 1,
-    },
-    settingTitle: {
-      ...typography.body,
-      fontWeight: '500',
-    },
-    settingSubtitle: {
-      ...typography.caption,
-      marginTop: 2,
+      flexDirection: 'column',
     },
     actionButton: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: 6,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: 8,
+      backgroundColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
     },
     actionButtonDisabled: {
       opacity: 0.6,
@@ -124,97 +208,213 @@ export const SettingsScreen = ({ navigation }: any) => {
     },
     themeOptions: {
       flexDirection: 'row',
-      gap: 8,
+      gap: 0,
     },
     themeContainer: {
       flexDirection: 'row',
-      gap: 8,
-      paddingVertical: 2,
+      alignItems: 'flex-start',
+      justifyContent: 'space-around',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.base,
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+      marginHorizontal: spacing.base,
+      marginVertical: 0,
     },
     themeOptionCard: {
       flex: 1,
       padding: spacing.xs,
-      borderRadius: 8,
-      alignItems: 'center',
+      borderRadius: 12,
+      alignItems: 'flex-start',
       justifyContent: 'center',
-      minHeight: 45,
-      position: 'relative',
+      minHeight: 10,
+      backgroundColor: colors.background,
+      borderWidth: 2,
+      borderColor: 'transparent',
     },
     themeOptionContent: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: 2,
     },
     themeOption: {
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-      borderRadius: 6,
+      width: 100,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.lg,
+      borderRadius: 12,
       borderWidth: 1,
-      minWidth: 80,
-      alignItems: 'center',
+      backgroundColor: colors.background,
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+      elevation: 3,
     },
     themeOptionText: {
       ...typography.caption,
-      fontWeight: '500',
-      fontSize: 10,
+      fontWeight: '600',
+      fontSize: 13,
       textAlign: 'center',
     },
     selectedIndicator: {
       position: 'absolute',
-      top: 4,
-      right: 4,
-      borderRadius: 10,
+      top: 8,
+      right: 8,
+      borderRadius: 12,
       width: 20,
       height: 20,
       alignItems: 'center',
       justifyContent: 'center',
+      backgroundColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 3,
     },
-    logoutButton: {
+    dropdownContainer: {
+      marginHorizontal: 0,
+      marginBottom: 0,
+      paddingVertical: 0,
+    },
+    dropdownButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      margin: spacing.base,
-      padding: spacing.md,
+      justifyContent: 'space-between',
+      backgroundColor: colors.background,
       borderRadius: 8,
-      marginBottom: spacing.xl,
+      padding: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
-    logoutButtonText: {
-      ...typography.buttonMedium,
+    dropdownContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    dropdownText: {
+      ...typography.body,
+      color: colors.darkText,
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    dropdownArrow: {
+      marginLeft: spacing.xs,
+    },
+    dropdownOptions: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+      marginTop: spacing.sm,
+    },
+    dropdownOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    selectedDropdownOption: {
+      backgroundColor: colors.primary,
+    },
+    dropdownOptionText: {
+      ...typography.body,
+      color: colors.darkText,
+      fontSize: 16,
+      fontWeight: '500',
+      flex: 1,
+    },
+    selectedDropdownOptionText: {
+      color: colors.white,
+      fontWeight: '600',
+    },
+    optionCheck: {
       marginLeft: spacing.sm,
+    },
+    themeSelectorContainer: {
+      paddingVertical: spacing.sm,
+    },
+    sectionDescription: {
+      ...typography.caption,
+      color: colors.mediumText,
+      fontSize: 14,
+      marginBottom: spacing.sm,
+    },
+    themeOptionsContainer: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    themeOptionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.cardBackground,
+      flex: 1,
+    },
+    selectedThemeOption: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    themeOptionButtonText: {
+      ...typography.caption,
+      color: colors.darkText,
+      fontSize: 13,
+      fontWeight: '600',
+      textAlign: 'center',
+      letterSpacing: 0.2,
+    },
+    selectedThemeOptionText: {
+      color: colors.white,
+      fontWeight: '700',
+    },
+    themeOptionsInline: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    themeOptionInline: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.cardBackground,
+      gap: 4,
+    },
+    selectedThemeOptionInline: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    themeOptionInlineText: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: colors.darkText,
+    },
+    selectedThemeOptionInlineText: {
+      color: colors.white,
       fontWeight: '600',
     },
   });
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (officer) {
-                await authService.logout();
-              }
-              dispatch(logout());
-              navigation.replace('Login');
-            } catch (error) {
-              console.error('Logout error:', error);
-              dispatch(logout());
-              navigation.replace('Login');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const settingsSections = [
     {
       title: 'Appearance',
+      icon: 'palette',
       items: [
         {
           title: 'Theme',
@@ -234,6 +434,7 @@ export const SettingsScreen = ({ navigation }: any) => {
     },
     {
       title: 'Notifications',
+      icon: 'notifications',
       items: [
         {
           title: 'Push Notifications',
@@ -254,6 +455,7 @@ export const SettingsScreen = ({ navigation }: any) => {
     },
     {
       title: 'Location & Privacy',
+      icon: 'location-on',
       items: [
         {
           title: 'Location Tracking',
@@ -273,12 +475,19 @@ export const SettingsScreen = ({ navigation }: any) => {
       ],
     },
     {
-      title: 'Support',
+      title: 'Profile',
+      icon: 'person',
       items: [
         {
-          title: 'Version',
-          subtitle: 'v1.0.0',
+          title: 'Officer Information',
+          subtitle: officer ? 'Security Officer - Active' : 'Not logged in',
           type: 'info' as const,
+        },
+        {
+          title: 'Edit Profile',
+          subtitle: 'Update your personal information',
+          type: 'navigation' as const,
+          onPress: () => navigation.navigate('Profile'),
         },
       ],
     },
@@ -291,6 +500,42 @@ export const SettingsScreen = ({ navigation }: any) => {
           <Text style={[styles.settingTitle, { color: colors.darkText }]}>{item.title}</Text>
           {item.subtitle && (
             <Text style={[styles.settingSubtitle, { color: colors.mediumText }]}>{item.subtitle}</Text>
+          )}
+          
+          {item.type === 'theme' && item.themeOptions && (
+            <View style={styles.themeOptionsRow}>
+              {item.themeOptions.map((option, index) => {
+                const isSelected = item.selectedTheme === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.themeOptionContainer,
+                      isSelected && styles.selectedThemeOptionContainer,
+                    ]}
+                    onPress={() => item.onThemeChange?.(option.value)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[
+                      styles.themeOptionIconContainer,
+                      isSelected && styles.selectedThemeIconContainer,
+                    ]}>
+                      <Icon 
+                        name={option.icon} 
+                        size={20} 
+                        color={isSelected ? colors.white : colors.primary} 
+                      />
+                    </View>
+                    <Text style={[
+                      styles.themeOptionButtonText,
+                      isSelected && styles.selectedThemeOptionText
+                    ]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
         </View>
 
@@ -307,58 +552,6 @@ export const SettingsScreen = ({ navigation }: any) => {
           <TouchableOpacity onPress={item.onPress} activeOpacity={0.7}>
             <Icon name="chevron-right" size={24} color={colors.mediumGray} />
           </TouchableOpacity>
-        )}
-
-        {item.type === 'theme' && item.themeOptions && (
-          <View style={styles.themeContainer}>
-            {item.themeOptions.map((option, index) => {
-              const isSelected = item.selectedTheme === option.value;
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.themeOptionCard,
-                    {
-                      backgroundColor: isSelected ? colors.primary : colors.white,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      borderWidth: isSelected ? 2 : 1,
-                      shadowColor: isSelected ? colors.primary : 'transparent',
-                      shadowOffset: { width: 0, height: isSelected ? 2 : 0 },
-                      shadowOpacity: isSelected ? 0.2 : 0,
-                      shadowRadius: isSelected ? 4 : 0,
-                      elevation: isSelected ? 3 : 1,
-                    },
-                  ]}
-                  onPress={() => item.onThemeChange?.(option.value)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.themeOptionContent}>
-                    <Icon 
-                      name={option.icon} 
-                      size={16} 
-                      color={isSelected ? colors.white : colors.primary} 
-                    />
-                    <Text
-                      style={[
-                        styles.themeOptionText,
-                        {
-                          color: isSelected ? colors.white : colors.darkText,
-                          fontWeight: isSelected ? '600' : '500',
-                        },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </View>
-                  {isSelected && (
-                    <View style={[styles.selectedIndicator, { backgroundColor: colors.primary }]}>
-                      <Icon name="check-circle" size={16} color={colors.white} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
         )}
 
         {item.type === 'action' && (
@@ -381,7 +574,7 @@ export const SettingsScreen = ({ navigation }: any) => {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.cardBackground, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -394,29 +587,19 @@ export const SettingsScreen = ({ navigation }: any) => {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {settingsSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.section}>
+        {settingsSections.map((section, index) => (
+          <View key={index} style={styles.section}>
             <View style={styles.sectionHeader}>
-              {section.title === 'Appearance' && (
-                <Icon name="palette" size={20} color={colors.primary} style={styles.sectionIcon} />
+              {section.icon && (
+                <Icon name={section.icon} size={28} color={colors.primary} style={styles.sectionIcon} />
               )}
               <Text style={styles.sectionTitle}>{section.title}</Text>
             </View>
-            <View style={[styles.sectionContent, { backgroundColor: colors.white, borderColor: colors.border }]}>
-              {section.items.map((item, itemIndex) => renderSettingItem(item, itemIndex))}
+            <View style={styles.sectionContent}>
+              {section.items.map(renderSettingItem)}
             </View>
           </View>
         ))}
-
-        {/* Logout Button */}
-        <TouchableOpacity
-          style={[styles.logoutButton, { backgroundColor: colors.white, borderColor: colors.emergencyRed }]}
-          onPress={handleLogout}
-          activeOpacity={0.8}
-        >
-          <Icon name="logout" size={20} color={colors.emergencyRed} />
-          <Text style={[styles.logoutButtonText, { color: colors.emergencyRed }]}>Logout</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );

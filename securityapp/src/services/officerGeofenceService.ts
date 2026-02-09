@@ -196,6 +196,66 @@ class OfficerGeofenceService {
   }
 
   /**
+   * Assign geofence to officer (ADMIN/SUBADMIN ONLY)
+   * Backend API for subadmin to assign geofences to officers
+   */
+  async assignGeofenceToOfficer(officerId: string, geofenceId: string, assignedBy: string): Promise<OfficerGeofenceAssignment> {
+    try {
+      console.log('👮 Assigning geofence to officer:', { officerId, geofenceId, assignedBy });
+      
+      const assignmentData = {
+        officer_id: officerId,
+        geofence_id: geofenceId,
+        assigned_by: assignedBy,
+        is_active: true
+      };
+      
+      const response = await apiClient.post('/admin/officers/' + officerId + '/geofences/', assignmentData);
+      
+      console.log('✅ Geofence assigned successfully:', response.data);
+      
+      // Clear cache for this officer
+      this.clearCacheForOfficer(officerId);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to assign geofence:', error);
+      throw new Error(`Failed to assign geofence: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Deactivate/unassign geofence from officer (ADMIN/SUBADMIN ONLY)
+   * Backend API for subadmin to remove geofence assignments
+   */
+  async deactivateGeofenceAssignment(officerId: string, geofenceId: string): Promise<void> {
+    try {
+      console.log('🗑️ Deactivating geofence assignment:', { officerId, geofenceId });
+      
+      const response = await apiClient.patch('/admin/officers/' + officerId + '/geofences/' + geofenceId + '/', {
+        is_active: false
+      });
+      
+      console.log('✅ Geofence assignment deactivated:', response.data);
+      
+      // Clear cache for this officer
+      this.clearCacheForOfficer(officerId);
+    } catch (error: any) {
+      console.error('❌ Failed to deactivate geofence assignment:', error);
+      throw new Error(`Failed to deactivate geofence assignment: ${error.message || error}`);
+    }
+  }
+
+  /**
+   * Clear cache for specific officer
+   */
+  private clearCacheForOfficer(officerId: string): void {
+    this.cache.delete(officerId);
+    this.cacheExpiry.delete(officerId);
+    console.log('🗑️ Cleared cache for officer:', officerId);
+  }
+
+  /**
    * Clear all cache
    */
   clearAllCache(): void {

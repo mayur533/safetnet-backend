@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, OfficerGeofenceAssignment
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -723,3 +723,36 @@ class UserDetailsSerializer(serializers.ModelSerializer):
         model = UserDetails
         fields = ('id', 'username', 'price', 'status', 'date')
         read_only_fields = ('id', 'date')
+
+
+class OfficerGeofenceAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for officer geofence assignments"""
+    
+    officer_name = serializers.CharField(source='officer.username', read_only=True)
+    geofence_name = serializers.CharField(source='geofence.name', read_only=True)
+    geofence_type = serializers.CharField(source='geofence.geofence_type', read_only=True)
+    assigned_by_name = serializers.CharField(source='assigned_by.username', read_only=True)
+    
+    class Meta:
+        model = OfficerGeofenceAssignment
+        fields = [
+            'id',
+            'officer',
+            'officer_name',
+            'geofence',
+            'geofence_name',
+            'geofence_type',
+            'assigned_by',
+            'assigned_by_name',
+            'assigned_at',
+            'is_active'
+        ]
+        read_only_fields = ['id', 'assigned_at', 'assigned_by']
+
+
+class GeofenceAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for creating geofence assignments"""
+    
+    class Meta:
+        model = OfficerGeofenceAssignment
+        fields = ['geofence_id']

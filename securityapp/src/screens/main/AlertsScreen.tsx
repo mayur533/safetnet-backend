@@ -21,7 +21,7 @@ import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import { alertServiceWithGeofenceFilter } from '../../api/services/alertServiceWithGeofenceFilter';
+import { alertService } from '../../api/services/alertService';
 import { useAppSelector } from '../../store/hooks';
 
 interface AlertsScreenProps {
@@ -59,16 +59,12 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
   const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general' | 'area_user_alert'>('security');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  // Location state removed - frontend no longer handles location
   
   // Area-based alert specific state
   const [alertExpiry, setAlertExpiry] = useState<string>('');
   
-  // Location input state
-  const [useCustomLocation, setUseCustomLocation] = useState(false);
-  const [customLatitude, setCustomLatitude] = useState('');
-  const [customLongitude, setCustomLongitude] = useState('');
+  // Location input removed - frontend no longer handles location data
 
   // Delete confirmation modal state
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -168,8 +164,9 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
   }, [fetchAlerts]);
 
   const handleRespond = async (alert: Alert) => {
-    console.log('🗺️ Navigating to respond map for alert:', alert.id);
-    (navigation as any).navigate('AlertRespondMap', { alertId: alert.id });
+    console.log('📱 Opening alert response for alert:', alert.id);
+    // Navigate to AlertResponse screen instead of removed map screen
+    (navigation as any).navigate('AlertResponse', { alertId: alert.id });
   };
 
   const handleDelete = (alert: Alert) => {
@@ -312,103 +309,26 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     }
 
     setCreatingAlert(true);
-    setIsGettingLocation(true);
-    setLocationError(null);
-    console.log('🚨 AlertsScreen: Creating new alert with GPS location...');
+    // Location state removed - frontend no longer handles location
+    console.log('🚨 AlertsScreen: Creating new alert without location...');
 
     try {
-      // STEP 1: Get real GPS location
-      let locationData;
-      if (useCustomLocation && customLatitude && customLongitude) {
-        // Use custom location provided by user
-        locationData = {
-          latitude: parseFloat(customLatitude),
-          longitude: parseFloat(customLongitude),
-          accuracy: 50, // Estimated accuracy for custom location
-          location: `Custom: ${customLatitude}, ${customLongitude}`
-        };
-        console.log('📍 Using custom location for alert:', locationData);
-      } else {
-        // Get real GPS location
-        try {
-          const { locationService } = await import('../../api/services/geofenceService');
-          console.log('🛰️ Getting fresh GPS location...');
-          
-          const currentLocation = await locationService.getCurrentLocation();
-          
-          locationData = {
-            latitude: currentLocation.latitude,
-            longitude: currentLocation.longitude,
-            accuracy: currentLocation.accuracy || 10,
-            location: `GPS: ${currentLocation.latitude.toFixed(6)}, ${currentLocation.longitude.toFixed(6)}`
-          };
-          
-          console.log('✅ Fresh GPS location obtained:', locationData);
-          console.log('📍 GPS Accuracy:', currentLocation.accuracy, 'meters');
-          console.log('🕐 GPS Timestamp:', currentLocation.timestamp);
-          
-        } catch (locationError: any) {
-          console.error('❌ Failed to get GPS location:', locationError);
-          setLocationError(locationError.message || 'Failed to get GPS location. Please enable location services and try again.');
-          setIsGettingLocation(false);
-          setCreatingAlert(false);
-          return;
-        }
-      }
-
-      // STEP 2: Validate location data
-      if (!locationData.latitude || !locationData.longitude) {
-        setLocationError('Invalid location coordinates. Please try again.');
-        setIsGettingLocation(false);
-        setCreatingAlert(false);
-        return;
-      }
-
-      setIsGettingLocation(false);
-
-      // STEP 3: Set priority based on alert type
-      let priority: 'high' | 'medium' | 'low' = 'medium';
-      console.log('🎯 Alert Creation Priority Debug:');
-      console.log(`   alertType: "${alertType}"`);
-      
-      if (alertType === 'emergency') {
-        priority = 'high';
-        console.log('   → Set priority to HIGH for emergency');
-      } else if (alertType === 'security') {
-        priority = 'medium';
-        console.log('   → Set priority to MEDIUM for security');
-      } else if (alertType === 'general') {
-        priority = 'low';
-        console.log('   → Set priority to LOW for general');
-      } else {
-        console.log(`   → Unknown alert type "${alertType}", defaulting to medium`);
-      }
-      
-      console.log(`   Final priority: "${priority}"`);
-
-      // STEP 4: Create alert with real GPS data
-      const alertData: any = {
+      // Location handling removed - frontend no longer handles GPS or location data
+      // Backend will handle location assignment based on user context
+      const alertData = {
         alert_type: alertType,
-        message: alertMessage.trim(),
-        description: alertDescription.trim() || alertMessage.trim(),
-        priority: priority,
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        location: locationData.location
+        message: alertMessage,
+        description: alertDescription,
+        priority: (alertType === 'emergency' ? 'high' : alertType === 'security' ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+        // Location data removed - backend handles location assignment
+        expires_at: alertExpiry || undefined
       };
 
-      // Add expiry for area-based alerts
-      if (alertType === 'area_user_alert' && alertExpiry) {
-        alertData.expires_at = alertExpiry;
-      }
+      // Create alert without location data - backend handles location assignment
+      console.log('📤 Creating alert without location data - backend will handle location assignment');
+      const newAlert = await storeCreateAlert(alertData);
 
-      await storeCreateAlert(alertData);
-
-      console.log('✅ Alert created with real GPS coordinates:', {
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        accuracy: locationData.accuracy
-      });
+      console.log('✅ Alert created successfully without location data');
 
       // Reset form and close modal
       setAlertMessage('');
@@ -421,7 +341,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       console.log('🔄 Refreshing alerts list after creating new alert...');
       await fetchAlerts();
 
-      showToast('Alert created successfully with GPS location!', 'success');
+      showToast('Alert created successfully!', 'success');
 
     } catch (error: any) {
       console.error('❌ Failed to create alert:', error);
@@ -429,7 +349,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       showToast(errorMessage, 'error');
     } finally {
       setCreatingAlert(false);
-      setIsGettingLocation(false);
+      // Location state removed - frontend no longer handles location
     }
   };
 
@@ -503,7 +423,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.darkText }]}>Loading alerts...</Text>
+        <Text style={[styles.loadingText, { color: colors.text }]}>Loading alerts...</Text>
         <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7, color: colors.darkText }]}>
           Connecting to SafeTNet backend
         </Text>
@@ -551,7 +471,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               <Icon name="notifications" size={20} color={colors.white} />
             </View>
             <View>
-              <Text style={[styles.headerTitle, { color: colors.darkText }]}>Security Alerts</Text>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Security Alerts</Text>
               <Text style={[styles.headerSubtitle, { color: colors.mediumText }]}>Monitor and respond</Text>
             </View>
           </View>
@@ -602,7 +522,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       }]}>
         <View style={styles.filterHeader}>
           <Icon name="filter-list" size={16} color={colors.darkText} />
-          <Text style={[styles.filterTitle, { color: colors.darkText }]}>Filter by Status</Text>
+          <Text style={[styles.filterTitle, { color: colors.text }]}>Filter by Status</Text>
         </View>
         <ScrollView
           horizontal
@@ -708,9 +628,9 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         onRequestClose={() => setCreateModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.white }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Create New Alert</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Create New Alert</Text>
               <TouchableOpacity
                 onPress={() => setCreateModalVisible(false)}
                 style={styles.closeButton}
@@ -721,7 +641,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {/* Alert Type Selection */}
-              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Type</Text>
               <View style={styles.alertTypeContainer}>
                 {[
                   { key: 'emergency', label: 'Emergency', color: colors.emergencyRed, icon: 'warning' },
@@ -757,7 +677,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               </View>
 
               {/* Alert Message Input */}
-              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Message *</Text>
               <TextInput
                 style={[styles.textInput, {
                   borderColor: colors.border,
@@ -774,7 +694,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               />
 
               {/* Alert Description Input */}
-              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Description (Optional)</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Description (Optional)</Text>
               <TextInput
                 style={[styles.textInput, styles.descriptionInput, {
                   borderColor: colors.border,
@@ -793,7 +713,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               {/* Area-based Alert Expiry */}
               {alertType === 'area_user_alert' && (
                 <>
-                  <Text style={[styles.inputLabel, { color: colors.darkText }]}>
+                  <Text style={[styles.inputLabel, { color: colors.text }]}>
                     Alert Expiry Time *
                   </Text>
                   <Text style={[styles.inputSubLabel, { color: colors.mediumText }]}>
@@ -815,79 +735,15 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                   </Text>
                 </>
               )}
-
-              {/* Location Input */}
-              <View style={styles.locationSection}>
-                <TouchableOpacity
-                  style={styles.locationToggle}
-                  onPress={() => setUseCustomLocation(!useCustomLocation)}
-                >
-                  <Icon 
-                    name={useCustomLocation ? "location-on" : "location-off"} 
-                    size={20} 
-                    color={useCustomLocation ? colors.primary : colors.mediumText} 
-                  />
-                  <Text style={[styles.locationToggleText, { 
-                    color: useCustomLocation ? colors.primary : colors.darkText 
-                  }]}>
-                    {useCustomLocation ? "Using Custom Location" : "Use Custom Location"}
-                  </Text>
-                </TouchableOpacity>
-
-                {useCustomLocation && (
-                  <View style={styles.locationInputs}>
-                    <View style={styles.locationInputRow}>
-                      <Text style={[styles.inputLabel, { color: colors.darkText }]}>Latitude *</Text>
-                      <TextInput
-                        style={[styles.textInput, styles.locationInput, {
-                          borderColor: colors.border,
-                          backgroundColor: colors.lightGrayBg,
-                          color: colors.darkText
-                        }]}
-                        placeholder="Latitude"
-                        placeholderTextColor={colors.mediumText}
-                        value={customLatitude}
-                        onChangeText={setCustomLatitude}
-                        keyboardType="numeric"
-                        maxLength={10}
-                      />
-                    </View>
-                    <View style={styles.locationInputRow}>
-                      <Text style={[styles.inputLabel, { color: colors.darkText }]}>Longitude *</Text>
-                      <TextInput
-                        style={[styles.textInput, styles.locationInput, {
-                          borderColor: colors.border,
-                          backgroundColor: colors.lightGrayBg,
-                          color: colors.darkText
-                        }]}
-                        placeholder="Longitude"
-                        placeholderTextColor={colors.mediumText}
-                        value={customLongitude}
-                        onChangeText={setCustomLongitude}
-                        keyboardType="numeric"
-                        maxLength={10}
-                      />
-                    </View>
-                    <Text style={styles.locationHelpText}>
-                      Enter the exact GPS coordinates where you want to create the alert
-                    </Text>
-                  </View>
-                )}
-              </View>
             </ScrollView>
 
-            {locationError && (
-              <View style={styles.locationErrorContainer}>
-                <Icon name="location-off" size={16} color="#ef4444" />
-                <Text style={styles.locationErrorText}>{locationError}</Text>
-              </View>
-            )}
+            {/* Location error display removed - frontend no longer handles location */}
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
                 onPress={() => setCreateModalVisible(false)}
-                disabled={creatingAlert || isGettingLocation}
+                disabled={creatingAlert}
               >
                 <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
               </TouchableOpacity>
@@ -897,25 +753,17 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                   styles.modalButton,
                   styles.createButton,
                   {
-                    backgroundColor: (creatingAlert || isGettingLocation) ? colors.mediumText : (
+                    backgroundColor: creatingAlert ? colors.mediumText : (
                       alertType === 'emergency' ? colors.emergencyRed :
                       alertType === 'security' ? colors.warningOrange : colors.primary
                     )
                   }
                 ]}
                 onPress={handleCreateAlert}
-                disabled={creatingAlert || isGettingLocation || !alertMessage.trim()}
+                disabled={creatingAlert || !alertMessage.trim()}
               >
-                {isGettingLocation ? (
-                  <>
-                    <ActivityIndicator size="small" color={colors.white} />
-                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Getting GPS...</Text>
-                  </>
-                ) : creatingAlert ? (
-                  <>
-                    <ActivityIndicator size="small" color={colors.white} />
-                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Creating...</Text>
-                  </>
+                {creatingAlert ? (
+                  <ActivityIndicator size="small" color={colors.white} />
                 ) : (
                   <>
                     <Icon name="send" size={18} color={colors.white} style={styles.buttonIcon} />
@@ -936,9 +784,9 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         onRequestClose={cancelDelete}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.white }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Delete Alert</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Alert</Text>
               <TouchableOpacity
                 onPress={cancelDelete}
                 style={styles.closeButton}
@@ -950,15 +798,15 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
             <View style={styles.modalBody}>
               <View style={styles.deleteConfirmationContainer}>
                 <Icon name="warning" size={48} color={colors.emergencyRed} style={styles.deleteWarningIcon} />
-                <Text style={[styles.deleteConfirmationText, { color: colors.darkText }]}>
+                <Text style={[styles.deleteConfirmationText, { color: colors.text }]}>
                   Are you sure you want to delete this alert?
                 </Text>
                 {alertToDelete && (
-                  <View style={styles.alertPreviewContainer}>
+                  <View style={[styles.alertPreviewContainer, { backgroundColor: colors.inputBackground }]}>
                     <Text style={[styles.alertPreviewLabel, { color: colors.mediumText }]}>
                       Alert Details:
                     </Text>
-                    <Text style={[styles.alertPreviewMessage, { color: colors.darkText }]}>
+                    <Text style={[styles.alertPreviewMessage, { color: colors.text }]}>
                       {alertToDelete.message?.substring(0, 100)}
                       {alertToDelete.message && alertToDelete.message.length > 100 ? '...' : ''}
                     </Text>
@@ -971,11 +819,11 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
               <View style={styles.modalActions}>
                 <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.lightGrayBg }]}
+                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.inputBackground }]}
                   onPress={cancelDelete}
                   disabled={deletingAlert}
                 >
-                  <Text style={[styles.modalButtonText, { color: colors.darkText }]}>Cancel</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.deleteButton, { backgroundColor: colors.emergencyRed }]}
@@ -1002,21 +850,21 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         onRequestClose={() => setUpdateModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Update Alert</Text>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Update Alert</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setUpdateModalVisible(false)}
               >
-                <Icon name="close" size={24} color={colors.darkText} />
+                <Icon name="close" size={24} color={colors.mediumText} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.modalBody}>
               {/* Alert Type Selection */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type *</Text>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Type *</Text>
                 <View style={styles.alertTypeContainer}>
                   {[
                     { key: 'emergency', label: '🚨 Emergency', color: colors.emergencyRed },
@@ -1054,7 +902,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Message *</Text>
                 <TextInput
                   style={[
                     styles.textInput,
@@ -1295,7 +1143,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '80%',
     minHeight: '60%',
-    backgroundColor: '#FFFFFF',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1304,7 +1151,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
   },
   modalTitle: {
     ...typography.screenHeader,
@@ -1323,20 +1169,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: spacing.sm,
-    color: '#000000',
   },
   inputSubLabel: {
     ...typography.secondary,
     fontSize: 14,
     marginBottom: spacing.xs,
-    color: '#666666',
   },
   helperText: {
     ...typography.caption,
     fontSize: 12,
     marginTop: spacing.xs,
     marginBottom: spacing.md,
-    color: '#666666',
   },
   textInput: {
     borderWidth: 1,
@@ -1420,12 +1263,6 @@ const styles = StyleSheet.create({
   locationInput: {
     marginTop: spacing.xs,
   },
-  locationHelpText: {
-    ...typography.caption,
-    color: '#64748B',
-    marginTop: spacing.sm,
-    fontStyle: 'italic',
-  },
   // Missing button styles
   cancelButton: {
     borderWidth: 1,
@@ -1475,22 +1312,6 @@ const styles = StyleSheet.create({
   alertPreviewMeta: {
     ...typography.caption,
     color: '#64748B',
-  },
-  locationErrorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    padding: spacing.sm,
-    borderRadius: 6,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  locationErrorText: {
-    ...typography.caption,
-    color: '#ef4444',
-    marginLeft: spacing.xs,
-    flex: 1,
   },
   modalActions: {
     flexDirection: 'row',

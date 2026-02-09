@@ -717,3 +717,45 @@ class UserDetails(models.Model):
     
     def __str__(self):
         return f"{self.username} - {self.status} (${self.price})"
+
+
+class OfficerGeofenceAssignment(models.Model):
+    """Model to track geofence assignments to security officers"""
+    
+    officer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        limit_choices_to={'role': 'security_officer'},
+        related_name='geofence_assignments'
+    )
+    
+    geofence = models.ForeignKey(
+        'Geofence',
+        on_delete=models.CASCADE,
+        related_name='officer_assignments'
+    )
+    
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'role__in': ['SUPER_ADMIN', 'SUB_ADMIN']},
+        related_name='made_geofence_assignments'
+    )
+    
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        db_table = 'users_officer_geofence_assignment'
+        unique_together = ['officer', 'geofence', 'is_active']
+        ordering = ['-assigned_at']
+        indexes = [
+            models.Index(fields=['officer', 'is_active']),
+            models.Index(fields=['geofence', 'is_active']),
+            models.Index(fields=['assigned_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.officer.username} -> {self.geofence.name} ({'Active' if self.is_active else 'Inactive'})"

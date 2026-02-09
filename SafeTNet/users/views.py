@@ -29,9 +29,10 @@ from .serializers import (
     NotificationSerializer, NotificationCreateSerializer, NotificationSendSerializer,
     PromoCodeSerializer, PromoCodeCreateSerializer,
     DiscountEmailSerializer, DiscountEmailCreateSerializer,
-    UserReplySerializer, UserDetailsSerializer
+    UserReplySerializer, UserDetailsSerializer,
+    OfficerGeofenceAssignmentSerializer, GeofenceAssignmentSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP, OfficerGeofenceAssignment
 from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
 
 
@@ -807,6 +808,130 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
         else:
             # For SUPER_ADMIN, organization should be provided in request data
             serializer.save()
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdminOrSubAdmin])
+    def assign_geofence(self, request, pk=None):
+        """
+        Assign a geofence to a security officer
+        POST /api/subadmin/officers/{officer_id}/assign_geofence/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Validate geofence data
+            serializer = GeofenceAssignmentSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            geofence_id = serializer.validated_data['geofence_id']
+            
+            # Validate geofence exists and is active
+            try:
+                geofence = Geofence.objects.get(id=geofence_id, is_active=True)
+            except Geofence.DoesNotExist:
+                return Response(
+                    {'error': 'Geofence not found or inactive'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check for existing active assignment
+            existing_assignment = OfficerGeofenceAssignment.objects.filter(
+                officer=officer,
+                geofence=geofence,
+                is_active=True
+            ).first()
+            
+            if existing_assignment:
+                return Response(
+                    {'error': 'Geofence already assigned to this officer'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create assignment
+            assignment = OfficerGeofenceAssignment.objects.create(
+                officer=officer,
+                geofence=geofence,
+                assigned_by=request.user
+            )
+            
+            # Return assignment details
+            response_serializer = OfficerGeofenceAssignmentSerializer(assignment)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to assign geofence: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def geofences(self, request, pk=None):
+        """
+        Get all active geofence assignments for an officer
+        GET /api/subadmin/officers/{officer_id}/geofences/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Check permissions
+            user = request.user
+            if user.role not in ['SUPER_ADMIN', 'SUB_ADMIN'] and user.id != officer.id:
+                return Response(
+                    {'error': 'Permission denied'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get active assignments
+            assignments = OfficerGeofenceAssignment.objects.filter(
+                officer=officer,
+                is_active=True
+            ).select_related('geofence', 'assigned_by')
+            
+            serializer = OfficerGeofenceAssignmentSerializer(assignments, many=True)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to fetch assignments: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['patch'], url_path='geofences/(?P<geofence_id>[^/.]+)', permission_classes=[IsAuthenticated, IsSuperAdminOrSubAdmin])
+    def deactivate_geofence_assignment(self, request, pk=None, geofence_id=None):
+        """
+        Deactivate a geofence assignment
+        PATCH /api/subadmin/officers/{officer_id}/geofences/{geofence_id}/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Get existing assignment
+            try:
+                assignment = OfficerGeofenceAssignment.objects.get(
+                    officer=officer,
+                    geofence_id=geofence_id,
+                    is_active=True
+                )
+            except OfficerGeofenceAssignment.DoesNotExist:
+                return Response(
+                    {'error': 'Active assignment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Deactivate (soft delete)
+            assignment.is_active = False
+            assignment.save()
+            
+            return Response({
+                'message': 'Geofence assignment deactivated successfully',
+                'assignment_id': assignment.id
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to deactivate assignment: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
 
 def create(self, request, *args, **kwargs):

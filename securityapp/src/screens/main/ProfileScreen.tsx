@@ -14,11 +14,15 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useColors } from '../../utils/colors';
 import { typography, spacing, shadows } from '../../utils';
 import { profileService } from '../../api/services/profileService';
+import { authService } from '../../api/services';
 import { SecurityOfficer } from '../../types/user.types';
+import { useAppDispatch } from '../../store/hooks';
+import { logout } from '../../store/slices/authSlice';
 
 export const ProfileScreen = () => {
   const navigation = useNavigation();
   const colors = useColors();
+  const dispatch = useAppDispatch();
   const [officer, setOfficer] = useState<SecurityOfficer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,9 +79,38 @@ export const ProfileScreen = () => {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Success', 'Logged out successfully!');
-            // In a real app, this would navigate to login screen
+          onPress: async () => {
+            try {
+              console.log('🚪 Logging out from ProfileScreen...');
+              
+              // Call backend logout service if available
+              try {
+                await authService.logout();
+                console.log('✅ Backend logout successful');
+              } catch (backendError) {
+                console.warn('⚠️ Backend logout failed, proceeding with local logout:', backendError);
+              }
+              
+              // Dispatch Redux logout action
+              dispatch(logout());
+              console.log('✅ Redux logout dispatched');
+              
+              // Navigate to Auth stack and replace navigation stack
+              (navigation as any).reset({
+                index: 0,
+                routes: [{ name: 'Auth' }],
+              });
+              console.log('✅ Navigated to Auth stack (Login screen)');
+              
+            } catch (error) {
+              console.error('❌ Logout error:', error);
+              // Even if there's an error, proceed with logout to prevent user being stuck
+              dispatch(logout());
+              (navigation as any).reset({
+                index: 0,
+                routes: [{ name: 'Auth' }],
+              });
+            }
           },
         },
       ]

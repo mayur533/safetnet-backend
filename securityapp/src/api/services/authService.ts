@@ -125,11 +125,12 @@ export const login = async (credentials: LoginPayload, retryCount: number = 0): 
 // Other auth functions
 export const logout = async (): Promise<void> => {
   try {
-    await apiClient.post('/security/logout/');
+    await apiClient.post(API_ENDPOINTS.LOGOUT);
     console.log('✅ LOGOUT SUCCESSFUL');
   } catch (error: any) {
     console.error('❌ LOGOUT FAILED:', error);
-    throw new Error('Logout failed');
+    // Don't throw error - logout should work even if backend call fails
+    // The frontend will clear auth state regardless
   }
 };
 

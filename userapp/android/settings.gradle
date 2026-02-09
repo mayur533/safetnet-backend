@@ -1,7 +1,26 @@
+pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
 rootProject.name = 'userapp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
-
-// Manually include geolocation package to fix linking issue
-include ':react-native-community-geolocation'
-project(':react-native-community-geolocation').projectDir = new File(rootProject.projectDir, '../node_modules/@react-native-community/geolocation/android')
+// Manually include react-native-safe-area-context if autolinking fails
+include ':react-native-safe-area-context'
+project(':react-native-safe-area-context').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-safe-area-context/android')
+// Manually include react-native-screens if autolinking fails
+include ':react-native-screens'
+project(':react-native-screens').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-screens/android')
+// Manually include react-native-linear-gradient if autolinking fails
+include ':react-native-linear-gradient'
+project(':react-native-linear-gradient').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-linear-gradient/android')
+// Manually include AsyncStorage if autolinking fails
+include ':react-native-async-storage_async-storage'
+project(':react-native-async-storage_async-storage').projectDir = new File(rootProject.projectDir, '../node_modules/@react-native-async-storage/async-storage/android')
+// Geolocation should be autolinked - removed manual linking to avoid conflicts
+// Manually include react-native-sensors if autolinking fails
+include ':react-native-sensors'
+project(':react-native-sensors').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-sensors/android')
+// Note: react-native-maps should be autolinked for New Architecture compatibility
+// Only uncomment if autolinking fails
+// include ':react-native-maps'
+// project(':react-native-maps').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-maps/android')

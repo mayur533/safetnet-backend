@@ -15,7 +15,7 @@ interface TabItem {
 const tabs: TabItem[] = [
   { name: 'Home', label: 'Dashboard', icon: 'dashboard', activeIcon: 'dashboard' },
   { name: 'Alerts', label: 'Alerts', icon: 'notifications-none', activeIcon: 'notifications' },
-  { name: 'GeofenceArea', label: 'Geofence', icon: 'location-on', activeIcon: 'location-on' },
+  { name: 'GeofenceManagement', label: 'Geofence', icon: 'location-on', activeIcon: 'location-on' },
   { name: 'Profile', label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
 ];
 

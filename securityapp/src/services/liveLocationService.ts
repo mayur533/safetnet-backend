@@ -75,170 +75,43 @@ class LiveLocationService {
   private listeners: Array<(location: LocationData | null, error?: string) => void> = [];
 
   /**
-   * Start live location tracking
+   * Start live location tracking - DISABLED (backend handles location)
    */
   async startTracking(config?: Partial<LiveLocationConfig>): Promise<void> {
-    try {
-      if (this.status.isTracking) {
-        console.log('📍 Live tracking already active');
-        return;
-      }
-
-      // Update config with provided values
-      this.config = { ...this.config, ...config };
-      
-      console.log('🚀 Starting live location tracking with config:', {
-        updateInterval: this.config.updateInterval,
-        gpsTimeout: this.config.gpsTimeout,
-        enableHighAccuracy: this.config.enableHighAccuracy,
-      });
-
-      // Get initial location
-      const initialLocation = await this.getCurrentLocation();
-      if (initialLocation) {
-        this.currentLocation = initialLocation;
-        this.notifyListeners(initialLocation);
-      }
-
-      // Start periodic updates
-      this.trackingInterval = setInterval(async () => {
-        try {
-          const location = await this.getCurrentLocation();
-          if (location) {
-            this.currentLocation = location;
-            this.status.lastUpdate = Date.now();
-            this.status.updateCount++;
-            this.status.accuracy = location.accuracy || 0;
-            
-            console.log('📍 Live location updated:', {
-              lat: location.latitude,
-              lng: location.longitude,
-              accuracy: location.accuracy,
-              updateCount: this.status.updateCount,
-            });
-            
-            this.notifyListeners(location);
-            
-            // Emit global event
-            eventEmitter.emit('liveLocationUpdate', location);
-          }
-        } catch (error: any) {
-          this.status.errorCount++;
-          console.error('❌ Live location update failed:', error);
-          this.notifyListeners(null, error.message);
-          
-          // Emit global error event
-          eventEmitter.emit('liveLocationError', error.message);
-        }
-      }, this.config.updateInterval);
-
-      this.status.isTracking = true;
-      console.log('✅ Live location tracking started successfully');
-      
-      // Emit global start event
-      eventEmitter.emit('liveTrackingStarted', this.status);
-
-    } catch (error: any) {
-      console.error('❌ Failed to start live tracking:', error);
-      this.notifyListeners(null, error.message);
-      throw error;
-    }
+    console.log('🚫 Live location tracking disabled - frontend no longer handles GPS tracking');
+    // Backend handles all location logic, frontend should not perform GPS tracking
+    // Set neutral status without starting any tracking
+    this.status.isTracking = false;
+    this.currentLocation = null;
+    
+    // Notify listeners that tracking is disabled
+    this.notifyListeners(null, 'Live location tracking is disabled in frontend');
   }
 
   /**
-   * Stop live location tracking
+   * Stop live location tracking - DISABLED (backend handles location)
    */
   stopTracking(): void {
-    if (!this.status.isTracking) {
-      console.log('📍 Live tracking not active');
-      return;
-    }
-
+    console.log('🚫 Live location tracking disabled - frontend no longer handles GPS tracking');
+    // Backend handles all location logic, frontend should not perform GPS tracking
+    // Set neutral status without any cleanup
+    this.status.isTracking = false;
+    this.currentLocation = null;
+    
     if (this.trackingInterval) {
       clearInterval(this.trackingInterval);
       this.trackingInterval = null;
     }
-
-    this.status.isTracking = false;
-    console.log('⏹️ Live location tracking stopped');
-    
-    // Emit global stop event
-    eventEmitter.emit('liveTrackingStopped', this.status);
   }
 
   /**
-   * Get current GPS location with 60-second timeout
+   * Get current GPS location - DISABLED (backend handles location)
    */
   private async getCurrentLocation(): Promise<LocationData | null> {
-    try {
-      console.log('🛰️ Capturing GPS location (60s timeout)...');
-      
-      // Import geolocation dynamically
-      const GeolocationModule = await import('@react-native-community/geolocation');
-      const Geolocation = GeolocationModule.default;
-      
-      if (!Geolocation || !Geolocation.getCurrentPosition) {
-        throw new Error('Geolocation not available');
-      }
-
-      const position = await new Promise<any>((resolve, reject) => {
-        Geolocation.getCurrentPosition(
-          resolve,
-          (error) => {
-            console.error('❌ GPS error:', error);
-            
-            // For timeout errors, try cached location as fallback
-            if (error.code === 3) {
-              console.log('⏰ GPS timeout, trying cached location fallback...');
-              
-              Geolocation.getCurrentPosition(
-                (cachedPosition) => {
-                  console.log('📍 Using cached GPS location as fallback');
-                  resolve(cachedPosition);
-                },
-                (fallbackError) => {
-                  console.log('❌ No cached location available');
-                  reject(error);
-                },
-                {
-                  enableHighAccuracy: false,
-                  timeout: 5000,
-                  maximumAge: 300000, // 5 minutes cache
-                }
-              );
-              return;
-            }
-            
-            reject(error);
-          },
-          {
-            enableHighAccuracy: this.config.enableHighAccuracy,
-            timeout: this.config.gpsTimeout, // 60 seconds
-            maximumAge: this.config.maxCacheAge,
-          }
-        );
-      });
-
-      const location: LocationData = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        timestamp: position.timestamp,
-      };
-
-      console.log('✅ GPS location captured:', {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        accuracy: location.accuracy,
-        timestamp: new Date(location.timestamp).toISOString(),
-      });
-
-      return location;
-
-    } catch (error: any) {
-      console.error('❌ Failed to get GPS location:', error);
-      throw error;
-    }
+    console.log('🚫 GPS tracking disabled - frontend no longer handles location acquisition');
+    // Backend handles all location logic, frontend should not perform GPS tracking
+    // Return null instead of trying to get GPS location
+    return null;
   }
 
   /**

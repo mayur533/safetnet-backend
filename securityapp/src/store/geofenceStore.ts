@@ -66,9 +66,18 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
       console.log(`✅ Fetched ${geofences.length} geofences`);
     } catch (error: any) {
       console.error('❌ Failed to fetch geofences:', error);
+      
+      // Provide user-friendly error message for SSL/connection issues
+      let errorMessage = error.message || 'Failed to fetch geofences';
+      if (error.message?.includes('SSL connection has been closed unexpectedly')) {
+        errorMessage = 'Network connection unstable. Please check your internet connection.';
+      } else if (error.message?.includes('Network Error') || error.code === 'NETWORK_ERROR') {
+        errorMessage = 'Unable to connect to server. Please check your internet connection.';
+      }
+      
       set({
         isLoading: false,
-        error: error.message || 'Failed to fetch geofences'
+        error: errorMessage
       });
     }
   },
@@ -118,96 +127,30 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
     }
   },
 
-  // Update location and check boundaries
+  // Update location and check boundaries - DISABLED (backend handles location)
   updateLocation: async (latitude: number, longitude: number) => {
-    const { assignedGeofence, lastKnownLocation } = get();
-
-    // Update last known location
-    set({ lastKnownLocation: { latitude, longitude } });
-
-    // Check boundary crossing if we have an assigned geofence
-    if (assignedGeofence) {
-      get().checkBoundaryCrossing(latitude, longitude);
-    }
-
-    // Update users in area if we have an assigned geofence
-    if (assignedGeofence) {
-      try {
-        await get().fetchUsersInArea(assignedGeofence.id);
-      } catch (error) {
-        // Silently fail for location updates
-      }
-    }
+    console.log('🚫 Location tracking disabled - frontend no longer handles location updates');
+    // Backend handles all location logic, frontend should not perform location tracking
+    // Set neutral state without calling geofenceService
+    set({ 
+      lastKnownLocation: { latitude, longitude },
+      isInsideGeofence: false,
+      consecutiveInsideCount: 0,
+      consecutiveOutsideCount: 0
+    });
   },
 
-  // Check for boundary crossing with hysteresis and debouncing
+  // Check for boundary crossing with hysteresis and debouncing - DISABLED (backend handles geofence logic)
   checkBoundaryCrossing: (latitude: number, longitude: number) => {
-    const { assignedGeofence, isInsideGeofence, consecutiveInsideCount, consecutiveOutsideCount } = get();
-
-    if (!assignedGeofence) return;
-
-    const currentlyInside = geofenceService.isPointInGeofence(latitude, longitude, assignedGeofence);
-    const now = Date.now();
-
-    // Hysteresis buffer (10 meters)
-    const hysteresisBuffer = 10;
-    let shouldTriggerAlert = false;
-
-    if (assignedGeofence.geofence_type === 'circle' && assignedGeofence.radius) {
-      const distance = geofenceService.calculateDistance(
-        { latitude, longitude },
-        { latitude: assignedGeofence.center_latitude, longitude: assignedGeofence.center_longitude }
-      );
-
-      // Apply hysteresis
-      if (isInsideGeofence && distance > (assignedGeofence.radius + hysteresisBuffer)) {
-        // Was inside, now outside with buffer
-        shouldTriggerAlert = consecutiveOutsideCount >= 3; // Require 3 consecutive readings
-        if (shouldTriggerAlert) {
-          set({
-            isInsideGeofence: false,
-            consecutiveInsideCount: 0,
-            consecutiveOutsideCount: consecutiveOutsideCount + 1,
-            lastBoundaryCrossTime: now
-          });
-          console.log('🚪 EXITED geofence area');
-        } else {
-          set({ consecutiveOutsideCount: consecutiveOutsideCount + 1 });
-        }
-      } else if (!isInsideGeofence && distance < (assignedGeofence.radius - hysteresisBuffer)) {
-        // Was outside, now inside with buffer
-        shouldTriggerAlert = consecutiveInsideCount >= 3; // Require 3 consecutive readings
-        if (shouldTriggerAlert) {
-          set({
-            isInsideGeofence: true,
-            consecutiveInsideCount: consecutiveInsideCount + 1,
-            consecutiveOutsideCount: 0,
-            lastBoundaryCrossTime: now
-          });
-          console.log('🚪 ENTERED geofence area');
-        } else {
-          set({ consecutiveInsideCount: consecutiveInsideCount + 1 });
-        }
-      } else {
-        // Reset counters when within hysteresis zone
-        set({ consecutiveInsideCount: 0, consecutiveOutsideCount: 0 });
-      }
-
-      console.log(`📍 Distance: ${distance.toFixed(1)}m, Radius: ${assignedGeofence.radius}m, Inside: ${currentlyInside}, Hysteresis: ${isInsideGeofence}`);
-    }
-
-    // Trigger alerts only on actual boundary crossings
-    if (shouldTriggerAlert) {
-      const alertMessage = isInsideGeofence
-        ? 'You have entered the assigned geofence area'
-        : 'You have exited the assigned geofence area';
-
-      // In a real app, you might want to show a notification or alert
-      console.log(`🚨 GEOFENCE ALERT: ${alertMessage}`);
-
-      // You could emit an event or show a notification here
-      // For now, we'll just log it
-    }
+    console.log('🚫 Geofence detection disabled - frontend no longer handles boundary crossing');
+    // Backend handles all geofence logic, frontend should not perform boundary detection
+    // Set neutral state without calling geofenceService
+    set({
+      isInsideGeofence: false,
+      consecutiveInsideCount: 0,
+      consecutiveOutsideCount: 0,
+      lastBoundaryCrossTime: Date.now()
+    });
   },
 
   // Helper actions

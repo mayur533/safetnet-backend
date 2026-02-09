@@ -12,7 +12,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authReducer from './slices/authSlice';
 import alertsReducer from './slices/alertsSlice';
-import locationReducer from './slices/locationSlice';
+// Location tracking removed - frontend no longer handles location
 import settingsReducer from './slices/settingsSlice';
 
 const persistConfig = {
@@ -27,7 +27,7 @@ export const store = configureStore({
   reducer: {
     auth: persistedAuthReducer,
     alerts: alertsReducer,
-    location: locationReducer,
+    // Location tracking removed - frontend no longer handles location
     settings: settingsReducer,
   },
   middleware: (getDefaultMiddleware) =>

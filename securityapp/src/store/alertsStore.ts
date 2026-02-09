@@ -14,9 +14,7 @@ interface AlertsState {
     alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    latitude?: number;
-    longitude?: number;
-    location?: string;
+    // Location fields removed - backend handles location assignment
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
   }) => Promise<Alert>;
@@ -396,7 +394,7 @@ export const debugAlertPersistence = () => {
     
     // Check for duplicates
     const ids = state.alerts.map(a => a.id);
-    const uniqueIds = [...new Set(ids)];
+    const uniqueIds = Array.from(new Set(ids));
     if (ids.length !== uniqueIds.length) {
       console.log('⚠️ DUPLICATE ALERTS DETECTED!');
     }

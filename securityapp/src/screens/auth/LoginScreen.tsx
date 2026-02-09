@@ -453,12 +453,30 @@ export const LoginScreen = () => {
       // Dispatch login success - navigation will automatically switch to MainNavigator
       dispatch(loginSuccess({ token: accessToken, officer, navigateToSOS: false }));
 
-      // Immediately fetch alerts for Dashboard (will be called when Dashboard mounts)
+      // Immediately fetch alerts and geofence data for Dashboard
       try {
         const { useAlertsStore } = await import('../../store/alertsStore');
         useAlertsStore.getState().fetchAlerts();
-      } catch (alertError) {
-        console.warn('Could not fetch alerts after login:', alertError);
+        
+        // Fetch assigned geofence data after successful login
+        const { useGeofenceStore } = await import('../../store/geofenceStore');
+        const geofenceStore = useGeofenceStore.getState();
+        
+        console.log('🎯 Post-login geofence check:');
+        console.log('   Officer geofence_id:', officer.geofence_id);
+        console.log('   Officer geofence_name:', officer.geofence_name);
+        console.log('   Officer assigned_geofence:', officer.assigned_geofence);
+        
+        // Fetch geofences if officer has geofence_id assigned
+        if (officer.geofence_id) {
+          console.log('✅ Officer has geofence assigned, fetching geofence data...');
+          await geofenceStore.fetchAssignedGeofence();
+          await geofenceStore.fetchGeofences();
+        } else {
+          console.log('⚠️ No geofence assigned to this officer');
+        }
+      } catch (error) {
+        console.warn('Could not fetch post-login data:', error);
       }
 
       setIsLoading(false); // Clear loading state immediately
