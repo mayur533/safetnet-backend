@@ -435,7 +435,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.text }]}>Loading alerts...</Text>
+        <Text style={[styles.loadingText, { color: colors.darkText }]}>Loading alerts...</Text>
         <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7, color: colors.darkText }]}>
           Connecting to SafeTNet backend
         </Text>
@@ -483,7 +483,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               <Icon name="notifications" size={20} color={colors.white} />
             </View>
             <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Security Alerts</Text>
+              <Text style={[styles.headerTitle, { color: colors.darkText }]}>Security Alerts</Text>
               <Text style={[styles.headerSubtitle, { color: colors.mediumText }]}>Monitor and respond</Text>
             </View>
           </View>
@@ -534,7 +534,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       }]}>
         <View style={styles.filterHeader}>
           <Icon name="filter-list" size={16} color={colors.darkText} />
-          <Text style={[styles.filterTitle, { color: colors.text }]}>Filter by Status</Text>
+          <Text style={[styles.filterTitle, { color: colors.darkText }]}>Filter by Status</Text>
         </View>
         <ScrollView
           horizontal
@@ -642,7 +642,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Create New Alert</Text>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Create New Alert</Text>
               <TouchableOpacity
                 onPress={() => setCreateModalVisible(false)}
                 style={styles.closeButton}
@@ -653,7 +653,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {/* Alert Type Selection */}
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Type</Text>
+              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type</Text>
               <View style={styles.alertTypeContainer}>
                 {[
                   { key: 'emergency', label: 'Emergency', color: colors.emergencyRed, icon: 'warning' },
@@ -689,7 +689,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               </View>
 
               {/* Alert Message Input */}
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Message *</Text>
+              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
               <TextInput
                 style={[styles.textInput, {
                   borderColor: colors.border,
@@ -706,7 +706,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               />
 
               {/* Alert Description Input */}
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Description (Optional)</Text>
+              <Text style={[styles.inputLabel, { color: colors.darkText }]}>Description (Optional)</Text>
               <TextInput
                 style={[styles.textInput, styles.descriptionInput, {
                   borderColor: colors.border,
@@ -725,7 +725,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               {/* Area-based Alert Expiry */}
               {alertType === 'area_user_alert' && (
                 <>
-                  <Text style={[styles.inputLabel, { color: colors.text }]}>
+                  <Text style={[styles.inputLabel, { color: colors.darkText }]}>
                     Alert Expiry Time *
                   </Text>
                   <Text style={[styles.inputSubLabel, { color: colors.mediumText }]}>
@@ -798,7 +798,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Delete Alert</Text>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Delete Alert</Text>
               <TouchableOpacity
                 onPress={cancelDelete}
                 style={styles.closeButton}
@@ -810,7 +810,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
             <View style={styles.modalBody}>
               <View style={styles.deleteConfirmationContainer}>
                 <Icon name="warning" size={48} color={colors.emergencyRed} style={styles.deleteWarningIcon} />
-                <Text style={[styles.deleteConfirmationText, { color: colors.text }]}>
+                <Text style={[styles.deleteConfirmationText, { color: colors.darkText }]}>
                   Are you sure you want to delete this alert?
                 </Text>
                 {alertToDelete && (
@@ -818,7 +818,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                     <Text style={[styles.alertPreviewLabel, { color: colors.mediumText }]}>
                       Alert Details:
                     </Text>
-                    <Text style={[styles.alertPreviewMessage, { color: colors.text }]}>
+                    <Text style={[styles.alertPreviewMessage, { color: colors.darkText }]}>
                       {alertToDelete.message?.substring(0, 100)}
                       {alertToDelete.message && alertToDelete.message.length > 100 ? '...' : ''}
                     </Text>
@@ -835,7 +835,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
                   onPress={cancelDelete}
                   disabled={deletingAlert}
                 >
-                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancel</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.darkText }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.deleteButton, { backgroundColor: colors.emergencyRed }]}
@@ -864,7 +864,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Update Alert</Text>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Update Alert</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setUpdateModalVisible(false)}
@@ -876,7 +876,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
             <ScrollView style={styles.modalBody}>
               {/* Alert Type Selection */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Type *</Text>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type *</Text>
                 <View style={styles.alertTypeContainer}>
                   {[
                     { key: 'emergency', label: '🚨 Emergency', color: colors.emergencyRed },
@@ -914,7 +914,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Alert Message *</Text>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
                 <TextInput
                   style={[
                     styles.textInput,
@@ -976,7 +976,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
           styles.toastContainer,
           { backgroundColor: toastType === 'success' ? colors.successGreen : colors.emergencyRed }
         ]}>
-          <Text style={styles.toastMessage}>{toastMessage}</Text>
+          <Text style={[styles.toastMessage, { color: colors.white }]}>{toastMessage}</Text>
         </View>
       )}
     </View>
@@ -1244,7 +1244,6 @@ const styles = StyleSheet.create({
   },
   toastMessage: {
     ...typography.body,
-    color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 14,
   },

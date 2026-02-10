@@ -101,8 +101,8 @@ export const AlertResponseScreen = ({ route }: any) => {
         {
           text: 'Respond',
           onPress: () => {
-            // Navigate to alerts map to show locations
-            (navigation as any).navigate('AlertsMap', { alert });
+            // Navigate to alert respond map screen with alert ID
+            (navigation as any).navigate('AlertRespondMap', { alertId: alert.id });
           }
         }
       ]

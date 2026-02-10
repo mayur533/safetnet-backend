@@ -26,7 +26,7 @@ if (__DEV__) {
   // Disable remote debugging connections
   (console as any).disableDebugger = true;
   // Prevent debugger WebSocket connections
-  global.__REMOTEDEV__ = false;
+  __REMOTEDEV__ = false;
 }
 
 // Component that checks for persisted auth data

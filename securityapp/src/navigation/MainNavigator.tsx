@@ -7,6 +7,8 @@ import { ProfileScreenWithBottomNav } from '../screens/main/ProfileScreenWithBot
 import { GeofenceManagementScreenWithBottomNav } from '../screens/main/GeofenceManagementScreenWithBottomNav';
 import { BroadcastScreen } from '../screens/main/BroadcastScreen';
 import { AlertResponseScreen } from '../screens/main/AlertResponseScreen';
+import { AlertsMapScreen } from '../screens/main/AlertsMapScreen';
+import { AlertRespondMapScreen } from '../screens/main/AlertRespondMapScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
 import { NotificationSettingsScreen } from '../screens/settings/NotificationSettingsScreen';
 import { PrivacyScreen } from '../screens/settings/PrivacyScreen';
@@ -61,6 +63,14 @@ export const MainNavigator = () => {
       <Stack.Screen
         name="AlertResponse"
         component={AlertResponseScreen}
+      />
+      <Stack.Screen
+        name="AlertsMap"
+        component={AlertsMapScreen}
+      />
+      <Stack.Screen
+        name="AlertRespondMap"
+        component={AlertRespondMapScreen}
       />
       <Stack.Screen
         name="UpdateProfile"

@@ -462,20 +462,17 @@ export const alertService = {
       await apiClient.delete(API_ENDPOINTS.DELETE_SOS.replace('{id}', String(id)));
       console.log('✅ Alert deleted successfully');
     } catch (error: any) {
-      console.error('Error deleting alert:', error);
-
-      if (error.response?.status === 404) {
-        console.error('DELETE endpoint not implemented on backend');
-        throw new Error('Delete functionality is not yet available. This feature will be implemented with the next backend update.');
-      } else if (error.response?.status === 405) {
-        console.error('DELETE method not allowed');
-        throw new Error('Delete operation is not permitted on this alert.');
-      } else if (error.response?.status >= 500) {
-        console.error('Server error during delete');
-        throw new Error('Server error occurred. Please try again later.');
-      } else {
-        throw error;
+      // If it's a 404 error (alert doesn't exist), treat it as success
+      if (error?.response?.status === 404 || 
+          error?.status === 404 ||
+          (error?.message && error.message.includes('No SOSAlert matches the given query'))) {
+        console.log('✅ Alert already deleted - treating as success');
+        return;
       }
+      
+      // For any other error, log and re-throw
+      console.error('Error deleting alert:', error);
+      throw error;
     }
   },
 

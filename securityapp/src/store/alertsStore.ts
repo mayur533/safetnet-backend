@@ -263,37 +263,40 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       await alertService.deleteAlert(alertId);
       console.log('✅ Alert deleted successfully via API');
 
+      // Force refresh to ensure backend is in sync
+      console.log('🔄 Forcing fresh fetch after successful delete to ensure backend sync...');
       set((state) => ({
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date(0).toISOString() // Reset cache to force refresh
       }));
+      
+      // Trigger a fetch after a short delay
+      setTimeout(() => {
+        get().fetchAlerts();
+      }, 1000);
 
     } catch (error: any) {
-      console.error('❌ Alert deletion failed, rolling back:', error);
-      console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
-
-      // Handle specific 404 error - alert already deleted
-      if (error?.status === 404 || error?.message?.includes('No SOSAlert matches the given query')) {
-        console.log('✅ Alert was already deleted on backend - treating as success');
+      // If it's a 404 error (alert doesn't exist), treat it as success
+      if (error?.response?.status === 404 || 
+          error?.status === 404 ||
+          (error?.message && error.message.includes('No SOSAlert matches the given query'))) {
+        console.log('✅ Alert already deleted - treating as success');
         // Don't rollback since the alert is already gone
         set((state) => ({
-          lastUpdated: new Date().toISOString(),
-          error: null
+          lastUpdated: new Date().toISOString()
         }));
-        return; // Success - no error to throw
+        // Still trigger a refresh to ensure backend sync
+        setTimeout(() => {
+          get().fetchAlerts();
+        }, 1000);
+        return;
       }
-
-      // Handle specific backend limitation
-      let errorMessage = error?.message || 'Failed to delete alert';
-      if (error?.message?.includes('not yet available')) {
-        errorMessage = 'Delete functionality is not yet implemented on the backend. This feature will be available in a future update.';
-      }
-
-      // Rollback: Add alert back
+      
+      // For any other error, rollback and show error
+      console.error('❌ Alert deletion failed, rolling back:', error);
       set((state) => ({
         alerts: [rollbackAlert, ...state.alerts],
-        error: errorMessage
+        error: error?.message || 'Failed to delete alert'
       }));
-
       throw error;
     }
   },
