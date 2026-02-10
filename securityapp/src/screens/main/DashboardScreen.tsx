@@ -13,12 +13,14 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AlertCard } from '../../components/alerts/AlertCard';
+import { AlertRespondModal } from '../../components/common/AlertRespondModal';
 import { Alert } from '../../types/alert.types';
 import { alertService } from '../../api/services/alertService';
 import { dashboardService, DashboardData, DashboardStats } from '../../api/services/dashboardService';
 import { useAlertsStore } from '../../store/alertsStore';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
+import Toast from 'react-native-toast-message';
 
 // Suppress debugger-related warnings that appear on login
 LogBox.ignoreLogs([
@@ -51,6 +53,10 @@ export const DashboardScreen = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  // State for respond modal
+  const [showRespondModal, setShowRespondModal] = useState(false);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
   // Use Zustand alerts store (kept for alert actions)
   const {
@@ -108,12 +114,38 @@ export const DashboardScreen = () => {
   }, []);
 
   const handleRespond = async (alert: Alert) => {
-    console.log('📞 Dashboard: Navigate to respond page for alert:', alert.id);
-    (navigation as any).navigate('AlertRespondMap', { alertId: String(alert.id) });
+    console.log('📞 Dashboard: Show respond modal for alert:', alert.id);
+    
+    // Validate alert data before showing modal
+    if (!alert || !alert.id) {
+      console.error('❌ Invalid alert data:', alert);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Invalid alert data. Please refresh and try again.',
+        visibilityTime: 3000,
+        position: 'bottom',
+      });
+      return;
+    }
+    
+    setSelectedAlertId(String(alert.id));
+    setShowRespondModal(true);
   };
 
   const handleSettingsPress = () => {
     (navigation as any).navigate('Settings');
+  };
+
+  // Modal handlers
+  const handleCloseRespondModal = () => {
+    setShowRespondModal(false);
+    setSelectedAlertId(null);
+  };
+
+  const handleResponseAccepted = () => {
+    // Refresh alerts after accepting response
+    fetchAlerts();
   };
 
   // Calculate stats from dashboard API data
@@ -401,23 +433,24 @@ export const DashboardScreen = () => {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={handleSettingsPress}
-          activeOpacity={0.7}
-        >
-          <Icon name="settings" size={24} color={colors.darkText} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Home</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={handleSettingsPress}
+            activeOpacity={0.7}
+          >
+            <Icon name="settings" size={24} color={colors.darkText} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Home</Text>
+          <View style={styles.headerSpacer} />
+        </View>
 
       {/* Stats Section */}
       <View style={styles.statsSection}>
@@ -486,5 +519,14 @@ export const DashboardScreen = () => {
         </View>
       </View>
     </ScrollView>
+    
+    {/* Alert Respond Modal */}
+    <AlertRespondModal
+      visible={showRespondModal}
+      alertId={selectedAlertId || ''}
+      onClose={handleCloseRespondModal}
+      onResponseAccepted={handleResponseAccepted}
+    />
+    </>
   );
 };

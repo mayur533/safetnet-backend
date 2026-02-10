@@ -271,6 +271,17 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       console.error('❌ Alert deletion failed, rolling back:', error);
       console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
 
+      // Handle specific 404 error - alert already deleted
+      if (error?.status === 404 || error?.message?.includes('No SOSAlert matches the given query')) {
+        console.log('✅ Alert was already deleted on backend - treating as success');
+        // Don't rollback since the alert is already gone
+        set((state) => ({
+          lastUpdated: new Date().toISOString(),
+          error: null
+        }));
+        return; // Success - no error to throw
+      }
+
       // Handle specific backend limitation
       let errorMessage = error?.message || 'Failed to delete alert';
       if (error?.message?.includes('not yet available')) {

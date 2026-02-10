@@ -11,6 +11,28 @@ export const AlertResponseScreen = ({ route }: any) => {
   const { alert } = route.params as { alert: Alert };
   const navigation = useNavigation();
 
+  // Handle case where alert is not provided
+  if (!alert) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.errorContainer}>
+          <Icon name="error" size={48} color={colors.emergencyRed} />
+          <Text style={styles.errorText}>
+            Alert not found
+          </Text>
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>
+              Go Back
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   const [estimatedArrival, setEstimatedArrival] = useState<number | null>(null);
 
   // Mock officer location for demo
@@ -21,7 +43,7 @@ export const AlertResponseScreen = ({ route }: any) => {
 
   // Get alert type description
   const getAlertTypeDescription = (): { type: string; description: string } => {
-    const isHighPriority = alert.priority?.toLowerCase() === 'high';
+    const isHighPriority = alert.priority?.toLowerCase?.() === 'high';
 
     if (isHighPriority) {
       return {
@@ -55,7 +77,7 @@ export const AlertResponseScreen = ({ route }: any) => {
   };
 
   const getAlertTypeIcon = () => {
-    const isHighPriority = alert.priority?.toLowerCase() === 'high';
+    const isHighPriority = alert.priority?.toLowerCase?.() === 'high';
     const alertType = alert.original_alert_type || alert.alert_type;
 
     if (isHighPriority || alertType === 'emergency') return 'warning';
@@ -64,7 +86,7 @@ export const AlertResponseScreen = ({ route }: any) => {
   };
 
   const alertTypeInfo = getAlertTypeDescription();
-  const alertTypeColor = alert.priority?.toLowerCase() === 'high' || alert.original_alert_type === 'emergency'
+  const alertTypeColor = alert.priority?.toLowerCase?.() === 'high' || alert.original_alert_type === 'emergency'
     ? colors.emergencyRed
     : alert.original_alert_type === 'warning'
     ? colors.warningOrange
@@ -379,6 +401,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: spacing.xs,
   },
+  emergencyTypbuttonText: {
+    ...typography.body,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
+  },
   alertTitle: {
     ...typography.sectionHeader,
     color: colors.darkText,
@@ -438,5 +465,24 @@ const styles = StyleSheet.create({
     ...typography.buttonMedium,
     color: colors.white,
     marginLeft: spacing.xs,
+  },
+  // Error handling styles
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  errorText: {
+    ...typography.body,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    color: colors.emergencyRed,
+  },
+  backButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.white,
   },
 });

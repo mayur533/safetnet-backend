@@ -212,6 +212,18 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       showToast('Alert deleted successfully!', 'success');
     } catch (error: any) {
       console.error('❌ AlertsScreen: Failed to delete alert:', error);
+      
+      // Handle specific 404 error - alert already deleted
+      if (error?.status === 404 || error?.message?.includes('No SOSAlert matches the given query')) {
+        console.log('✅ Alert was already deleted - updating UI');
+        setDeleteModalVisible(false);
+        setAlertToDelete(null);
+        showToast('Alert was already removed', 'success');
+        // Refresh alerts to ensure UI is in sync
+        fetchAlertsWithRetry();
+        return;
+      }
+      
       const errorMessage = error?.message || 'Failed to delete alert. Please try again.';
       showToast(errorMessage, 'error');
     } finally {
