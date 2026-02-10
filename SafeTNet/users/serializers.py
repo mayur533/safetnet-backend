@@ -464,7 +464,22 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
             # Create SecurityOfficer record
             validated_data['created_by'] = created_by
             validated_data['organization'] = organization
+            
+            # Handle assigned_geofence - convert ID to Geofence instance
+            assigned_geofence_id = validated_data.pop('assigned_geofence', None)
+            
             officer = SecurityOfficer.objects.create(**validated_data)
+            
+            # Assign geofence if provided
+            if assigned_geofence_id:
+                try:
+                    geofence = Geofence.objects.get(id=assigned_geofence_id)
+                    officer.assigned_geofence = geofence
+                    officer.save()
+                except Geofence.DoesNotExist:
+                    # If geofence doesn't exist, leave it null (already null by default)
+                    pass
+            
             officer.set_password(password)  # Also store password in SecurityOfficer for consistency
             officer.save()
             
