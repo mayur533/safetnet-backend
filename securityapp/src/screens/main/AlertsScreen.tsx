@@ -220,7 +220,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         setAlertToDelete(null);
         showToast('Alert was already removed', 'success');
         // Refresh alerts to ensure UI is in sync
-        fetchAlertsWithRetry();
+        fetchAlerts();
         return;
       }
       
