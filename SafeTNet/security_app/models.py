@@ -28,10 +28,20 @@ class SOSAlert(models.Model):
         ('area_user_alert', 'Area User Alert'),
     ]
 
+    CREATED_BY_ROLE_CHOICES = [
+        ('USER', 'User'),
+        ('OFFICER', 'Officer'),
+    ]
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='security_app_sos_alerts'
+    )
+    created_by_role = models.CharField(
+        max_length=10,
+        choices=CREATED_BY_ROLE_CHOICES,
+        help_text="Role of the user who created this alert"
     )
     geofence = models.ForeignKey(
         Geofence,
@@ -348,3 +358,32 @@ class UserLocation(models.Model):
         
         age = timezone.now() - self.location_timestamp
         return age.total_seconds() <= (max_age_hours * 3600)
+
+
+class LiveLocation(models.Model):
+    """
+    Live location tracking for SOSAlert.
+    One location per alert, updated in-place.
+    """
+    sos_alert = models.OneToOneField(
+        SOSAlert,
+        on_delete=models.CASCADE,
+        related_name='live_location',
+        help_text="SOS alert this location belongs to"
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='alert_live_locations',
+        help_text="Alert creator who owns this location"
+    )
+    latitude = models.FloatField(help_text="Current latitude")
+    longitude = models.FloatField(help_text="Current longitude")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'SOS Alert Live Location'
+        verbose_name_plural = 'SOS Alert Live Locations'
+
+    def __str__(self):
+        return f"LiveLocation for Alert #{self.sos_alert_id}"

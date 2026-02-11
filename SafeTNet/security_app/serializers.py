@@ -1,7 +1,7 @@
 import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import SOSAlert, Case, Incident, OfficerProfile, Notification  # new models for security_app
+from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, LiveLocation  # new models for security_app
 from users.models import Geofence
 import math
 
@@ -20,16 +20,32 @@ class SOSAlertSerializer(serializers.ModelSerializer):
             return name or obj.assigned_officer.username
         return None
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Get the request context to check user role
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and request.user:
+            # Check if this is an officer editing a USER-created alert
+            if (request.user.role == 'security_officer' and 
+                self.instance and 
+                self.instance.created_by_role == 'USER'):
+                
+                # Make user-provided fields read-only for officers
+                user_fields = ['message', 'description', 'location_lat', 'location_long']
+                for field in user_fields:
+                    self.fields[field].read_only = True
+
     class Meta:
         model = SOSAlert
         fields = (
             'id', 'user', 'user_username', 'user_email', 'geofence', 'geofence_name',
             'alert_type', 'message', 'description', 'location_lat', 'location_long', 'status', 'priority',
-            'assigned_officer', 'assigned_officer_name', 'created_at', 'updated_at',
+            'assigned_officer', 'assigned_officer_name', 'created_by_role', 'created_at', 'updated_at',
             # Area-based alert fields
             'expires_at', 'affected_users_count', 'notification_sent', 'notification_sent_at'
         )
-        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_at', 'updated_at', 
+        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_by_role', 'created_at', 'updated_at', 
                            'affected_users_count', 'notification_sent', 'notification_sent_at')
 
 
@@ -104,7 +120,14 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
         Create alert with backend-authoritative logic.
         For area-based alerts, the backend handles all geofence and user targeting.
         """
-        validated_data['user'] = self.context['request'].user
+        request_user = self.context['request'].user
+        validated_data['user'] = request_user
+        
+        # Set created_by_role based on user role
+        if hasattr(request_user, 'role') and request_user.role == 'security_officer':
+            validated_data['created_by_role'] = 'OFFICER'
+        else:
+            validated_data['created_by_role'] = 'USER'
         
         # For area-based alerts, don't auto-assign geofence - backend will handle it
         if validated_data.get('alert_type') == 'area_user_alert':
@@ -112,7 +135,7 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
             logger.info(f"🚨 Creating area-based alert, backend will handle geofence assignment")
         else:
             # Regular alerts: maintain existing geofence assignment logic
-            officer = self.context['request'].user
+            officer = request_user
             validated_data['assigned_officer'] = officer
             
             # Auto-assign geofence if not provided (existing logic)
@@ -547,4 +570,20 @@ class OfficerLoginSerializer(serializers.Serializer):
         print(f"✅ AUTHENTICATION SUCCESS: User {user.username} validated")
         attrs["user"] = user
         return attrs
+
+
+class LiveLocationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for LiveLocation model with SOS alert relationship.
+    """
+    sos_alert_id = serializers.IntegerField(source='sos_alert.id', read_only=True)
+    sos_alert_status = serializers.CharField(source='sos_alert.status', read_only=True)
+    
+    class Meta:
+        model = LiveLocation
+        fields = (
+            'id', 'sos_alert', 'sos_alert_id', 'user', 'latitude', 'longitude', 
+            'updated_at', 'sos_alert_status'
+        )
+        read_only_fields = ('id', 'sos_alert', 'user', 'updated_at', 'sos_alert_status')
 

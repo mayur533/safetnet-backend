@@ -254,6 +254,8 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+        location_lat: deviceLocation.latitude,
+        location_long: deviceLocation.longitude,
       });
 
       console.log('🎯 Alert created with device location and stored permanently');

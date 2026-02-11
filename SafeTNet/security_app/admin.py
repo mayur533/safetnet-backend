@@ -4,8 +4,8 @@ from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
 
 @admin.register(SOSAlert)
 class SOSAlertAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'geofence', 'status', 'priority', 'assigned_officer', 'is_deleted', 'created_at')
-    list_filter = ('status', 'priority', 'is_deleted')
+    list_display = ('id', 'user', 'created_by_role', 'geofence', 'status', 'priority', 'assigned_officer', 'is_deleted', 'created_at')
+    list_filter = ('status', 'priority', 'created_by_role', 'is_deleted')
     search_fields = ('user__username', 'assigned_officer__name')
 
 

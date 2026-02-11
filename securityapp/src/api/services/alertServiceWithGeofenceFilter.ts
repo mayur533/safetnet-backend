@@ -129,6 +129,7 @@ export const alertServiceWithGeofenceFilter = {
         user_name: alert.user_name || alert.user || 'Unknown User',
         user_email: alert.user_email || '',
         user_phone: alert.user_phone || '',
+        created_by_role: alert.created_by_role, // No default - will be undefined if missing
         alert_type: alert.alert_type || 'security',
         priority: alert.priority || 'medium',
         message: alert.message || 'Alert message',
@@ -382,22 +383,26 @@ export const alertServiceWithGeofenceFilter = {
     alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    // Location fields removed - backend handles location assignment
+    location_lat?: number;
+    location_long?: number;
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
   }): Promise<Alert> => {
-    // Create API payload without location data - backend handles location assignment
+    // Create API payload with location data
     const apiData: {
       alert_type: string;
       message: string;
       description: string;
+      location_lat: number;
+      location_long: number;
       priority: string;
       expires_at?: string;
     } = {
       alert_type: alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
-      // Location fields removed - backend handles location assignment
+      location_lat: alertData.location_lat || 0, // Default to 0 if not provided
+      location_long: alertData.location_long || 0, // Default to 0 if not provided
       priority: alertData.priority || 'medium',
     };
 
@@ -409,12 +414,12 @@ export const alertServiceWithGeofenceFilter = {
     console.log('📤 Alert Creation Debug (Backend-Authoritative):');
     console.log('   📤 Alert Type:', apiData.alert_type);
     console.log('   📤 Message:', apiData.message);
+    console.log('   📤 Location:', apiData.location_lat, apiData.location_long);
     console.log('   📤 Priority:', apiData.priority);
-    console.log('   📤 Expires at:', apiData.expires_at || 'Not set');
-    console.log('   🚫 Location data removed - backend will handle location assignment');
+    console.log('   � Expires at:', apiData.expires_at || 'Not set');
 
-    // No location validation needed - backend handles location assignment
-    console.log('📤 Sending alert data without location - backend will handle location assignment');
+    // Location data is now included in API call
+    console.log('📤 Sending alert data with location coordinates');
 
     try {
       console.log('📡 Creating alert with data:', apiData);
@@ -539,6 +544,7 @@ export const alertServiceWithGeofenceFilter = {
             priority: (apiData.priority || 'medium') as 'high' | 'medium' | 'low',
             message: apiData.message,
             description: apiData.description || apiData.message,
+            created_by_role: undefined, // No default - must be set explicitly by backend
             location: {
               latitude: 0,
               longitude: 0,

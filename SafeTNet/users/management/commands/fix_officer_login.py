@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from users.models import SecurityOfficer
+# SecurityOfficer model removed - using User with role='security_officer' instead
+# from users.models import SecurityOfficer
 from security_app.models import OfficerProfile
 from django.utils import timezone
 
@@ -106,44 +107,19 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f'✅ Set default password: {default_password}'))
                 fixes_applied.append(f"Set default password: {default_password}")
         
-        # Step 5: Check/Create SecurityOfficer
-        try:
-            officer = SecurityOfficer.objects.get(username=username)
-            self.stdout.write(f'✅ SecurityOfficer profile exists')
-            if not officer.is_active:
-                self.stdout.write(self.style.WARNING(f'⚠️  SecurityOfficer is NOT active'))
-                issues_found.append("SecurityOfficer is not active")
-                officer.is_active = True
-                officer.save()
-                self.stdout.write(self.style.SUCCESS(f'✅ Activated SecurityOfficer'))
-                fixes_applied.append("Activated SecurityOfficer")
-        except SecurityOfficer.DoesNotExist:
-            self.stdout.write(self.style.WARNING(f'⚠️  SecurityOfficer profile does not exist'))
-            issues_found.append("SecurityOfficer profile missing")
-            
-            if not user.organization:
-                self.stdout.write(self.style.ERROR('❌ User has no organization. Cannot create SecurityOfficer.'))
-                return
-            
-            officer = SecurityOfficer.objects.create(
-                username=username,
-                name=f"{user.first_name} {user.last_name}".strip() or user.username,
-                email=user.email or email,
-                organization=user.organization,
-                is_active=True
-            )
-            self.stdout.write(self.style.SUCCESS(f'✅ Created SecurityOfficer profile'))
-            fixes_applied.append("Created SecurityOfficer profile")
+        # Step 5: Skip SecurityOfficer creation (using User model instead)
+        # The User model with role='security_officer' is now used instead of SecurityOfficer
+        self.stdout.write(f'✅ Using User model with role=security_officer (legacy SecurityOfficer model deprecated)')
         
         # Step 6: Check/Create OfficerProfile
         try:
-            profile = OfficerProfile.objects.get(officer=officer)
+            profile = OfficerProfile.objects.get(officer=user)
             self.stdout.write(f'✅ OfficerProfile exists')
         except OfficerProfile.DoesNotExist:
             self.stdout.write(self.style.WARNING(f'⚠️  OfficerProfile does not exist'))
             issues_found.append("OfficerProfile missing")
             profile = OfficerProfile.objects.create(
-                officer=officer,
+                officer=user,  # Use User instance, not SecurityOfficer
                 on_duty=False,
                 last_seen_at=timezone.now()
             )

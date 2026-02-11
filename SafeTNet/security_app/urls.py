@@ -5,6 +5,7 @@ from . import views
 router = DefaultRouter()
 router.register(r'sos', views.SOSAlertViewSet, basename='security-sos')
 router.register(r'case', views.CaseViewSet, basename='security-case')
+router.register(r'live-locations', views.LiveLocationViewSet, basename='live-locations')
 
 urlpatterns = [
     path('', include(router.urls)),

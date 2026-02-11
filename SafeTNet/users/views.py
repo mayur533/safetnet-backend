@@ -33,7 +33,7 @@ from .serializers import (
     OfficerGeofenceAssignmentSerializer, GeofenceAssignmentSerializer
 )
 from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP, OfficerGeofenceAssignment, SecurityOfficer
-from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
+from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences, IsOwnerAndPendingAlert
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -503,10 +503,14 @@ class AlertViewSet(ModelViewSet):
     
     def get_permissions(self):
         """
-        Override to allow all authenticated users to read alerts for their geofences.
+        Override permissions:
+        - Read operations: Any authenticated user
+        - Update/Delete operations: SUPER_ADMIN/SUB_ADMIN OR owner of unresolved alert
         """
         if self.action in ['list', 'retrieve']:
             return [IsAuthenticated()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsOwnerAndPendingAlert()]
         return [IsAuthenticated(), IsSuperAdminOrSubAdmin()]
     
     def perform_create(self, serializer):

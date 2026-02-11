@@ -14,7 +14,8 @@ interface AlertsState {
     alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    // Location fields removed - backend handles location assignment
+    location_lat?: number;
+    location_long?: number;
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
   }) => Promise<Alert>;
@@ -66,40 +67,20 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
       const alerts = await alertServiceWithGeofenceFilter.getAlerts();
 
-      // ALWAYS replace the alerts array with fresh data - never merge
-      console.log('🔄 Replacing entire alerts array with backend-filtered data...');
+      // Filter: only keep alerts with valid created_by_role field that is not OFFICER
+      const userCreatedAlerts = alerts.filter(alert => 
+        alert.created_by_role && alert.created_by_role !== 'OFFICER'
+      );
+
+      // Replace alerts array with filtered data
       set({
-        alerts: alerts || [], // Always use fresh data, never merge with old
+        alerts: userCreatedAlerts,
         isLoading: false,
         error: null,
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${alerts.length} backend-filtered alerts from API`);
-      console.log(`🕒 Store updated at: ${new Date().toISOString()}`);
-      console.log(`🔍 Store now contains ${get().alerts?.length || 0} alerts`);
-      
-      // CRITICAL: Log exact counts for debugging
-      console.log('🗺️ BACKEND-AUTHORITATIVE FILTERING DEBUG - Store Update Analysis:');
-      console.log(`   🔐 Officer Identification: Backend (from auth context)`);
-      console.log(`   📊 Alerts received from API: ${alerts.length}`);
-      console.log(`   📊 Alerts stored in Zustand: ${get().alerts?.length || 0}`);
-      console.log(`   🗺️ Backend Filtering: AUTHENTICATED`);
-      console.log(`   📊 Store replacement: ${alerts.length === (get().alerts?.length || 0) ? 'SUCCESS' : 'MISMATCH'}`);
-      
-      if (alerts.length > 0) {
-        console.log('📋 Latest backend-filtered alerts from API:');
-        alerts.slice(0, 3).forEach((alert, index) => {
-          console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status}) - ${alert.created_at}`);
-        });
-        
-        // Log alert status distribution
-        const statusCounts = alerts.reduce((acc: Record<string, number>, alert) => {
-          acc[alert.status] = (acc[alert.status] || 0) + 1;
-          return acc;
-        }, {});
-        console.log('📊 Alert status distribution:', statusCounts);
-      }
+      console.log(`✅ Fetched ${alerts.length} alerts, stored ${userCreatedAlerts.length} USER-created alerts`);
     } catch (error: any) {
       console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error);
       
@@ -186,6 +167,14 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       throw new Error(`Alert with id ${id} not found`);
     }
 
+    // SAFETY GUARD: Only allow updates to USER-created alerts
+    if (originalAlert.created_by_role !== 'USER') {
+      console.warn(`🛡️ SAFETY GUARD: Blocked update attempt on ${originalAlert.created_by_role}-created alert ${id}`);
+      console.warn('   Only USER-created alerts can be updated');
+      // Abort locally without API call
+      return;
+    }
+
     // Store original for rollback
     const rollbackAlert = { ...originalAlert };
 
@@ -263,16 +252,10 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       await alertService.deleteAlert(alertId);
       console.log('✅ Alert deleted successfully via API');
 
-      // Force refresh to ensure backend is in sync
-      console.log('🔄 Forcing fresh fetch after successful delete to ensure backend sync...');
+      // Mark deletion as complete - no need to refresh since we already removed it
       set((state) => ({
-        lastUpdated: new Date(0).toISOString() // Reset cache to force refresh
+        lastUpdated: new Date().toISOString()
       }));
-      
-      // Trigger a fetch after a short delay
-      setTimeout(() => {
-        get().fetchAlerts();
-      }, 1000);
 
     } catch (error: any) {
       // If it's a 404 error (alert doesn't exist), treat it as success
@@ -284,10 +267,6 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
         set((state) => ({
           lastUpdated: new Date().toISOString()
         }));
-        // Still trigger a refresh to ensure backend sync
-        setTimeout(() => {
-          get().fetchAlerts();
-        }, 1000);
         return;
       }
       

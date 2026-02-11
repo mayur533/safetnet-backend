@@ -131,6 +131,105 @@ class OrganizationIsolationMixin:
         return queryset.none()
 
 
+class IsOwnerAndPendingAlert(permissions.BasePermission):
+    """
+    Custom permission to allow users to update/delete their own alerts based on creator role:
+    - Users can modify their own alerts only if status is 'pending'
+    - Officers can modify their own alerts regardless of status
+    - Admins can modify any alert
+    """
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # SUPER_ADMIN and SUB_ADMIN can always modify
+        if request.user.role in ['SUPER_ADMIN', 'SUB_ADMIN']:
+            return True
+        
+        # Officers can modify their own created alerts
+        if request.user.role == 'security_officer':
+            return (obj.created_by_role == 'OFFICER' and 
+                   obj.user_id == request.user.id)
+        
+        # Users can only modify their own alerts that are still pending
+        # Once status changes to 'accepted' or 'resolved', user cannot modify
+        if request.user.role == 'USER':
+            return (obj.user_id == request.user.id and 
+                   obj.status == 'pending')
+        
+        return False
+
+
+class IsLiveLocationOwner(permissions.BasePermission):
+    """
+    Custom permission for LiveLocation write access.
+    
+    Allow CREATE/UPDATE only if:
+    - request.user.role == USER
+    - request.user.id == live_location.user_id  
+    - request.user.id == sos_alert.user_id
+    - sos_alert.status IN ('pending', 'accepted')
+    
+    Deny for security_officer, admin roles, resolved/cancelled alerts.
+    """
+    
+    def has_permission(self, request, view):
+        """Check permission for create operations."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Only USER role can create LiveLocation
+        if request.user.role != 'USER':
+            return False
+        
+        # Validate sos_alert exists and belongs to user
+        sos_alert_id = request.data.get('sos_alert')
+        if not sos_alert_id:
+            return False
+        
+        try:
+            from security_app.models import SOSAlert
+            sos_alert = SOSAlert.objects.get(id=sos_alert_id)
+            
+            # Ensure user owns the SOS alert
+            if sos_alert.user_id != request.user.id:
+                return False
+            
+            # Ensure alert was created by USER (not officer)
+            if sos_alert.created_by_role != 'USER':
+                return False
+            
+            # Ensure alert is in valid status
+            if sos_alert.status not in ['pending', 'accepted']:
+                return False
+            
+            return True
+            
+        except SOSAlert.DoesNotExist:
+            return False
+    
+    def has_object_permission(self, request, view, obj):
+        """Check permission for update/delete operations."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Only USER role can update LiveLocation
+        if request.user.role != 'USER':
+            return False
+        
+        # User must own both the LiveLocation and the associated SOSAlert
+        if (obj.user_id != request.user.id or 
+            obj.sos_alert.user_id != request.user.id):
+            return False
+        
+        # Only allow updates for pending or accepted alerts
+        if obj.sos_alert.status not in ['pending', 'accepted']:
+            return False
+        
+        return True
+
+
 class ResourceOwnershipMixin:
     """
     Mixin to enforce resource ownership for certain operations.

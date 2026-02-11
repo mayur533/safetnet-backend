@@ -16,10 +16,14 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta
 import math
-from users.permissions import IsSuperAdminOrSubAdmin
-from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
+from users.permissions import IsSuperAdminOrSubAdmin, IsOwnerAndPendingAlert, IsLiveLocationOwner
+from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, LiveLocation
 # SecurityOfficer model removed - using User with role='security_officer' instead
-from users.models import SecurityOfficer, Geofence
+# from users.models import SecurityOfficer, Geofence
+from django.contrib.auth import get_user_model
+from users.models import Geofence
+
+User = get_user_model()
 from django.shortcuts import get_object_or_404
 from users_profile.models import LiveLocationShare, LiveLocationTrackPoint
 from users_profile.serializers import LiveLocationShareSerializer, LiveLocationShareCreateSerializer
@@ -37,6 +41,7 @@ from .serializers import (
     NotificationSerializer,
     NotificationAcknowledgeSerializer,
     OfficerLoginSerializer,
+    LiveLocationSerializer,
     GeofenceSerializer,
 )
 
@@ -57,6 +62,19 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         if self.action == 'create':
             return SOSAlertCreateSerializer
         return SOSAlertSerializer
+
+    def get_permissions(self):
+        """
+        Override permissions:
+        - Read operations: Any authenticated user (filtered by queryset)
+        - Update/Delete operations: SUPER_ADMIN/SUB_ADMIN OR owner of pending alert
+        - Create operations: Use existing OfficerOnlyMixin
+        """
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsOwnerAndPendingAlert()]
+        return [IsAuthenticated()]  # Create uses OfficerOnlyMixin for additional restrictions
 
     def get_queryset(self):
         """
@@ -98,7 +116,25 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         return base_queryset.filter(user=user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        """Create SOSAlert and automatically create LiveLocation for USER-created alerts."""
+        from django.db import transaction
+        
+        with transaction.atomic():
+            instance = serializer.save(user=self.request.user)
+            
+            # Automatically create LiveLocation for USER-created alerts only
+            if (instance.created_by_role == 'USER' and 
+                instance.location_lat is not None and 
+                instance.location_long is not None):
+                
+                LiveLocation.objects.get_or_create(
+                    sos_alert=instance,
+                    defaults={
+                        'user': instance.user,
+                        'latitude': instance.location_lat,
+                        'longitude': instance.location_long
+                    }
+                )
 
     def create(self, request, *args, **kwargs):
         """
@@ -278,21 +314,30 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'])
     def resolve(self, request, pk=None):
         alert = self.get_object()
+        
+        # Permission checks are now handled by get_permissions() and IsOwnerAndPendingAlert
         alert.status = 'resolved'
         alert.save()
         serializer = self.get_serializer(alert)
         return Response(serializer.data)
 
-    def perform_destroy(self, instance):
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Permission checks are now handled by get_permissions() and IsOwnerAndPendingAlert
+        # Soft delete the alert
         instance.is_deleted = True
         instance.save(update_fields=['is_deleted'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # ✅ Allow officers to update any SOS (their own or others)
+    # ✅ Apply permission checks to all write operations
     def update(self, request, *args, **kwargs):
+        # Permission checks are now handled by get_permissions() and IsOwnerAndPendingAlert
         return super().update(request, *args, **kwargs)
 
-    # ✅ Same for partial updates (PATCH)
+    # ✅ Same for partial updates (PATCH) with permission checks
     def partial_update(self, request, *args, **kwargs):
+        # Permission checks are now handled by get_permissions() and IsOwnerAndPendingAlert
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])
@@ -582,22 +627,78 @@ class GeofenceCurrentView(OfficerOnlyMixin, APIView):
     def get(self, request):
         """Get the assigned geofence for the current security officer"""
         try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
+            officer = User.objects.get(email=request.user.email, role='security_officer')
+        except User.DoesNotExist:
             return Response({
                 'error': 'Security officer profile not found',
                 'detail': 'Officer not found for user.'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        if not officer.assigned_geofence:
+        if not officer.geofences.exists():
             return Response({
                 'error': 'No geofence assigned to this officer',
                 'detail': 'This security officer does not have an assigned geofence area.'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        geofence = officer.assigned_geofence
+        # Get the first assigned geofence (or you could return all)
+        assigned_geofence = officer.geofences.first()
+        
+        geofence = assigned_geofence
         serializer = GeofenceSerializer(geofence)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class LiveLocationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for LiveLocation with strict write permissions.
+    Only users can create/update their own live locations for pending/accepted alerts.
+    """
+    serializer_class = LiveLocationSerializer
+    permission_classes = [IsAuthenticated, IsLiveLocationOwner]
+    
+    def get_queryset(self):
+        """
+        Filter queryset based on user role:
+        - Users: read own LiveLocation only
+        - Officers: read LiveLocation of USER-created alerts assigned to them OR within their geofence
+        """
+        user = self.request.user
+        
+        if user.role == 'USER':
+            # Users can only see their own live locations
+            return LiveLocation.objects.filter(user=user)
+        
+        elif user.role == 'security_officer':
+            # Officers can read LiveLocation of USER-created alerts:
+            # 1. Assigned to them (via SOSAlert.assigned_officer)
+            # 2. Within their geofence areas
+            from django.db.models import Q
+            
+            # Get officer's assigned geofences
+            officer_geofences = user.geofences.all()
+            
+            return LiveLocation.objects.filter(
+                Q(sos_alert__created_by_role='USER') &  # Only USER-created alerts
+                (
+                    Q(sos_alert__assigned_officer=user) |  # Assigned to officer
+                    Q(sos_alert__geofence__in=officer_geofences)  # Within officer's geofence
+                )
+            ).distinct()
+        
+        # Default: empty queryset
+        return LiveLocation.objects.none()
+    
+    def perform_create(self, serializer):
+        """Set the user and SOS alert relationship on creation."""
+        serializer.save(user=self.request.user)
+    
+    def get_permissions(self):
+        """Apply different permissions for different actions."""
+        if self.action in ['create']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        return [IsAuthenticated()]
 
 
 class GeofenceDetailView(OfficerOnlyMixin, APIView):
@@ -609,15 +710,15 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
     def get(self, request, geofence_id):
         """Get specific geofence by ID (only if assigned to the officer)"""
         try:
-            officer = SecurityOfficer.objects.get(email=request.user.email)
-        except SecurityOfficer.DoesNotExist:
+            officer = User.objects.get(email=request.user.email, role='security_officer')
+        except User.DoesNotExist:
             return Response({
                 'error': 'Security officer profile not found',
                 'detail': 'Officer not found for user.'
             }, status=status.HTTP_404_NOT_FOUND)
         
         # Verify the requested geofence matches the officer's assignment
-        if not officer.assigned_geofence or str(officer.assigned_geofence.id) != str(geofence_id):
+        if not officer.geofences.filter(id=geofence_id).exists():
             return Response({
                 'error': 'You are not authorized to access this geofence',
                 'detail': 'This geofence is not assigned to you.'
@@ -626,6 +727,59 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
         geofence = get_object_or_404(Geofence, id=geofence_id)
         serializer = GeofenceSerializer(geofence)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class LiveLocationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for LiveLocation with strict write permissions.
+    Only users can create/update their own live locations for pending/accepted alerts.
+    """
+    serializer_class = LiveLocationSerializer
+    permission_classes = [IsAuthenticated, IsLiveLocationOwner]
+    
+    def get_queryset(self):
+        """
+        Filter queryset based on user role:
+        - Users: read own LiveLocation only
+        - Officers: read LiveLocation of USER-created alerts assigned to them OR within their geofence
+        """
+        user = self.request.user
+        
+        if user.role == 'USER':
+            # Users can only see their own live locations
+            return LiveLocation.objects.filter(user=user)
+        
+        elif user.role == 'security_officer':
+            # Officers can read LiveLocation of USER-created alerts:
+            # 1. Assigned to them (via SOSAlert.assigned_officer)
+            # 2. Within their geofence areas
+            from django.db.models import Q
+            
+            # Get officer's assigned geofences
+            officer_geofences = user.geofences.all()
+            
+            return LiveLocation.objects.filter(
+                Q(sos_alert__created_by_role='USER') &  # Only USER-created alerts
+                (
+                    Q(sos_alert__assigned_officer=user) |  # Assigned to officer
+                    Q(sos_alert__geofence__in=officer_geofences)  # Within officer's geofence
+                )
+            ).distinct()
+        
+        # Default: empty queryset
+        return LiveLocation.objects.none()
+    
+    def perform_create(self, serializer):
+        """Set the user and SOS alert relationship on creation."""
+        serializer.save(user=self.request.user)
+    
+    def get_permissions(self):
+        """Apply different permissions for different actions."""
+        if self.action in ['create']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        return [IsAuthenticated()]
 
 
 class OfficerLoginView(APIView):
@@ -1065,4 +1219,57 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
         
         serializer = GeofenceSerializer(geofence)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class LiveLocationViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for LiveLocation with strict write permissions.
+    Only users can create/update their own live locations for pending/accepted alerts.
+    """
+    serializer_class = LiveLocationSerializer
+    permission_classes = [IsAuthenticated, IsLiveLocationOwner]
+    
+    def get_queryset(self):
+        """
+        Filter queryset based on user role:
+        - Users: read own LiveLocation only
+        - Officers: read LiveLocation of USER-created alerts assigned to them OR within their geofence
+        """
+        user = self.request.user
+        
+        if user.role == 'USER':
+            # Users can only see their own live locations
+            return LiveLocation.objects.filter(user=user)
+        
+        elif user.role == 'security_officer':
+            # Officers can read LiveLocation of USER-created alerts:
+            # 1. Assigned to them (via SOSAlert.assigned_officer)
+            # 2. Within their geofence areas
+            from django.db.models import Q
+            
+            # Get officer's assigned geofences
+            officer_geofences = user.geofences.all()
+            
+            return LiveLocation.objects.filter(
+                Q(sos_alert__created_by_role='USER') &  # Only USER-created alerts
+                (
+                    Q(sos_alert__assigned_officer=user) |  # Assigned to officer
+                    Q(sos_alert__geofence__in=officer_geofences)  # Within officer's geofence
+                )
+            ).distinct()
+        
+        # Default: empty queryset
+        return LiveLocation.objects.none()
+    
+    def perform_create(self, serializer):
+        """Set the user and SOS alert relationship on creation."""
+        serializer.save(user=self.request.user)
+    
+    def get_permissions(self):
+        """Apply different permissions for different actions."""
+        if self.action in ['create']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsLiveLocationOwner()]
+        return [IsAuthenticated()]
 

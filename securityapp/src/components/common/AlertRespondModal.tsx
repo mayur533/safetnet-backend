@@ -379,6 +379,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  retryButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+  },
   alertType: {
     ...typography.caption,
     fontWeight: '600',
@@ -386,6 +390,16 @@ const styles = StyleSheet.create({
   },
   alertTime: {
     ...typography.caption,
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  alertTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   messageContainer: {
     padding: spacing.md,
