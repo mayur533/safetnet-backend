@@ -32,7 +32,7 @@ from .serializers import (
     UserReplySerializer, UserDetailsSerializer,
     OfficerGeofenceAssignmentSerializer, GeofenceAssignmentSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP, OfficerGeofenceAssignment, SecurityOfficer
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP, OfficerGeofenceAssignment
 from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences, IsOwnerAndPendingAlert
 
 

@@ -729,7 +729,6 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class LiveLocationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for LiveLocation with strict write permissions.
     Only users can create/update their own live locations for pending/accepted alerts.
@@ -1221,7 +1220,6 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class LiveLocationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for LiveLocation with strict write permissions.
     Only users can create/update their own live locations for pending/accepted alerts.

@@ -147,14 +147,14 @@ const formatApiError = (error: AxiosError): ApiError => {
 
     if (typeof data === 'string') {
       message = data;
-    } else if (data?.message) {
-      message = data.message;
-    } else if (data?.detail) {
-      message = data.detail;
-    } else if (data?.error) {
-      message = data.error;
-    } else if (status === 400 && data?.non_field_errors?.[0]) {
-      message = data.non_field_errors[0];
+    } else if (data && typeof data === 'object' && 'message' in data) {
+      message = String(data.message);
+    } else if (data && typeof data === 'object' && 'detail' in data) {
+      message = String(data.detail);
+    } else if (data && typeof data === 'object' && 'error' in data) {
+      message = String(data.error);
+    } else if (status === 400 && data && typeof data === 'object' && 'non_field_errors' in data && Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+      message = String((data.non_field_errors[0] as string));
     } else if (status === 404) {
       message = 'Resource not found';
     } else if (status === 403) {

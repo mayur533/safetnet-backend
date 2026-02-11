@@ -235,55 +235,6 @@ class Alert(models.Model):
         self.save()
 
 
-class SecurityOfficer(models.Model):
-    username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text="Unique username for security officer")
-    name = models.CharField(max_length=100)
-    contact = models.CharField(max_length=20, help_text="Phone number or contact info")
-    email = models.EmailField(blank=True, null=True)
-    password = models.CharField(max_length=128, blank=True, null=True, help_text="Hashed password for security officer")
-    assigned_geofence = models.ForeignKey(
-        Geofence,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='legacy_assigned_officers'  # Changed to avoid conflicts - this model is deprecated
-    )
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name='legacy_security_officers'  # Changed to avoid conflicts - this model is deprecated
-    )
-    is_active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='legacy_created_officers',  # Changed to avoid conflicts - this model is deprecated
-        limit_choices_to={'role': 'SUB_ADMIN'}
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        verbose_name = 'Security Officer'
-        verbose_name_plural = 'Security Officers'
-        ordering = ['-created_at']
-        managed = False  # Table has been deleted - using User model with role='security_officer' instead
-        db_table = 'users_securityofficer'  # Legacy table name (no longer exists)
-    
-    def set_password(self, raw_password):
-        """Hash and set password"""
-        from django.contrib.auth.hashers import make_password
-        self.password = make_password(raw_password)
-    
-    def check_password(self, raw_password):
-        """Check if the provided password is correct"""
-        from django.contrib.auth.hashers import check_password
-        return check_password(raw_password, self.password)
-    
-    def __str__(self):
-        return f"{self.name} ({self.organization.name})"
 
 
 class Incident(models.Model):

@@ -6,6 +6,7 @@ from users.models import Geofence
 import math
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class SOSAlertSerializer(serializers.ModelSerializer):
@@ -13,28 +14,47 @@ class SOSAlertSerializer(serializers.ModelSerializer):
     user_email = serializers.CharField(source='user.email', read_only=True)
     geofence_name = serializers.CharField(source='geofence.name', read_only=True)
     assigned_officer_name = serializers.SerializerMethodField()
+    created_by_role = serializers.SerializerMethodField()
     
     def get_assigned_officer_name(self, obj):
         if obj.assigned_officer:
             name = f"{obj.assigned_officer.first_name} {obj.assigned_officer.last_name}".strip()
             return name or obj.assigned_officer.username
         return None
+    
+    def get_created_by_role(self, obj):
+        """Ensure created_by_role always has a value"""
+        if obj.created_by_role:
+            return obj.created_by_role
+            
+        # Fallback logic based on user role if field is not set
+        if hasattr(obj.user, 'role') and obj.user.role == 'security_officer':
+            return 'OFFICER'
+            
+        return 'USER'
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # Get the request context to check user role
+    def update(self, instance, validated_data):
+        """Apply officer field restrictions during update operations only"""
         request = self.context.get('request')
-        if request and hasattr(request, 'user') and request.user:
-            # Check if this is an officer editing a USER-created alert
-            if (request.user.role == 'security_officer' and 
-                self.instance and 
-                self.instance.created_by_role == 'USER'):
-                
-                # Make user-provided fields read-only for officers
-                user_fields = ['message', 'description', 'location_lat', 'location_long']
-                for field in user_fields:
-                    self.fields[field].read_only = True
+        
+        # Only apply restrictions for security officers updating USER-created alerts
+        if (request and 
+            hasattr(request, 'user') and 
+            request.user and 
+            request.user.role == 'security_officer' and
+            instance and 
+            hasattr(instance, 'created_by_role') and 
+            instance.created_by_role == 'USER'):
+            
+            # Make user-provided fields read-only for officers updating USER-created alerts
+            user_fields = ['message', 'description', 'location_lat', 'location_long']
+            for field in user_fields:
+                if field in validated_data:
+                    raise serializers.ValidationError({
+                        field: f"Security officers cannot modify {field} on USER-created alerts"
+                    })
+        
+        return super().update(instance, validated_data)
 
     class Meta:
         model = SOSAlert
@@ -518,9 +538,6 @@ class OfficerLoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'})
 
     def validate(self, attrs):
-        import logging
-        logger = logging.getLogger(__name__)
-
         username = attrs.get("username")
         password = attrs.get("password")
 

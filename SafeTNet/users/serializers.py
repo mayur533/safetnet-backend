@@ -744,17 +744,11 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
     is_active = serializers.BooleanField(default=True, required=False)
 
-    
+
 
     def validate_username(self, value):
 
-        """Validate username is unique in both SecurityOfficer and User models"""
-
-        if SecurityOfficer.objects.filter(username=value).exists():
-
-            raise serializers.ValidationError("A security officer with this username already exists.")
-
-        # Also check User model to avoid conflicts
+        """Validate username is unique in User model"""
 
         from django.contrib.auth import get_user_model
 
@@ -766,7 +760,7 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
         return value
 
-    
+
 
     def validate_email(self, value):
 
@@ -924,37 +918,16 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
             
 
-            # Create SecurityOfficer record
-
-            validated_data['created_by'] = created_by
-
-            validated_data['organization'] = organization
-
-            officer = SecurityOfficer.objects.create(**validated_data)
-
-            officer.set_password(password)  # Also store password in SecurityOfficer for consistency
-
-            officer.save()
-
-            
-
             # Create OfficerProfile (required for security_app APIs)
-
             OfficerProfile.objects.create(
-
-                officer=officer,
-
+                officer=user,  # Use the User instance
+                phone_number=validated_data.get('contact', ''),
                 on_duty=True,
-
                 last_seen_at=timezone.now(),
-
                 battery_level=100
-
             )
-
         
-
-        return officer
+        return user
 
 
 

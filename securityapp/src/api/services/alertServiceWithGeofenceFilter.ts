@@ -116,36 +116,53 @@ export const alertServiceWithGeofenceFilter = {
       if (alertsData.length > 0) {
         console.log(' First 3 alerts from backend:');
         alertsData.slice(0, 3).forEach((alert, index) => {
-          console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Location:${alert.location_lat},${alert.location_long}`);
+          console.log(`     ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Location:${alert.location_lat},${alert.location_long}`);
         });
       }
 
       // Transform alerts to ensure they have the correct fields
-      const transformedAlerts = alertsData.map((alert: any) => ({
-        ...alert,
-        id: typeof alert.id === 'number' ? alert.id : parseInt(alert.id) || alert.pk || alert.alert_id,
-        log_id: alert.log_id || '',
-        user_id: alert.user_id || '',
-        user_name: alert.user_name || alert.user || 'Unknown User',
-        user_email: alert.user_email || '',
-        user_phone: alert.user_phone || '',
-        created_by_role: alert.created_by_role, // No default - will be undefined if missing
-        alert_type: alert.alert_type || 'security',
-        priority: alert.priority || 'medium',
-        message: alert.message || 'Alert message',
-        location: alert.location || {
-          latitude: alert.latitude || alert.location_lat || 0,
-          longitude: alert.longitude || alert.location_long || 0,
-          address: alert.address || 'Unknown location'
-        },
-        location_lat: alert.location_lat || alert.latitude || 0,
-        location_long: alert.location_long || alert.longitude || 0,
-        timestamp: alert.timestamp || alert.created_at || new Date().toISOString(),
-        status: alert.status || 'pending',
-        geofence_id: alert.geofence_id || '',
-        created_at: alert.created_at || alert.timestamp || new Date().toISOString(),
-        updated_at: alert.updated_at
-      }));
+      const transformedAlerts = alertsData.map((alert: any, index: number) => {
+        // Safety check: ensure we're working with an object, not an array
+        if (Array.isArray(alert)) {
+          console.error(`❌ Alert at index ${index} is an array, not an object:`, alert);
+          return null; // Skip this invalid entry
+        }
+        
+        // Debug log to check the structure of each alert
+        console.log('🔍 Processing alert:', {
+          id: alert.id,
+          has_created_by_role: 'created_by_role' in alert,
+          created_by_role: alert.created_by_role,
+          alert_type: typeof alert
+        });
+        
+        // Skip null alerts
+        if (!alert || typeof alert !== 'object') {
+          console.error(`❌ Invalid alert at index ${index}:`, alert);
+          return null;
+        }
+        
+        return {
+          ...alert,
+          id: typeof alert.id === 'number' ? alert.id : parseInt(alert.id) || alert.pk || alert.alert_id,
+          log_id: alert.log_id || '',
+          user_id: alert.user_id || '',
+          user_name: alert.user_name || alert.user || 'Unknown User',
+          user_email: alert.user_email || '',
+          user_phone: alert.user_phone || '',
+          created_by_role: alert.created_by_role || 'USER', // Default to 'USER' if missing
+          alert_type: alert.alert_type || 'security',
+          priority: alert.priority || 'medium',
+          message: alert.message || 'Alert message',
+          location: alert.location || {
+            latitude: alert.latitude || alert.location_lat || 0,
+            longitude: alert.longitude || alert.location_long || 0,
+            address: alert.address || 'Unknown location'
+          },
+          location_lat: alert.location_lat || alert.latitude || 0,
+          location_long: alert.location_long || alert.longitude || 0,
+        };
+      }).filter(alert => alert !== null); // Filter out any null alerts
 
       // Sort alerts by created_at in descending order (most recent first)
       transformedAlerts.sort((a, b) => {
