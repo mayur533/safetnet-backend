@@ -831,7 +831,7 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
             
             # Validate geofence exists and is active
             try:
-                geofence = Geofence.objects.get(id=geofence_id, is_active=True)
+                geofence = Geofence.objects.get(id=geofence_id, active=True)
             except Geofence.DoesNotExist:
                 return Response(
                     {'error': 'Geofence not found or inactive'},

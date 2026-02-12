@@ -1475,15 +1475,6 @@ class OfficerGeofenceAssignmentSerializer(serializers.ModelSerializer):
 
 
 
-class GeofenceAssignmentSerializer(serializers.ModelSerializer):
-
-    """Serializer for creating geofence assignments"""
-
-    
-
-    class Meta:
-
-        model = OfficerGeofenceAssignment
-
-        fields = ['geofence_id']
+class GeofenceAssignmentSerializer(serializers.Serializer):
+    geofence_id = serializers.IntegerField(required=True)
 
