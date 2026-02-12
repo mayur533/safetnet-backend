@@ -930,7 +930,7 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
             assignment.save()
             
             # Also remove geofence from officer's ManyToMany field
-            officer.geofences.remove(geofence)
+            officer.geofences.remove(assignment.geofence)
             
             return Response({
                 'message': 'Geofence assignment deactivated successfully',
