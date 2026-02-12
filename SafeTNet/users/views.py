@@ -806,6 +806,7 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
             return User.objects.none()
     
     def perform_create(self, serializer):
+        print(f"DEBUG - SecurityOfficerViewSet request.data: {self.request.data}")
         # For SUB_ADMIN, automatically set organization to their organization
         if self.request.user.role == 'SUB_ADMIN' and self.request.user.organization:
             serializer.save(organization=self.request.user.organization)

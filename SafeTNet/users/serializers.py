@@ -800,6 +800,12 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
         
 
+        # Extract assigned_geofence from validated_data
+
+        geofence_id = validated_data.pop('assigned_geofence', None)
+
+        
+
         # Get organization and created_by
 
         # When perform_create calls serializer.save(organization=..., created_by=...),
@@ -919,13 +925,39 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
             
 
             # Create OfficerProfile (required for security_app APIs)
+
             OfficerProfile.objects.create(
+
                 officer=user,  # Use the User instance
+
                 phone_number=validated_data.get('contact', ''),
+
                 on_duty=True,
+
                 last_seen_at=timezone.now(),
+
                 battery_level=100
+
             )
+            
+            # Handle geofence assignment if provided
+
+            if geofence_id:
+                from .models import OfficerGeofenceAssignment, Geofence
+                try:
+                    geofence = Geofence.objects.get(id=geofence_id, active=True)
+                    # Create OfficerGeofenceAssignment record
+                    OfficerGeofenceAssignment.objects.create(
+                        officer=user,
+                        geofence=geofence,
+                        assigned_by=created_by
+                    )
+                    # Add geofence to user.geofences ManyToMany field
+                    user.geofences.add(geofence)
+                except Geofence.DoesNotExist:
+                    raise serializers.ValidationError({
+                        'assigned_geofence': f'Geofence with id {geofence_id} not found or inactive'
+                    })
         
         return user
 
