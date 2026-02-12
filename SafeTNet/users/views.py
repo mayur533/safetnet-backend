@@ -807,6 +807,25 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
     
     def perform_create(self, serializer):
         print(f"DEBUG - SecurityOfficerViewSet request.data: {self.request.data}")
+        print(f"DEBUG - serializer.initial_data: {serializer.initial_data}")
+        print(f"DEBUG - serializer.validated_data: {serializer.validated_data}")
+        
+        # Check if assigned_geofence is present
+        if 'assigned_geofence' in self.request.data:
+            print(f"DEBUG - assigned_geofence found in request.data: {self.request.data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in request.data")
+        
+        if 'assigned_geofence' in serializer.initial_data:
+            print(f"DEBUG - assigned_geofence found in serializer.initial_data: {serializer.initial_data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in serializer.initial_data")
+        
+        if 'assigned_geofence' in serializer.validated_data:
+            print(f"DEBUG - assigned_geofence found in serializer.validated_data: {serializer.validated_data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in serializer.validated_data")
+        
         # For SUB_ADMIN, automatically set organization to their organization
         if self.request.user.role == 'SUB_ADMIN' and self.request.user.organization:
             serializer.save(organization=self.request.user.organization)

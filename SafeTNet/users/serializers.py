@@ -618,6 +618,8 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
     geofences_list = serializers.SerializerMethodField()
 
+    assigned_geofence = serializers.SerializerMethodField()
+
     
 
     class Meta:
@@ -630,7 +632,7 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
 
             'id', 'username', 'first_name', 'last_name', 'name', 'email', 'phone', 'contact',
 
-            'organization', 'organization_name', 'geofences', 'geofences_list',
+            'organization', 'organization_name', 'geofences', 'geofences_list', 'assigned_geofence',
 
             'is_active', 'is_staff', 'date_joined', 'last_login'
 
@@ -685,6 +687,16 @@ class SecurityOfficerSerializer(serializers.ModelSerializer):
         """Get list of assigned geofences"""
 
         return [{'id': g.id, 'name': g.name} for g in obj.geofences.all()]
+
+    
+
+    def get_assigned_geofence(self, obj):
+
+        """Get primary assigned geofence ID (first one if multiple)"""
+
+        first_geofence = obj.geofences.first()
+
+        return first_geofence.id if first_geofence else None
 
     
 
@@ -792,8 +804,8 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
 
         from rest_framework.exceptions import PermissionDenied
 
-        
-
+        print(f"DEBUG - SecurityOfficerCreateSerializer validated_data: {validated_data}")
+    
         User = get_user_model()
 
         password = validated_data.pop('password')
@@ -803,6 +815,7 @@ class SecurityOfficerCreateSerializer(serializers.Serializer):
         # Extract assigned_geofence from validated_data
 
         geofence_id = validated_data.pop('assigned_geofence', None)
+        print(f"DEBUG - Extracted geofence_id: {geofence_id}")
 
         
 
