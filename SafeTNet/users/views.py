@@ -858,6 +858,9 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
                 assigned_by=request.user
             )
             
+            # Also add geofence to officer's ManyToMany field
+            officer.geofences.add(geofence)
+            
             # Return assignment details
             response_serializer = OfficerGeofenceAssignmentSerializer(assignment)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -925,6 +928,9 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
             # Deactivate (soft delete)
             assignment.is_active = False
             assignment.save()
+            
+            # Also remove geofence from officer's ManyToMany field
+            officer.geofences.remove(geofence)
             
             return Response({
                 'message': 'Geofence assignment deactivated successfully',

@@ -67,20 +67,15 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
       const alerts = await alertServiceWithGeofenceFilter.getAlerts();
 
-      // Filter: only keep alerts with valid created_by_role field that is not OFFICER
-      const userCreatedAlerts = alerts.filter(alert => 
-        alert.created_by_role && alert.created_by_role !== 'OFFICER'
-      );
-
-      // Replace alerts array with filtered data
+      // Store the full alerts list returned from API without filtering
       set({
-        alerts: userCreatedAlerts,
+        alerts: alerts,
         isLoading: false,
         error: null,
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${alerts.length} alerts, stored ${userCreatedAlerts.length} USER-created alerts`);
+      console.log(`✅ Fetched ${alerts.length} alerts, stored all alerts including officer-created`);
     } catch (error: any) {
       console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error);
       

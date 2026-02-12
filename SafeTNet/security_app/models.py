@@ -38,6 +38,13 @@ class SOSAlert(models.Model):
         on_delete=models.CASCADE,
         related_name='security_app_sos_alerts'
     )
+    source_sos_event = models.OneToOneField(
+        "users_profile.SOSEvent",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="linked_alert"
+    )
     created_by_role = models.CharField(
         max_length=10,
         choices=CREATED_BY_ROLE_CHOICES,

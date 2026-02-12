@@ -1,7 +1,74 @@
+"""
+Signals for security_app to handle cross-app data synchronization.
+"""
+
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from .models import Case, SOSAlert, Notification
 from .fcm_service import fcm_service
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender='users_profile.SOSEvent')
+def sync_sos_event_to_security_alert(sender, instance, created, **kwargs):
+    """
+    Sync SOSEvent to SOSAlert when a new SOSEvent is created.
+    Only sync on creation, not updates.
+    """
+    if not created:
+        return
+    
+    # Skip if SOSAlert already exists for this SOSEvent
+    from .models import SOSAlert
+    if SOSAlert.objects.filter(source_sos_event=instance).exists():
+        logger.info(f"SOSAlert already exists for SOSEvent {instance.id}, skipping sync")
+        return
+    
+    try:
+        from django.db import transaction
+        with transaction.atomic():
+            # Validate location data
+            if not instance.location or not isinstance(instance.location, dict):
+                logger.error(f"SOSEvent {instance.id} has invalid location data: {instance.location}")
+                return
+            
+            # Support multiple coordinate key formats
+            latitude = (instance.location.get('latitude') or 
+                       instance.location.get('lat'))
+            longitude = (instance.location.get('longitude') or 
+                        instance.location.get('lng'))
+            
+            if latitude is None or longitude is None:
+                logger.error(f"SOSEvent {instance.id} missing latitude/longitude in location data")
+                return
+            
+            # Validate coordinates are numeric
+            try:
+                lat_float = float(latitude)
+                lon_float = float(longitude)
+            except (ValueError, TypeError):
+                logger.error(f"SOSEvent {instance.id} has invalid coordinates: lat={latitude}, lon={longitude}")
+                return
+            
+            # Create corresponding SOSAlert
+            sos_alert = SOSAlert.objects.create(
+                user=instance.user,
+                created_by_role="USER",
+                message=instance.notes or '',
+                location_lat=lat_float,
+                location_long=lon_float,
+                status="pending",
+                priority="high",
+                source_sos_event=instance
+            )
+            
+            logger.info(f"Successfully synced SOSEvent {instance.id} → SOSAlert {sos_alert.id}")
+            
+    except Exception as e:
+        logger.exception(f"Failed to sync SOSEvent {instance.id} to SOSAlert: {str(e)}")
+        # Do not re-raise to avoid breaking the original SOSEvent creation
 
 
 @receiver(post_save, sender=Case)

@@ -8,4 +8,6 @@ class SecurityAppConfig(AppConfig):
     
     def ready(self):
         import security_app.signals
+        # Ensure users_profile app is loaded for signal reception
+        import users_profile.models
 

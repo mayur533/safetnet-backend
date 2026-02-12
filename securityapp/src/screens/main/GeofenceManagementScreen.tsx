@@ -13,13 +13,14 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGeofenceStore } from '../../store/geofenceStore';
 import { Geofence, UserInArea } from '../../api/services/geofenceService';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import LeafletMap from '../../components/maps/LeafletMap';
+import { LeafletMap } from '../../components/maps/LeafletMap';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 export const GeofenceManagementScreen = () => {
+  const colors = useColors();
   const {
     geofences,
     assignedGeofence,
@@ -108,7 +109,7 @@ export const GeofenceManagementScreen = () => {
       return 8;
     } else if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
       // For polygons, use a default zoom
-      return 13;
+      return 15;
     }
     return 12;
   };
@@ -129,9 +130,9 @@ export const GeofenceManagementScreen = () => {
   const renderGeofenceStatus = () => {
     if (!assignedGeofence) {
       return (
-        <View style={styles.statusCard}>
+        <View style={styles(colors).statusCard}>
           <Icon name="location-off" size={24} color={colors.emergencyRed} />
-          <Text style={[styles.statusText, { color: colors.emergencyRed }]}>
+          <Text style={[styles(colors).statusText, { color: colors.emergencyRed }]}>
             No geofence assigned
           </Text>
         </View>
@@ -142,14 +143,14 @@ export const GeofenceManagementScreen = () => {
     const statusIcon = isInsideGeofence ? 'location-on' : 'location-off';
 
     return (
-      <View style={styles.statusCard}>
+      <View style={styles(colors).statusCard}>
         <Icon name={statusIcon} size={24} color={statusColor} />
-        <View style={styles.statusContent}>
-          <Text style={[styles.statusText, { color: statusColor }]}>
+        <View style={styles(colors).statusContent}>
+          <Text style={[styles(colors).statusText, { color: statusColor }]}>
             {isInsideGeofence ? 'Inside Geofence' : 'Outside Geofence'}
           </Text>
           {lastBoundaryCrossTime > 0 && (
-            <Text style={styles.statusTime}>
+            <Text style={styles(colors).statusTime}>
               Last boundary cross: {new Date(lastBoundaryCrossTime).toLocaleTimeString()}
             </Text>
           )}
@@ -163,38 +164,38 @@ export const GeofenceManagementScreen = () => {
     const center = getGeofenceCenter(geofence);
 
     return (
-      <View style={styles.geofenceCard}>
-        <View style={styles.geofenceHeader}>
+      <View style={styles(colors).geofenceCard}>
+        <View style={styles(colors).geofenceHeader}>
           <Icon name="location-on" size={24} color={colors.primary} />
-          <View style={styles.geofenceInfo}>
-            <Text style={styles.geofenceName}>{geofence.name}</Text>
-            <Text style={styles.geofenceType}>
+          <View style={styles(colors).geofenceInfo}>
+            <Text style={styles(colors).geofenceName}>{geofence.name}</Text>
+            <Text style={styles(colors).geofenceType}>
               {geofence.geofence_type === 'circle' ? 'Circular' : 'Polygon'} Geofence
             </Text>
           </View>
           <View style={[
-            styles.statusBadge,
+            styles(colors).statusBadge,
             { backgroundColor: geofence.status === 'active' ? colors.successGreen : colors.emergencyRed }
           ]}>
-            <Text style={styles.statusBadgeText}>{geofence.status}</Text>
+            <Text style={styles(colors).statusBadgeText}>{geofence.status}</Text>
           </View>
         </View>
 
-        <View style={styles.geofenceDetails}>
-          <Text style={styles.detailLabel}>Center:</Text>
-          <Text style={styles.detailValue}>
+        <View style={styles(colors).geofenceDetails}>
+          <Text style={styles(colors).detailLabel}>Center:</Text>
+          <Text style={styles(colors).detailValue}>
             {center.latitude.toFixed(6)}, {center.longitude.toFixed(6)}
           </Text>
 
           {geofence.geofence_type === 'circle' && geofence.radius && (
             <>
-              <Text style={styles.detailLabel}>Radius:</Text>
-              <Text style={styles.detailValue}>{geofence.radius} meters</Text>
+              <Text style={styles(colors).detailLabel}>Radius:</Text>
+              <Text style={styles(colors).detailValue}>{geofence.radius} meters</Text>
             </>
           )}
 
-          <Text style={styles.detailLabel}>Users in area:</Text>
-          <Text style={styles.detailValue}>{usersInArea.length}</Text>
+          <Text style={styles(colors).detailLabel}>Users in area:</Text>
+          <Text style={styles(colors).detailValue}>{usersInArea.length}</Text>
         </View>
       </View>
     );
@@ -204,26 +205,26 @@ export const GeofenceManagementScreen = () => {
   const renderUsersInArea = () => {
     if (usersInArea.length === 0) {
       return (
-        <View style={styles.emptyUsers}>
+        <View style={styles(colors).emptyUsers}>
           <Icon name="people" size={48} color={colors.mediumText} />
-          <Text style={styles.emptyUsersText}>No users currently in this area</Text>
+          <Text style={styles(colors).emptyUsersText}>No users currently in this area</Text>
         </View>
       );
     }
 
     return usersInArea.map(user => (
-      <View key={user.user_id} style={styles.userCard}>
+      <View key={user.user_id} style={styles(colors).userCard}>
         <View style={[
-          styles.userStatus,
+          styles(colors).userStatus,
           { backgroundColor: user.is_inside ? colors.successGreen : colors.emergencyRed }
         ]} />
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{user.user_name}</Text>
-          <Text style={styles.userEmail}>{user.user_email}</Text>
-          <Text style={styles.userLocation}>
+        <View style={styles(colors).userInfo}>
+          <Text style={styles(colors).userName}>{user.user_name}</Text>
+          <Text style={styles(colors).userEmail}>{user.user_email}</Text>
+          <Text style={styles(colors).userLocation}>
             {user.current_latitude.toFixed(6)}, {user.current_longitude.toFixed(6)}
           </Text>
-          <Text style={styles.userLastSeen}>
+          <Text style={styles(colors).userLastSeen}>
             Last seen: {new Date(user.last_seen).toLocaleString()}
           </Text>
         </View>
@@ -238,19 +239,19 @@ export const GeofenceManagementScreen = () => {
 
   if (isLoading && geofences.length === 0) {
     return (
-      <View style={[styles.container, styles.centered]}>
+      <View style={[styles(colors).container, styles(colors).centered]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading geofence data...</Text>
+        <Text style={styles(colors).loadingText}>Loading geofence data...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={styles(colors).container} contentContainerStyle={styles(colors).scrollContent}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Geofence Management</Text>
-        <Text style={styles.headerSubtitle}>
+      <View style={styles(colors).header}>
+        <Text style={styles(colors).headerTitle}>Geofence Management</Text>
+        <Text style={styles(colors).headerSubtitle}>
           Monitor assigned areas and users within boundaries
         </Text>
       </View>
@@ -261,7 +262,7 @@ export const GeofenceManagementScreen = () => {
       {/* Assigned Geofence */}
       {assignedGeofence && (
         <>
-          <Text style={styles.sectionTitle}>Assigned Geofence</Text>
+          <Text style={styles(colors).sectionTitle}>Assigned Geofence</Text>
           {renderGeofenceDetails(assignedGeofence)}
         </>
       )}
@@ -269,12 +270,12 @@ export const GeofenceManagementScreen = () => {
       {/* Map Toggle */}
       {selectedGeofence && (
         <TouchableOpacity
-          style={styles.mapToggleButton}
+          style={styles(colors).mapToggleButton}
           onPress={handleToggleMap}
           activeOpacity={0.7}
         >
           <Icon name={showMap ? 'map' : 'location-on'} size={24} color={colors.white} />
-          <Text style={styles.mapToggleText}>
+          <Text style={styles(colors).mapToggleText}>
             {showMap ? 'Hide Map' : 'Show Map'}
           </Text>
         </TouchableOpacity>
@@ -282,33 +283,31 @@ export const GeofenceManagementScreen = () => {
 
       {/* Map View */}
       {showMap && selectedGeofence && (
-        <View style={styles.mapContainer}>
+        <View style={styles(colors).mapContainer}>
           <LeafletMap
             key={`geofence-map-${mapKeyRef.current}`}
             latitude={getGeofenceCenter(selectedGeofence).latitude}
             longitude={getGeofenceCenter(selectedGeofence).longitude}
             zoom={getOptimalZoom(selectedGeofence)}
-            height={300}
+            height={400}
             polygonCoordinates={getPolygonCoordinates(selectedGeofence)}
-            markers={getUserMarkers()}
-            showGeofenceCenter={true}
           />
         </View>
       )}
 
       {/* Users in Area */}
-      <Text style={styles.sectionTitle}>Users in Area ({usersInArea.length})</Text>
-      <View style={styles.usersContainer}>
+      <Text style={styles(colors).sectionTitle}>Users in Area ({usersInArea.length})</Text>
+      <View style={styles(colors).usersContainer}>
         {renderUsersInArea()}
       </View>
 
       {/* Error Display */}
       {error && (
-        <View style={styles.errorCard}>
+        <View style={styles(colors).errorCard}>
           <Icon name="error" size={20} color={colors.emergencyRed} />
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles(colors).errorText}>{error}</Text>
           <TouchableOpacity
-            style={styles.errorDismiss}
+            style={styles(colors).errorDismiss}
             onPress={() => useGeofenceStore.getState().clearError()}
           >
             <Icon name="close" size={16} color={colors.mediumText} />
@@ -319,7 +318,7 @@ export const GeofenceManagementScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

@@ -20,6 +20,8 @@ export interface Alert {
   user_email: string;
   user_phone: string;
   user_image?: string;
+  first_name?: string; // User's first name from backend
+  last_name?: string; // User's last name from backend
   created_by_role?: 'USER' | 'OFFICER'; // Role of the user who created this alert (optional)
   alert_type: 'emergency' | 'normal' | 'security' | 'area_user_alert';
   original_alert_type?: 'general' | 'warning' | 'emergency' | 'area_user_alert';

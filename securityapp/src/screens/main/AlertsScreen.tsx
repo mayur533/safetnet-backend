@@ -87,53 +87,16 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
       console.log('🔍 Current alerts in store:', alerts.length);
       console.log('🔍 Store last updated:', useAlertsStore.getState().lastUpdated);
       
-      setSelectedFilter('all');
-      
-      // Clear only alerts-related cache, NOT authentication tokens
-      const forceRefresh = async () => {
-        try {
-          console.log('🧹 Clearing alerts cache only...');
-          
-          // Clear only alert-related cache, preserve authentication
-          const keysToRemove = [
-            'cached_alerts',
-            'alerts_timestamp',
-            'alerts_last_fetch',
-            'recent_alerts_cache'
-          ];
-          
-          await AsyncStorage.multiRemove(keysToRemove);
-          console.log('✅ Alerts cache cleared (auth tokens preserved)');
-          
-          // Clear Redux persistor for alerts only
-          try {
-            const { persistor } = require('../../store/store');
-            if (persistor) {
-              console.log('🧹 Flushing Redux persistor...');
-              await persistor.flush();
-              console.log('✅ Redux persistor flushed');
-            }
-          } catch (reduxError: any) {
-            console.log('⚠️ Redux persistor flush failed:', reduxError?.message);
-          }
-          
-          // Force fetch fresh data with backend-authoritative filtering
-          await fetchAlerts();
-        } catch (fetchError: any) {
-          console.error('❌ Error clearing alerts cache:', fetchError);
-          await fetchAlerts();
-        }
-      };
-      
-      forceRefresh();
-    }, [fetchAlerts, alerts.length])
+      // Force fetch fresh data with backend-authoritative filtering
+      fetchAlerts();
+    }, [])
   );
 
   // Handle filter changes - always refetch for fresh data
   useEffect(() => {
     console.log('🔄 Filter changed, fetching fresh alerts...');
     fetchAlerts();
-  }, [selectedFilter, fetchAlerts, alerts.length]);
+  }, [selectedFilter]);
 
   // Expose refresh function to parent component
   useImperativeHandle(ref, () => ({
@@ -421,7 +384,9 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     }
     
     if (selectedFilter === 'accepted') {
-      const filtered = alerts.filter(alert => alert.status === 'accepted');
+      const filtered = alerts.filter(alert => 
+        alert.status === 'accepted'
+      );
       console.log(`   📊 Accepted filtered count: ${filtered.length}`);
       console.log(`   📊 Accepted alerts: ${filtered.map(a => a.id).join(', ')}`);
       return filtered;

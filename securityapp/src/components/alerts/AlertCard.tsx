@@ -26,6 +26,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
   const isCompleted = alertStatus === 'completed' || alertStatus === 'resolved';
   const isAccepted = alert.status === 'accepted';
 
+  // Check if alert was created by officer (hide Respond button for officer-created alerts)
+  const isOfficerCreated = alert.created_by_role === 'OFFICER';
+
   const handleDelete = () => {
     console.log('🗑️ AlertCard: Delete button pressed for alert:', alert.id);
     // Directly call onDelete without showing RNAlert - let the parent handle confirmation
@@ -132,16 +135,33 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
 
   // Get officer display name with fallbacks
   const getOfficerDisplayName = (): string => {
-    // Priority 1: user_name (should contain full name like "John Doe")
-    if (alert.user_name && typeof alert.user_name === 'string' && alert.user_name.trim() && !/^\d+$/.test(alert.user_name.trim())) {
+    // Priority 1: Check if alert has first_name and last_name from backend
+    if (alert.first_name && alert.last_name) {
+      const firstName = alert.first_name.trim();
+      const lastName = alert.last_name.trim();
+      if (firstName && lastName) {
+        return `${firstName} ${lastName}`;
+      }
+    }
+    
+    // Priority 2: Check if alert has a single name field
+    if (alert.first_name && !alert.last_name) {
+      const firstName = alert.first_name.trim();
+      if (firstName) {
+        return firstName;
+      }
+    }
+    
+    // Priority 3: user_name (should contain full name like "John Doe" or "Sam karan")
+    if (alert.user_name && typeof alert.user_name === 'string' && alert.user_name.trim()) {
       const name = alert.user_name.trim();
-      // Check if it looks like a full name (contains space or is capitalized properly)
-      if (name.includes(' ') || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(name)) {
+      // Check if it looks like a real name (not just numbers)
+      if (!/^\d+$/.test(name)) {
         return name;
       }
     }
     
-    // Priority 2: Extract from email but format as proper name
+    // Priority 4: Extract from email but format as proper name
     if (alert.user_email && typeof alert.user_email === 'string') {
       const emailName = alert.user_email.split('@')[0];
       if (emailName && !/^\d+$/.test(emailName)) {
@@ -153,7 +173,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
       }
     }
     
-    // Priority 3: user_id if it's not just numbers
+    // Priority 5: user_id if it's not just numbers
     if (alert.user_id && typeof alert.user_id === 'string' && alert.user_id.trim() && !/^\d+$/.test(alert.user_id.trim())) {
       const id = alert.user_id.trim();
       // Format as proper name
@@ -296,19 +316,21 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
               )}
             </View>
             
-            {/* Bottom row: Respond button */}
-            <View style={styles(colors).respondButtonContainer}>
-              <TouchableOpacity
-                style={[
-                  styles(colors).respondButtonBottom,
-                  isEmergency && styles(colors).respondButtonBottomEmergency,
-                ]}
-                onPress={() => onRespond(alert)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles(colors).respondButtonBottomText}>RESPOND</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Bottom row: Respond button - Only show for user-created alerts */}
+            {!isOfficerCreated && (
+              <View style={styles(colors).respondButtonContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles(colors).respondButtonBottom,
+                    isEmergency && styles(colors).respondButtonBottomEmergency,
+                  ]}
+                  onPress={() => onRespond(alert)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles(colors).respondButtonBottomText}>RESPOND</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         )}
       </View>
