@@ -6,6 +6,8 @@ from django.contrib.auth.password_validation import validate_password
 
 from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, OfficerGeofenceAssignment
 
+from security_app.serializers import GeofenceSerializer
+
 
 
 
@@ -1491,6 +1493,8 @@ class OfficerGeofenceAssignmentSerializer(serializers.ModelSerializer):
     geofence_type = serializers.CharField(source='geofence.geofence_type', read_only=True)
 
     assigned_by_name = serializers.CharField(source='assigned_by.username', read_only=True)
+
+    geofence = GeofenceSerializer(read_only=True)
 
     
 
