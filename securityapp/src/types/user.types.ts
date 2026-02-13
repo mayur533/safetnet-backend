@@ -1,5 +1,6 @@
 export interface SecurityOfficer {
-  security_id: string;
+  id: number; // Backend User.id (numeric)
+  security_id: string; // Security officer ID (string)
   name: string | undefined;
   email_id: string;
   mobile: string;

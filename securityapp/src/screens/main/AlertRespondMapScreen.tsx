@@ -13,6 +13,7 @@ import { useNavigation, useRoute, RouteProp, NavigationProp } from '@react-navig
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAlertsStore } from '../../store/alertsStore';
 import { useGeofenceStore } from '../../store/geofenceStore';
+import { useAppSelector } from '../../store/hooks';
 import { alertService } from '../../api/services/alertService';
 import { geofenceService, locationService } from '../../api/services/geofenceService';
 import { zoneTrackingService } from '../../services/zoneTrackingService';
@@ -47,6 +48,9 @@ export const AlertRespondMapScreen = () => {
   const navigation = useNavigation<AlertRespondMapScreenNavigationProp>();
   const route = useRoute<AlertRespondMapScreenRouteProp>();
   const { alertId } = route.params || {};
+  
+  // Get officer data from Redux store
+  const officer = useAppSelector(state => state.auth.officer);
 
   const { resolveAlert, updateAlert: storeUpdateAlert } = useAlertsStore();
   const { updateLocation } = useGeofenceStore();
@@ -211,11 +215,22 @@ export const AlertRespondMapScreen = () => {
       try {
         console.log('🔍 Fetching officer assigned geofences...');
         
-        // Mock officer ID - in real app, this would come from auth context
-        const mockOfficerId = 'officer_001';
+        // Get logged-in officer ID from auth state
+        const officerId = officer?.security_id || 'officer_001'; // Fallback to mock ID for development
         
-        const geofences = await officerGeofenceService.getOfficerAssignedGeofences(mockOfficerId);
-        const geofenceCoords = await officerGeofenceService.getAllOfficerGeofenceCoordinates(mockOfficerId);
+        console.log('Using officer ID:', officerId);
+        
+        const geofences = await officerGeofenceService.getOfficerGeofences(officerId);
+        
+        // Implement coordinate logic inline since getAllOfficerGeofenceCoordinates was removed
+        const geofenceCoords = geofences.map((geofence: any) => ({
+          geofenceId: geofence.id,
+          coordinates: geofence.geofence_type === 'circle' && geofence.center_point
+            ? [{ latitude: geofence.center_point[0], longitude: geofence.center_point[1] }]
+            : geofence.geofence_type === 'polygon' && geofence.polygon_json
+            ? geofence.polygon_json.map(([lat, lng]: number[]) => ({ latitude: lat, longitude: lng }))
+            : []
+        }));
         
         setOfficerGeofences(geofences);
         setOfficerGeofenceCoords(geofenceCoords);

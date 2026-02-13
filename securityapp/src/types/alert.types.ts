@@ -4,8 +4,9 @@ export interface Geofence {
   description?: string;
   center_latitude: number;
   center_longitude: number;
+  center_point?: number[]; // [latitude, longitude] from backend
   radius?: number;
-  polygon_json?: string;
+  polygon_json?: number[][]; // [[lat, lng], [lat, lng], ...] - array format from backend
   geofence_type: 'circle' | 'polygon';
   status: 'active' | 'inactive';
   created_at: string;

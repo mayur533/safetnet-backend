@@ -426,17 +426,19 @@ export const LoginScreen = () => {
         (user.status || '').toLowerCase() === 'inactive' ? 'inactive' : 'active';
 
       const officer: SecurityOfficer = {
-        security_id: String(user.id || ''),
-        name: (user.first_name && user.last_name)
-          ? `${user.first_name} ${user.last_name}`.trim()
-          : (user.first_name || user.username || email),
-        email_id: user.email || user.username || email,
-        mobile: user.mobile || '',
-        security_role: normalizedRole,
-        geofence_id: user.geofence_id || '',
-        user_image: user.user_image || '',
-        status: normalizedStatus,
+        id: user.id,  // ✅ REQUIRED (numeric backend ID)
+        security_id: String(user.id), // optional string version
+        name: user.username,
+        email_id: user.email,
+        mobile: user.mobile || "",
+        security_role: "guard" as const,
+        geofence_id: user.geofence_id || "",
+        user_image: user.user_image || "",
+        status: "active" as const
       };
+
+      // Debug log
+      console.log("LOGIN OFFICER OBJECT:", officer);
 
       // Persist tokens to AsyncStorage for session management
       try {
@@ -464,14 +466,12 @@ export const LoginScreen = () => {
         
         console.log('🎯 Post-login geofence check:');
         console.log('   Officer geofence_id:', officer.geofence_id);
-        console.log('   Officer geofence_name:', officer.geofence_name);
-        console.log('   Officer assigned_geofence:', officer.assigned_geofence);
         
         // Fetch geofences if officer has geofence_id assigned
         if (officer.geofence_id) {
           console.log('✅ Officer has geofence assigned, fetching geofence data...');
-          await geofenceStore.fetchAssignedGeofence();
-          await geofenceStore.fetchGeofences();
+          await geofenceStore.fetchAssignedGeofence(String(officer.id));
+          await geofenceStore.fetchGeofences(String(officer.id));
         } else {
           console.log('⚠️ No geofence assigned to this officer');
         }

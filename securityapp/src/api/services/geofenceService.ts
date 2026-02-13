@@ -1,5 +1,6 @@
 import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
+import { Geofence } from '../../types/alert.types';
 
 // Location data interface for backend responses only
 export interface LocationData {
@@ -8,23 +9,6 @@ export interface LocationData {
   accuracy?: number;
   timestamp?: string;
   address?: string;
-}
-
-export interface Geofence {
-  id: string;
-  name: string;
-  description?: string;
-  center_latitude: number;
-  center_longitude: number;
-  radius?: number; // For circular geofences
-  polygon_json?: {
-    type: string;
-    coordinates: number[][][];
-  }; // For polygon geofences
-  geofence_type: 'circle' | 'polygon';
-  status: 'active' | 'inactive';
-  created_at: string;
-  updated_at?: string;
 }
 
 export interface UserInArea {

@@ -7,17 +7,31 @@ export const profileService = {
     try {
       console.log('🔄 Fetching profile from /api/security/profile/');
       const response = await apiClient.get(API_ENDPOINTS.GET_PROFILE);
-      console.log('📥 Profile response:', response.data);
+      
+      // Log full API response
+      console.log("FULL PROFILE RESPONSE:", response.data);
 
       // Map UserProfileSerializer response to SecurityOfficer interface
       const backendData = response.data;
+      
+      // Check geofences array
+      if (!backendData.geofences || backendData.geofences.length === 0) {
+        console.log("No geofences received from backend");
+      } else {
+        console.log("Geofences received:", backendData.geofences);
+      }
+      
+      // Ensure mapping is correct
+      const assignedGeofence = backendData.geofences?.[0] || null;
+      console.log("Mapped assigned_geofence:", assignedGeofence);
+      
       const officer: SecurityOfficer = {
         security_id: String(backendData.id), // User ID
         name: backendData.name || backendData.username, // Full name or username fallback
         email_id: backendData.email,
         mobile: backendData.phone || '',
         security_role: backendData.role === 'security_officer' ? 'guard' : 'guard',
-        geofence_id: backendData.geofence_ids?.[0] || '',
+        geofence_id: assignedGeofence?.id || '',
         user_image: undefined, // Not provided by UserProfileSerializer
         status: backendData.is_active ? 'active' : 'inactive',
         badge_number: backendData.username,
@@ -28,10 +42,10 @@ export const profileService = {
           active_hours: 0,
           area_coverage: 0,
         },
-        geofence_name: backendData.geofences?.[0]?.name || undefined,
-        assigned_geofence: backendData.geofences?.[0] ? {
-          id: backendData.geofences[0].id,
-          name: backendData.geofences[0].name,
+        geofence_name: assignedGeofence?.name || undefined,
+        assigned_geofence: assignedGeofence ? {
+          id: assignedGeofence.id,
+          name: assignedGeofence.name,
         } : undefined,
         // Additional fields from UserProfileSerializer
         date_joined: backendData.date_joined,

@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import { Geofence, UserInArea, geofenceService } from '../api/services/geofenceService';
+import { Geofence } from '../types/alert.types';
+import { officerGeofenceService } from '../services/officerGeofenceService';
 
 interface GeofenceState {
   // State
   geofences: Geofence[];
   assignedGeofence: Geofence | null;
-  usersInArea: UserInArea[];
+  usersInArea: any[];
   isLoading: boolean;
   error: string | null;
   lastUpdated: string | null;
@@ -18,8 +19,8 @@ interface GeofenceState {
   consecutiveOutsideCount: number;
 
   // Actions
-  fetchGeofences: () => Promise<void>;
-  fetchAssignedGeofence: () => Promise<void>;
+  fetchGeofences: (officerId: string) => Promise<void>;
+  fetchAssignedGeofence: (officerId: string) => Promise<void>;
   fetchUsersInArea: (geofenceId: string) => Promise<void>;
   updateLocation: (latitude: number, longitude: number) => Promise<void>;
 
@@ -49,12 +50,49 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
   consecutiveOutsideCount: 0,
 
   // Fetch all geofences
-  fetchGeofences: async () => {
+  fetchGeofences: async (officerId: string) => {
+    if (!officerId) {
+      console.error('❌ Officer ID is required');
+      set({ error: 'Officer ID is required' });
+      return;
+    }
+
     set({ isLoading: true, error: null });
 
     try {
       console.log('🎯 Fetching geofences...');
-      const geofences = await geofenceService.getGeofences();
+      console.log("OFFICER ID:", officerId);
+      const geofences: Geofence[] = await officerGeofenceService.getOfficerGeofences(officerId);
+
+      console.log("🏪 ZUSTAND STORE - RECEIVED FROM SERVICE:", geofences.length, "geofences");
+      
+      // Detailed store analysis
+      console.log("🔍 STORE LAYER ANALYSIS:");
+      geofences.forEach((geofence: Geofence, index: number) => {
+        console.log(`📍 Store Geofence ${index + 1} - ${geofence.name}:`, {
+          id: geofence.id,
+          type: geofence.geofence_type,
+          // Center point information
+          center_point: geofence.center_point,
+          center_point_type: typeof geofence.center_point,
+          center_latitude: geofence.center_latitude,
+          center_longitude: geofence.center_longitude,
+          // Polygon information
+          polygon_json_type: typeof geofence.polygon_json,
+          polygon_json_value: geofence.polygon_json,
+          hasCoordinates: !!geofence.polygon_json,
+          coordinatesLength: Array.isArray(geofence.polygon_json) ? geofence.polygon_json.length : 0,
+          // Validate polygon format in store
+          isValidPolygon: Array.isArray(geofence.polygon_json) && geofence.polygon_json.length > 2,
+          isPolygonClosed: Array.isArray(geofence.polygon_json) && 
+            geofence.polygon_json.length > 0 && 
+            JSON.stringify(geofence.polygon_json[0]) === JSON.stringify(geofence.polygon_json[geofence.polygon_json.length - 1]),
+          firstCoordinate: Array.isArray(geofence.polygon_json) && geofence.polygon_json.length > 0 ? geofence.polygon_json[0] : null,
+          coordinateFormat: Array.isArray(geofence.polygon_json) && geofence.polygon_json.length > 0 && 
+            Array.isArray(geofence.polygon_json[0]) && geofence.polygon_json[0].length === 2 ? 
+            `[${geofence.polygon_json[0][0]}, ${geofence.polygon_json[0][1]}]` : 'invalid'
+        });
+      });
 
       set({
         geofences,
@@ -63,7 +101,18 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${geofences.length} geofences`);
+      console.log("✅ STORE LAYER - Data stored in Zustand:", {
+        count: geofences.length,
+        polygonTypes: geofences.map((g: Geofence) => typeof g.polygon_json),
+        validPolygons: geofences.filter((g: Geofence) => Array.isArray(g.polygon_json) && g.polygon_json.length > 2).length,
+        closedPolygons: geofences.filter((g: Geofence) => 
+          Array.isArray(g.polygon_json) && 
+          g.polygon_json.length > 0 && 
+          JSON.stringify(g.polygon_json[0]) === JSON.stringify(g.polygon_json[g.polygon_json.length - 1])
+        ).length
+      });
+      
+      console.log("🚀 STORE TO UI - Final data ready for components:", geofences);
     } catch (error: any) {
       console.error('❌ Failed to fetch geofences:', error);
       
@@ -83,12 +132,20 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
   },
 
   // Fetch assigned geofence
-  fetchAssignedGeofence: async () => {
+  fetchAssignedGeofence: async (officerId: string) => {
+    if (!officerId) {
+      console.error('❌ Officer ID is required');
+      set({ error: 'Officer ID is required' });
+      return;
+    }
+
     set({ isLoading: true, error: null });
 
     try {
       console.log('🎯 Fetching assigned geofence...');
-      const assignedGeofence = await geofenceService.getAssignedGeofence();
+      console.log("OFFICER ID:", officerId);
+      const geofences: Geofence[] = await officerGeofenceService.getOfficerGeofences(officerId);
+      const assignedGeofence: Geofence | null = geofences.length > 0 ? geofences[0] : null;
 
       set({
         assignedGeofence,
@@ -111,7 +168,8 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
   fetchUsersInArea: async (geofenceId: string) => {
     try {
       console.log('👥 Fetching users in geofence area:', geofenceId);
-      const usersInArea = await geofenceService.getUsersInArea(geofenceId);
+      // Note: This method may not exist in officerGeofenceService, implement as needed
+      const usersInArea: any[] = []; // Placeholder implementation
 
       set({
         usersInArea,

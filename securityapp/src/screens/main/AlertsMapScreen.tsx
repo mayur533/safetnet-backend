@@ -3,8 +3,8 @@ import { View, StyleSheet, TouchableOpacity, Text, Alert } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppSelector } from '../../store/hooks';
+import { useGeofenceStore } from '../../store/geofenceStore';
 import { LeafletMap } from '../../components/maps/LeafletMap';
-import { officerGeofenceService } from '../../services/officerGeofenceService';
 import { colors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import { calculateDistance } from '../../utils/helpers';
@@ -37,46 +37,38 @@ export const AlertsMapScreen = () => {
     return null;
   }
 
-  // Get officer location from Redux store (you might want to add this to your location slice)
-  const officerLocation = useAppSelector((state) => state.location.currentLocation) || {
-    latitude: 37.7799, // Officer location - different from alert locations for demo
-    longitude: -122.4144,
+  // Get officer data from Redux store
+  const officer = useAppSelector(state => state.auth.officer);
+  
+  // Location slice was removed from Redux, use default location for demo
+  const officerLocation = {
+    latitude: 18.5204, // Default officer location for demo
+    longitude: 73.8567,
   };
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // Officer geofences state
-  const [officerGeofences, setOfficerGeofences] = useState<any[]>([]);
-  const [officerGeofenceCoords, setOfficerGeofenceCoords] = useState<any[]>([]);
+  // Use geofence store
+  const { geofences, isLoading: geofenceLoading, fetchGeofences } = useGeofenceStore();
 
   // Fetch officer assigned geofences
   useEffect(() => {
-    const fetchOfficerGeofences = async () => {
-      try {
-        console.log('🔍 Fetching officer assigned geofences for AlertsMapScreen...');
-        
-        // Mock officer ID - in real app, this would come from auth context
-        const mockOfficerId = 'officer_001';
-        
-        const geofences = await officerGeofenceService.getOfficerAssignedGeofences(mockOfficerId);
-        const geofenceCoords = await officerGeofenceService.getAllOfficerGeofenceCoordinates(mockOfficerId);
-        
-        setOfficerGeofences(geofences);
-        setOfficerGeofenceCoords(geofenceCoords);
-        
-        console.log('✅ Officer geofences fetched for AlertsMapScreen:', {
-          count: geofences.length,
-          names: geofences.map(g => g.name),
-          coordinatesCount: geofenceCoords.length
-        });
-        
-      } catch (error: any) {
-        console.error('❌ Failed to fetch officer geofences for AlertsMapScreen:', error);
-      }
-    };
+    const officerId = officer?.id;
+    console.log("CORRECT OFFICER ID:", officerId);
+    
+    if (!officerId) {
+      console.error('❌ Officer ID not found in auth store');
+      return;
+    }
+    
+    console.log('🔍 useEffect triggered - fetching geofences...');
+    fetchGeofences(officerId.toString());
+  }, [officer?.id, fetchGeofences]);
 
-    fetchOfficerGeofences();
-  }, []);
+  // Add logging when geofences change
+  useEffect(() => {
+    console.log("UI RECEIVED:", geofences);
+  }, [geofences]);
 
   // Calculate distance between officer and alert location
   const distance = calculateDistance(
@@ -220,10 +212,15 @@ export const AlertsMapScreen = () => {
           height={500}
           markerTitle={`Alert: ${alert.alert_type}`}
           showMarker={false} // We'll use custom markers in the HTML
-          multiplePolygons={officerGeofenceCoords.map(gf => ({
+          multiplePolygons={geofences.map((gf: any) => ({
             id: gf.id,
             name: gf.name,
-            coordinates: gf.coordinates,
+            coordinates: Array.isArray(gf.polygon_json) 
+              ? gf.polygon_json.map(([lat, lng]: [number, number]) => ({
+                  latitude: lat,
+                  longitude: lng
+                }))
+              : [],
             color: '#2563eb' // Blue for officer zones
           }))}
         />

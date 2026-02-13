@@ -28,6 +28,11 @@ export const ProfileScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Log officer state changes
+  useEffect(() => {
+    console.log("Officer state changed:", officer);
+  }, [officer]);
+
   // Fetch profile data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -43,7 +48,9 @@ export const ProfileScreen = () => {
       console.log('🔄 Fetching profile data...');
       const profileData = await profileService.getProfile('');
       console.log('✅ Profile data loaded:', profileData);
+      console.log("Officer state before setting:", officer);
       setOfficer(profileData);
+      console.log("Officer state after setting:", profileData);
     } catch (error: any) {
       console.error('❌ Failed to fetch profile:', error);
       setError(error.message || 'Failed to load profile');

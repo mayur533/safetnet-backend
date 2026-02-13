@@ -10,12 +10,13 @@ import {
   Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useFocusEffect } from '@react-navigation/native';
 import { useGeofenceStore } from '../../store/geofenceStore';
-import { Geofence, UserInArea } from '../../api/services/geofenceService';
+import { Geofence } from '../../types/alert.types';
+import { UserInArea } from '../../api/services/geofenceService';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
 import { LeafletMap } from '../../components/maps/LeafletMap';
+import { useAppSelector } from '../../store/hooks';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -34,17 +35,31 @@ export const GeofenceManagementScreen = () => {
     lastBoundaryCrossTime
   } = useGeofenceStore();
 
+  // Get officer from auth store
+  const officer = useAppSelector(state => state.auth.officer);
+  const officerId = officer?.id;
+
+  // Debug log
+  console.log("FINAL OFFICER OBJECT:", officer);
+
   const [selectedGeofence, setSelectedGeofence] = useState<Geofence | null>(null);
   const [showMap, setShowMap] = useState(false);
   const mapKeyRef = useRef(0);
 
-  // Fetch data on screen focus
-  useFocusEffect(
-    React.useCallback(() => {
-      fetchGeofences();
-      fetchAssignedGeofence();
-    }, [fetchGeofences, fetchAssignedGeofence])
-  );
+  useEffect(() => {
+    console.log("AUTH STATE:", officer);
+
+    if (!officerId) {
+      console.log("⏳ Waiting for officer data...");
+      return;
+    }
+
+    console.log("✅ Officer ready:", officerId);
+
+    fetchGeofences(officerId.toString());
+    fetchAssignedGeofence(officerId.toString());
+
+  }, [officerId]);
 
   // Fetch users in area when assigned geofence changes
   useEffect(() => {
@@ -71,29 +86,127 @@ export const GeofenceManagementScreen = () => {
 
   // Get geofence center coordinates
   const getGeofenceCenter = (geofence: Geofence) => {
-    if (geofence.geofence_type === 'circle') {
-      return {
+    console.log("🎯 UI LAYER - getGeofenceCenter called:", {
+      name: geofence.name,
+      type: geofence.geofence_type,
+      center_point: geofence.center_point,
+      center_latitude: geofence.center_latitude,
+      center_longitude: geofence.center_longitude
+    });
+    
+    console.log("🔍 FULL GEOFENCE OBJECT:", geofence);
+    console.log("🎯 BACKEND CENTER_POINT:", geofence.center_point);
+    
+    if (geofence.center_point && Array.isArray(geofence.center_point) && geofence.center_point.length === 2) {
+      // Use backend center_point directly: [latitude, longitude]
+      const center = {
+        latitude: geofence.center_point[0],
+        longitude: geofence.center_point[1]
+      };
+      console.log("✅ Using backend center_point:", center);
+      return center;
+    }
+    
+    // Fallback to legacy center fields for backward compatibility
+    if (geofence.center_latitude && geofence.center_longitude) {
+      const center = {
         latitude: geofence.center_latitude,
         longitude: geofence.center_longitude
       };
-    } else if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
-      // Calculate centroid of polygon
-      const coords = geofence.polygon_json.coordinates[0];
-      const centerLat = coords.reduce((sum, coord) => sum + coord[1], 0) / coords.length;
-      const centerLng = coords.reduce((sum, coord) => sum + coord[0], 0) / coords.length;
-      return { latitude: centerLat, longitude: centerLng };
+      console.log("⚠️ Using fallback center fields:", center);
+      return center;
     }
+    
+    console.log("❌ No valid center data found");
     return { latitude: 0, longitude: 0 };
   };
 
   // Get polygon coordinates for map
   const getPolygonCoordinates = (geofence: Geofence) => {
+    console.log("🎯 UI LAYER - getPolygonCoordinates called:", {
+      name: geofence.name,
+      type: geofence.geofence_type,
+      polygon_json_type: typeof geofence.polygon_json,
+      polygon_json_value: geofence.polygon_json
+    });
+    
     if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
-      return geofence.polygon_json.coordinates[0].map(coord => ({
-        latitude: coord[1], // GeoJSON uses [lng, lat]
-        longitude: coord[0]
-      }));
+      try {
+        // polygon_json is already an array from backend
+        const rawPolygon = geofence.polygon_json;
+        
+        console.log("📍 RAW POLYGON FROM API:", {
+          name: geofence.name,
+          rawPolygon: rawPolygon,
+          length: rawPolygon.length,
+          firstPoint: rawPolygon[0],
+          lastPoint: rawPolygon[rawPolygon.length - 1],
+          sampleFormat: rawPolygon.length > 0 && Array.isArray(rawPolygon[0]) ? 
+            `[${rawPolygon[0][0]}, ${rawPolygon[0][1]}]` : 'invalid'
+        });
+        
+        // Detect coordinate format by checking if first point looks like valid lat/lng
+        let isLatFirst = true; // Assume [lat, lng] by default
+        if (rawPolygon.length > 0 && Array.isArray(rawPolygon[0])) {
+          const [first, second] = rawPolygon[0];
+          // Latitude should be between -90 and 90, Longitude between -180 and 180
+          if (Math.abs(first) > 90 && Math.abs(second) <= 90) {
+            isLatFirst = false; // It's [lng, lat] format
+            console.log("🔄 DETECTED COORDINATE FORMAT: [lng, lat] - will swap");
+          } else {
+            console.log("✅ DETECTED COORDINATE FORMAT: [lat, lng] - will use directly");
+          }
+        }
+        
+        // Convert coordinates to {latitude, longitude} format
+        let convertedCoords = rawPolygon.map(([coord1, coord2]) => {
+          if (isLatFirst) {
+            // Already [lat, lng] format
+            return {
+              latitude: coord1,
+              longitude: coord2
+            };
+          } else {
+            // [lng, lat] format - swap to [lat, lng]
+            return {
+              latitude: coord2,
+              longitude: coord1
+            };
+          }
+        });
+        
+        // Ensure polygon is closed (first point equals last point)
+        if (convertedCoords.length > 0) {
+          const firstPoint = convertedCoords[0];
+          const lastPoint = convertedCoords[convertedCoords.length - 1];
+          
+          if (firstPoint.latitude !== lastPoint.latitude || firstPoint.longitude !== lastPoint.longitude) {
+            console.log("🔒 CLOSING POLYGON: Adding first point as last point");
+            convertedCoords.push({...firstPoint});
+          } else {
+            console.log("✅ POLYGON ALREADY CLOSED: First and last points match");
+          }
+        }
+        
+        console.log("🗺️ CONVERTED COORDINATES FOR MAP:", {
+          name: geofence.name,
+          coordinateCount: convertedCoords.length,
+          firstCoordinate: convertedCoords[0],
+          lastCoordinate: convertedCoords[convertedCoords.length - 1],
+          allCoordinates: convertedCoords,
+          format: convertedCoords.length > 0 ? 
+            `[{latitude: ${convertedCoords[0].latitude}, longitude: ${convertedCoords[0].longitude}}]` : 'empty',
+          isClosed: convertedCoords.length > 0 && 
+            JSON.stringify(convertedCoords[0]) === JSON.stringify(convertedCoords[convertedCoords.length - 1])
+        });
+        
+        return convertedCoords;
+      } catch (error) {
+        console.error('❌ UI - Failed to process polygon coordinates for map:', error);
+        return [];
+      }
     }
+    console.log("⚠️ UI - No polygon coordinates available for map");
     return [];
   };
 
@@ -246,6 +359,19 @@ export const GeofenceManagementScreen = () => {
     );
   }
 
+  // Handle empty geofences state
+  if (!isLoading && geofences.length === 0) {
+    return (
+      <View style={[styles(colors).container, styles(colors).centered]}>
+        <Icon name="location-off" size={64} color={colors.mediumText} />
+        <Text style={styles(colors).emptyTitle}>No Geofence Assigned</Text>
+        <Text style={styles(colors).emptyMessage}>
+          You don't have any geofence assignments. Please contact your administrator.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles(colors).container} contentContainerStyle={styles(colors).scrollContent}>
       {/* Header */}
@@ -284,6 +410,36 @@ export const GeofenceManagementScreen = () => {
       {/* Map View */}
       {showMap && selectedGeofence && (
         <View style={styles(colors).mapContainer}>
+          {(() => {
+            const center = getGeofenceCenter(selectedGeofence);
+            const polygonCoords = getPolygonCoordinates(selectedGeofence);
+            const zoom = getOptimalZoom(selectedGeofence);
+            
+            console.log("🗺️ MAP INPUT - FINAL VALIDATION:", {
+              geofenceName: selectedGeofence.name,
+              geofenceType: selectedGeofence.geofence_type,
+              centerCoords: center,
+              zoomLevel: zoom,
+              polygonCoordinates: polygonCoords,
+              polygonCount: polygonCoords.length,
+              firstPolygonCoord: polygonCoords[0],
+              lastPolygonCoord: polygonCoords[polygonCoords.length - 1],
+              mapDataFormat: {
+                latitude: typeof center.latitude,
+                longitude: typeof center.longitude,
+                polygonFormat: polygonCoords.length > 0 ? 
+                  `[{latitude: ${typeof polygonCoords[0].latitude}, longitude: ${typeof polygonCoords[0].longitude}}]` : 
+                  'empty'
+              },
+              isDataValid: polygonCoords.length > 0 && 
+                polygonCoords.every(coord => 
+                  typeof coord.latitude === 'number' && 
+                  typeof coord.longitude === 'number'
+                )
+            });
+            
+            return null;
+          })()}
           <LeafletMap
             key={`geofence-map-${mapKeyRef.current}`}
             latitude={getGeofenceCenter(selectedGeofence).latitude}
@@ -472,6 +628,24 @@ const styles = (colors: any) => StyleSheet.create({
     color: colors.mediumText,
     marginTop: spacing.md,
     textAlign: 'center',
+  },
+  emptyUsersLoadingText: {
+    ...typography.body,
+    color: colors.mediumText,
+    marginTop: spacing.md,
+  },
+  emptyTitle: {
+    ...typography.screenHeader,
+    color: colors.darkText,
+    marginTop: spacing.lg,
+    textAlign: 'center',
+  },
+  emptyMessage: {
+    ...typography.body,
+    color: colors.mediumText,
+    marginTop: spacing.md,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
   },
   userCard: {
     flexDirection: 'row',
