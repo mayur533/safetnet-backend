@@ -196,17 +196,25 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_geofences(self, obj):
 
-        """Return geofence details for the user"""
+        """Return geofence details for the user using OfficerGeofenceAssignment"""
 
         # Import here to avoid circular import
 
-        geofences = obj.geofences.all()
+        from .models import OfficerGeofenceAssignment
 
-        if not geofences.exists():
+        # Fetch geofences through OfficerGeofenceAssignment where is_active=True
+
+        assignments = OfficerGeofenceAssignment.objects.filter(
+
+            officer=obj,
+
+            is_active=True
+
+        ).select_related('geofence', 'geofence__organization')
+
+        if not assignments.exists():
 
             return []
-
-        
 
         # Return simplified geofence data to avoid circular imports
 
@@ -214,21 +222,21 @@ class UserSerializer(serializers.ModelSerializer):
 
             {
 
-                'id': g.id,
+                'id': assignment.geofence.id,
 
-                'name': g.name,
+                'name': assignment.geofence.name,
 
-                'description': g.description,
+                'description': assignment.geofence.description,
 
-                'organization_name': g.organization.name if g.organization else None,
+                'organization_name': assignment.geofence.organization.name if assignment.geofence.organization else None,
 
-                'active': g.active,
+                'active': assignment.geofence.active,
 
-                'center_point': g.get_center_point(),
+                'center_point': assignment.geofence.get_center_point(),
 
             }
 
-            for g in geofences
+            for assignment in assignments
 
         ]
 
