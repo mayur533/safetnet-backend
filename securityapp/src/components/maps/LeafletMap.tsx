@@ -55,9 +55,16 @@ export const LeafletMap = React.forwardRef<WebView, {
     console.log('Multiple polygons count:', multiplePolygons?.length || 0);
 
     // Process single polygon coordinates (backward compatibility)
+    console.log('🔍 LEAFLET DEBUG: polygonCoordinates received:', polygonCoordinates);
+    console.log('🔍 LEAFLET DEBUG: polygonCoordinates length:', polygonCoordinates?.length || 0);
+    console.log('🔍 LEAFLET DEBUG: polygonCoordinates sample:', polygonCoordinates?.slice(0, 3));
+    
     const polygonCoordsString = polygonCoordinates && polygonCoordinates.length >= 3
       ? polygonCoordinates.map(coord => `[${coord.latitude}, ${coord.longitude}]`).join(',')
       : '';
+      
+    console.log('🔍 LEAFLET DEBUG: polygonCoordsString:', polygonCoordsString);
+    console.log('🔍 LEAFLET DEBUG: will render polygon?', !!polygonCoordsString);
 
     // Process multiple polygons
     const multiplePolygonsJS = multiplePolygons && multiplePolygons.length > 0
@@ -181,13 +188,18 @@ export const LeafletMap = React.forwardRef<WebView, {
                 // Add polygon if coordinates provided (backward compatibility)
                 ${polygonCoordsString ? `
                 var coords = [${polygonCoordsString}];
-                L.polygon(coords, {
-                    color: '#dc2626',
-                    fillColor: '#dc2626',
-                    fillOpacity: 0.2,
-                    weight: 3
+                console.log('🗺️ Adding polygon with coords:', coords);
+                
+                // Add the main polygon with enhanced visibility (no corner markers)
+                var polygon = L.polygon(coords, {
+                    color: '#ff0000',      // Bright red border
+                    fillColor: '#ff0000',  // Red fill
+                    fillOpacity: 0.3,      // More visible fill
+                    weight: 4,             // Thicker border
+                    opacity: 1.0           // Full opacity
                 }).addTo(map);
-                console.log('Single geofence polygon added');
+                
+                console.log('✅ Enhanced polygon added without corner markers');
                 ` : ''}
 
                 // Add multiple polygons if provided

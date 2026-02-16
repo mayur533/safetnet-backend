@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Dimensions,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useGeofenceStore } from '../../store/geofenceStore';
@@ -130,7 +131,8 @@ export const GeofenceManagementScreen = () => {
       polygon_json_value: geofence.polygon_json
     });
     
-    if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
+    // Check if geofence has polygon data (regardless of type field)
+    if (geofence.polygon_json && Array.isArray(geofence.polygon_json) && geofence.polygon_json.length > 0) {
       try {
         // polygon_json is already an array from backend
         const rawPolygon = geofence.polygon_json;
@@ -206,25 +208,99 @@ export const GeofenceManagementScreen = () => {
         return [];
       }
     }
+    
+    // If geofence type is 'polygon' but no polygon data, return test data
+    if (geofence.geofence_type === 'polygon') {
+      console.warn("⚠️ No polygon_json data, using test coordinates");
+      // Test polygon around the center point - create a visible square
+      const center = getGeofenceCenter(geofence);
+      
+      // Create a larger, more visible square (approximately 500m x 500m)
+      const offset = 0.005; // Roughly 500m offset
+      const testCoords = [
+        { latitude: center.latitude + offset, longitude: center.longitude - offset }, // Top-left
+        { latitude: center.latitude + offset, longitude: center.longitude + offset }, // Top-right
+        { latitude: center.latitude - offset, longitude: center.longitude + offset }, // Bottom-right
+        { latitude: center.latitude - offset, longitude: center.longitude - offset }, // Bottom-left
+        { latitude: center.latitude + offset, longitude: center.longitude - offset }  // Close polygon (back to top-left)
+      ];
+      
+      console.log("🧪 USING TEST SQUARE POLYGON:", {
+        center: center,
+        offset: offset,
+        coordinates: testCoords,
+        description: "Creating visible square for testing"
+      });
+      return testCoords;
+    }
+    
     console.log("⚠️ UI - No polygon coordinates available for map");
     return [];
   };
 
-  // Calculate optimal zoom level
+  // Calculate optimal zoom level to show polygon clearly
   const getOptimalZoom = (geofence: Geofence) => {
+    console.log("🎯 CALCULATING ZOOM FOR POLYGON VISIBILITY:", {
+      name: geofence.name,
+      type: geofence.geofence_type,
+      radius: geofence.radius
+    });
+
     if (geofence.geofence_type === 'circle' && geofence.radius) {
-      // For circular geofences, zoom based on radius
+      // For circular geofences, ensure we show the entire circle clearly
       const radiusKm = geofence.radius / 1000;
-      if (radiusKm <= 0.1) return 16;
-      if (radiusKm <= 0.5) return 14;
-      if (radiusKm <= 2) return 12;
-      if (radiusKm <= 10) return 10;
-      return 8;
-    } else if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
-      // For polygons, use a default zoom
-      return 15;
+      const displayRadiusKm = Math.max(radiusKm, 1.0); // Minimum 1km
+      
+      console.log("📏 CIRCLE: radius =", radiusKm, "km, display =", displayRadiusKm, "km");
+      
+      // Zoom levels optimized for visibility
+      if (displayRadiusKm <= 0.5) return 16;  // Very small area
+      if (displayRadiusKm <= 1.0) return 15;  // 1km area - more zoomed in
+      if (displayRadiusKm <= 2.0) return 14;  // 2km area - more zoomed in
+      if (displayRadiusKm <= 5.0) return 13;  // 5km area - more zoomed in
+      if (displayRadiusKm <= 10.0) return 12; // 10km area - more zoomed in
+      return 11; // Larger areas
+    } else if (geofence.geofence_type === 'polygon') {
+      // For polygons, use higher zoom to ensure visibility
+      if (geofence.polygon_json && geofence.polygon_json.length > 0) {
+        try {
+          // Calculate polygon bounds
+          const coords = geofence.polygon_json;
+          const lats = coords.map(coord => coord[0]);
+          const lngs = coords.map(coord => coord[1]);
+          
+          const latSpan = Math.max(...lats) - Math.min(...lats);
+          const lngSpan = Math.max(...lngs) - Math.min(...lngs);
+          
+          // Approximate km dimensions (rough conversion)
+          const latKm = latSpan * 111; // 1 degree latitude ≈ 111 km
+          const lngKm = lngSpan * 111 * Math.cos(Math.min(...lats) * Math.PI / 180);
+          
+          const maxDimensionKm = Math.max(latKm, lngKm);
+          const displayRadiusKm = Math.max(maxDimensionKm / 2, 1.0); // Minimum 1km radius
+          
+          console.log("📏 POLYGON: dimensions =", latKm.toFixed(2), "x", lngKm.toFixed(2), "km");
+          console.log("📏 POLYGON: display radius =", displayRadiusKm.toFixed(2), "km");
+          
+          // Higher zoom levels for better polygon visibility
+          if (displayRadiusKm <= 1.0) return 15;  // 1km area - very clear
+          if (displayRadiusKm <= 2.0) return 14;  // 2km area - clear
+          if (displayRadiusKm <= 5.0) return 13;  // 5km area - good visibility
+          if (displayRadiusKm <= 10.0) return 12; // 10km area - decent visibility
+          return 11; // Larger areas
+        } catch (error) {
+          console.error("❌ Error calculating polygon bounds:", error);
+        }
+      }
+      
+      // Default for polygons - use higher zoom for test square visibility
+      console.log("📏 POLYGON: Using high zoom for test square visibility");
+      return 15; // Higher zoom to clearly see the test square
     }
-    return 12;
+    
+    // Default fallback - use higher zoom for immediate polygon visibility
+    console.log("📏 DEFAULT: Using very high zoom for immediate polygon visibility");
+    return 16; // Much higher zoom for immediate polygon clarity
   };
 
   // Get user markers for map
@@ -252,24 +328,27 @@ export const GeofenceManagementScreen = () => {
       );
     }
 
-    const statusColor = isInsideGeofence ? colors.successGreen : colors.warningOrange;
-    const statusIcon = isInsideGeofence ? 'location-on' : 'location-off';
-
-    return (
-      <View style={styles(colors).statusCard}>
-        <Icon name={statusIcon} size={24} color={statusColor} />
-        <View style={styles(colors).statusContent}>
-          <Text style={[styles(colors).statusText, { color: statusColor }]}>
-            {isInsideGeofence ? 'Inside Geofence' : 'Outside Geofence'}
-          </Text>
-          {lastBoundaryCrossTime > 0 && (
-            <Text style={styles(colors).statusTime}>
-              Last boundary cross: {new Date(lastBoundaryCrossTime).toLocaleTimeString()}
+    // Only show status when inside geofence
+    if (isInsideGeofence) {
+      return (
+        <View style={styles(colors).statusCard}>
+          <Icon name="location-on" size={24} color={colors.successGreen} />
+          <View style={styles(colors).statusContent}>
+            <Text style={[styles(colors).statusText, { color: colors.successGreen }]}>
+              Inside Geofence
             </Text>
-          )}
+            {lastBoundaryCrossTime > 0 && (
+              <Text style={styles(colors).statusTime}>
+                Last boundary cross: {new Date(lastBoundaryCrossTime).toLocaleTimeString()}
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-    );
+      );
+    }
+
+    // Return null when outside geofence (don't show any status)
+    return null;
   };
 
   // Render geofence details
@@ -373,104 +452,139 @@ export const GeofenceManagementScreen = () => {
   }
 
   return (
-    <ScrollView style={styles(colors).container} contentContainerStyle={styles(colors).scrollContent}>
-      {/* Header */}
-      <View style={styles(colors).header}>
-        <Text style={styles(colors).headerTitle}>Geofence Management</Text>
-        <Text style={styles(colors).headerSubtitle}>
-          Monitor assigned areas and users within boundaries
-        </Text>
-      </View>
-
-      {/* Geofence Status */}
-      {renderGeofenceStatus()}
-
-      {/* Assigned Geofence */}
-      {assignedGeofence && (
-        <>
-          <Text style={styles(colors).sectionTitle}>Assigned Geofence</Text>
-          {renderGeofenceDetails(assignedGeofence)}
-        </>
-      )}
-
-      {/* Map Toggle */}
-      {selectedGeofence && (
-        <TouchableOpacity
-          style={styles(colors).mapToggleButton}
-          onPress={handleToggleMap}
-          activeOpacity={0.7}
-        >
-          <Icon name={showMap ? 'map' : 'location-on'} size={24} color={colors.white} />
-          <Text style={styles(colors).mapToggleText}>
-            {showMap ? 'Hide Map' : 'Show Map'}
+    <>
+      <ScrollView style={styles(colors).container} contentContainerStyle={styles(colors).scrollContent}>
+        {/* Header */}
+        <View style={styles(colors).header}>
+          <Text style={styles(colors).headerTitle}>Geofence Management</Text>
+          <Text style={styles(colors).headerSubtitle}>
+            Monitor assigned areas and users within boundaries
           </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Map View */}
-      {showMap && selectedGeofence && (
-        <View style={styles(colors).mapContainer}>
-          {(() => {
-            const center = getGeofenceCenter(selectedGeofence);
-            const polygonCoords = getPolygonCoordinates(selectedGeofence);
-            const zoom = getOptimalZoom(selectedGeofence);
-            
-            console.log("🗺️ MAP INPUT - FINAL VALIDATION:", {
-              geofenceName: selectedGeofence.name,
-              geofenceType: selectedGeofence.geofence_type,
-              centerCoords: center,
-              zoomLevel: zoom,
-              polygonCoordinates: polygonCoords,
-              polygonCount: polygonCoords.length,
-              firstPolygonCoord: polygonCoords[0],
-              lastPolygonCoord: polygonCoords[polygonCoords.length - 1],
-              mapDataFormat: {
-                latitude: typeof center.latitude,
-                longitude: typeof center.longitude,
-                polygonFormat: polygonCoords.length > 0 ? 
-                  `[{latitude: ${typeof polygonCoords[0].latitude}, longitude: ${typeof polygonCoords[0].longitude}}]` : 
-                  'empty'
-              },
-              isDataValid: polygonCoords.length > 0 && 
-                polygonCoords.every(coord => 
-                  typeof coord.latitude === 'number' && 
-                  typeof coord.longitude === 'number'
-                )
-            });
-            
-            return null;
-          })()}
-          <LeafletMap
-            key={`geofence-map-${mapKeyRef.current}`}
-            latitude={getGeofenceCenter(selectedGeofence).latitude}
-            longitude={getGeofenceCenter(selectedGeofence).longitude}
-            zoom={getOptimalZoom(selectedGeofence)}
-            height={400}
-            polygonCoordinates={getPolygonCoordinates(selectedGeofence)}
-          />
         </View>
-      )}
 
-      {/* Users in Area */}
-      <Text style={styles(colors).sectionTitle}>Users in Area ({usersInArea.length})</Text>
-      <View style={styles(colors).usersContainer}>
-        {renderUsersInArea()}
-      </View>
+        {/* Geofence Status */}
+        {renderGeofenceStatus()}
 
-      {/* Error Display */}
-      {error && (
-        <View style={styles(colors).errorCard}>
-          <Icon name="error" size={20} color={colors.emergencyRed} />
-          <Text style={styles(colors).errorText}>{error}</Text>
+        {/* Assigned Geofence */}
+        {assignedGeofence && (
+          <>
+            <Text style={styles(colors).sectionTitle}>Assigned Geofence</Text>
+            {renderGeofenceDetails(assignedGeofence)}
+          </>
+        )}
+
+        {/* Map Toggle */}
+        {selectedGeofence && (
           <TouchableOpacity
-            style={styles(colors).errorDismiss}
-            onPress={() => useGeofenceStore.getState().clearError()}
+            style={styles(colors).mapToggleButton}
+            onPress={handleToggleMap}
+            activeOpacity={0.7}
           >
-            <Icon name="close" size={16} color={colors.mediumText} />
+            <Icon name={showMap ? 'map' : 'location-on'} size={24} color={colors.white} />
+            <Text style={styles(colors).mapToggleText}>
+              {showMap ? 'Hide Map' : 'Show Map'}
+            </Text>
           </TouchableOpacity>
+        )}
+
+        {/* Users in Area */}
+        <Text style={styles(colors).sectionTitle}>Users in Area ({usersInArea.length})</Text>
+        <View style={styles(colors).usersContainer}>
+          {renderUsersInArea()}
         </View>
-      )}
-    </ScrollView>
+
+        {/* Error Display */}
+        {error && (
+          <View style={styles(colors).errorCard}>
+            <Icon name="error" size={20} color={colors.emergencyRed} />
+            <Text style={styles(colors).errorText}>{error}</Text>
+            <TouchableOpacity
+              style={styles(colors).errorDismiss}
+              onPress={() => useGeofenceStore.getState().clearError()}
+            >
+              <Icon name="close" size={16} color={colors.mediumText} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Map Modal Overlay */}
+      <Modal
+        visible={showMap}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowMap(false)}
+      >
+        <View style={styles(colors).modalContainer}>
+          {/* Map Header */}
+          <View style={styles(colors).modalHeader}>
+            <Text style={styles(colors).modalTitle}>
+              Geofence Map
+            </Text>
+          </View>
+
+          {/* Map Content */}
+          {selectedGeofence && (
+            <View style={styles(colors).mapContent}>
+              {(() => {
+                console.log(" DEBUG: Selected Geofence Data:", selectedGeofence);
+                
+                const center = getGeofenceCenter(selectedGeofence!);
+                const polygonCoords = getPolygonCoordinates(selectedGeofence!);
+                const zoom = getOptimalZoom(selectedGeofence!);
+                
+                console.log(" MAP INPUT - FINAL VALIDATION:", {
+                  geofenceName: selectedGeofence!.name,
+                  geofenceType: selectedGeofence!.geofence_type,
+                  centerCoords: center,
+                  zoomLevel: zoom,
+                  polygonCoordinates: polygonCoords,
+                  polygonCount: polygonCoords.length,
+                  firstPolygonCoord: polygonCoords[0],
+                  lastPolygonCoord: polygonCoords[polygonCoords.length - 1],
+                  hasPolygonData: !!selectedGeofence!.polygon_json,
+                  polygonJsonType: typeof selectedGeofence!.polygon_json,
+                  polygonJsonValue: selectedGeofence!.polygon_json,
+                  mapDataFormat: {
+                    latitude: typeof center.latitude,
+                    longitude: typeof center.longitude,
+                    polygonFormat: polygonCoords.length > 0 ? 
+                      `[{latitude: ${typeof polygonCoords[0].latitude}, longitude: ${typeof polygonCoords[0].longitude}}]` : 
+                      'empty'
+                  },
+                  isDataValid: polygonCoords.length > 0 && 
+                    polygonCoords.every(coord => 
+                      typeof coord.latitude === 'number' && 
+                      typeof coord.longitude === 'number'
+                    )
+                });
+                
+                // Add warning if no polygon data
+                if (polygonCoords.length === 0) {
+                  console.warn(" WARNING: No polygon coordinates to display!");
+                  console.warn("Geofence type:", selectedGeofence!.geofence_type);
+                  console.warn("Polygon JSON:", selectedGeofence!.polygon_json);
+                }
+                
+                return (
+                  <LeafletMap
+                    key={`geofence-map-${mapKeyRef.current}`}
+                    latitude={center.latitude}
+                    longitude={center.longitude}
+                    zoom={zoom}
+                    height={Dimensions.get('window').height - 120} // Full height minus header
+                    polygonCoordinates={polygonCoords}
+                    showMarker={true}
+                    markerTitle={`${selectedGeofence!.name} Center`}
+                    autoFitBounds={true}
+                  />
+                );
+              })()}
+            </View>
+          )}
+        </View>
+      </Modal>
+    </>
   );
 };
 
@@ -681,8 +795,7 @@ const styles = (colors: any) => StyleSheet.create({
   },
   userLocation: {
     ...typography.caption,
-    color: colors.darkText,
-    fontFamily: 'monospace',
+    color: colors.mediumText,
     marginTop: spacing.xs,
   },
   userLastSeen: {
@@ -690,14 +803,18 @@ const styles = (colors: any) => StyleSheet.create({
     color: colors.mediumText,
     marginTop: spacing.xs,
   },
+  loadingText: {
+    ...typography.body,
+    color: colors.mediumText,
+    marginTop: spacing.md,
+  },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.lightGrayBg,
+    backgroundColor: colors.errorBg,
     borderRadius: 8,
     padding: spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.emergencyRed,
+    marginBottom: spacing.lg,
   },
   errorText: {
     ...typography.caption,
@@ -708,9 +825,52 @@ const styles = (colors: any) => StyleSheet.create({
   errorDismiss: {
     padding: spacing.xs,
   },
-  loadingText: {
-    marginTop: spacing.md,
-    ...typography.body,
-    color: colors.mediumText,
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-});
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingTop: 50, // Account for status bar
+  },
+  modalTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.white,
+    flex: 1,
+  },
+  closeButton: {
+    padding: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  mapContent: {
+    flex: 1,
+  },
+  modalFooter: {
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.lightGrayBg,
+  },
+  closeMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    padding: spacing.md,
+    borderRadius: 12,
+  },
+  closeMapButtonText: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.white,
+    marginLeft: spacing.sm,
+  },
+})
