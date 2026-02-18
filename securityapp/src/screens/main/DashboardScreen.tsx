@@ -18,7 +18,7 @@ import { Alert } from '../../types/alert.types';
 import { alertService } from '../../api/services/alertService';
 import { dashboardService, DashboardData, DashboardStats } from '../../api/services/dashboardService';
 import { useAlertsStore } from '../../store/alertsStore';
-import { useColors } from '../../utils/colors';
+import { useTheme } from '../../contexts/ThemeContext';
 import { typography, spacing } from '../../utils';
 import Toast from 'react-native-toast-message';
 
@@ -47,7 +47,7 @@ console.warn = (...args) => {
 
 export const DashboardScreen = () => {
   const navigation = useNavigation();
-  const colors = useColors();
+  const { colors } = useTheme();
 
   // State for dashboard data from API
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
@@ -186,7 +186,7 @@ export const DashboardScreen = () => {
     },
     errorTitle: {
       ...typography.screenHeader,
-      color: colors.emergencyRed,
+      color: colors.error,
       textAlign: 'center',
       marginBottom: spacing.sm,
     },
@@ -202,11 +202,18 @@ export const DashboardScreen = () => {
       backgroundColor: colors.primary,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
-      borderRadius: 8,
+      borderRadius: 16,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
     },
     retryButtonText: {
       ...typography.buttonSmall,
-      color: colors.white,
+      color: colors.textOnPrimary,
       fontWeight: '600',
     },
     errorActions: {
@@ -413,7 +420,7 @@ export const DashboardScreen = () => {
 
     return (
       <View style={[styles.container, styles.centered]}>
-        <Icon name={isNetworkError ? 'wifi-off' : 'error'} size={48} color={colors.emergencyRed} />
+        <Icon name={isNetworkError ? 'wifi-off' : 'error'} size={48} color={colors.error} />
         <Text style={styles.errorTitle}>{errorTitle}</Text>
         <Text style={styles.errorText}>{errorMessage}</Text>
         <View style={styles.errorActions}>

@@ -93,27 +93,26 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   register: async (email: string, password: string, name: string, phone: string) => {
     try {
-      // Backend expects username, email, password, password_confirm
-      const username = email.split('@')[0]; // Use email prefix as username
+      // Backend expects name, email, phone, password, password_confirm, plantype
       const response = await apiService.register({
-        username,
+        name,
         email,
+        phone,
         password,
-        password_confirm: password,
-        role: 'USER', // Default role
+        passwordConfirm: password,
       });
       
       if (response.error) {
         throw new Error(response.error);
       }
 
-      if (response.data?.user) {
+      if (response.user && response.tokens) {
         resetUserScopedData();
-        const user = convertApiUserToUser(response.data.user);
+        const user = convertApiUserToUser(response.user);
         set({user, isAuthenticated: true, showOnboarding: true});
         
-        if (response.data.access && response.data.refresh) {
-          await apiService.setTokens(response.data.access, response.data.refresh);
+        if (response.tokens.access && response.tokens.refresh) {
+          await apiService.setTokens(response.tokens.access, response.tokens.refresh);
         }
         
         const storage = await getStorage();

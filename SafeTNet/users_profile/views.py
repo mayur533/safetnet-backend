@@ -684,8 +684,88 @@ def user_stats(request, user_id):
     return Response(stats)
 
 
-# Helper function to check if user is premium
-def _is_user_premium(user):
+class SOSTriggerView(APIView):
+    """
+    Trigger SOS alert and create entry in unified users_alert table.
+    POST /users/<user_id>/sos/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, user_id):
+        """Create SOS alert in unified alert system."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only trigger SOS for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        user = request.user
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        notes = request.data.get('notes', '')
+
+        if latitude is None or longitude is None:
+            return Response(
+                {'error': 'latitude and longitude are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Import required models
+        from users.models import Alert
+        from users.utils import get_geofence_from_location
+
+        try:
+            # Find geofence for this location
+            geofence = get_geofence_from_location(float(latitude), float(longitude))
+            logger.info(f"[SOS] User {user.email} geofence: {geofence.name if geofence else 'None'}")
+
+            # Create alert in unified table
+            alert = Alert.objects.create(
+                user=user,
+                alert_type='USER_SOS',
+                title=f"SOS Alert from {user.first_name or user.username}",
+                description=notes or "Emergency SOS triggered",
+                location={
+                    'latitude': float(latitude),
+                    'longitude': float(longitude),
+                    'accuracy': 10.0  # Default accuracy
+                },
+                geofence=geofence,
+                severity='CRITICAL',
+                priority='high',
+                status='ACTIVE'
+            )
+
+            logger.info(f"[SOS] Created alert ID {alert.id} for user {user.email} in geofence {geofence.name if geofence else 'None'}")
+
+            # Send SMS to emergency contacts (existing logic)
+            try:
+                from .services import SMSService
+                sms_service = SMSService()
+
+                # Get family contacts
+                family_contacts = FamilyContact.objects.filter(user=user, is_primary=True)
+                if family_contacts.exists():
+                    contact = family_contacts.first()
+                    message = f"EMERGENCY: {user.first_name or user.username} triggered SOS at {latitude}, {longitude}"
+                    sms_service.send_sms(contact.phone, message)
+                    logger.info(f"[SOS] SMS sent to {contact.phone}")
+            except Exception as sms_error:
+                logger.error(f"[SOS] SMS failed: {sms_error}")
+
+            return Response({
+                'message': 'SOS alert created successfully',
+                'alert_id': alert.id,
+                'geofence': geofence.name if geofence else None,
+                'location': alert.location
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"[SOS] Error creating alert: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to create SOS alert'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     """Check if user has premium subscription by checking UserDetails."""
     try:
         from users.models import UserDetails

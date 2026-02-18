@@ -471,35 +471,26 @@ class AlertViewSet(ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
-        
+
+        logger.info(f"[USER ALERTS] User {user.email} (role: {user.role}) requesting alerts")
+
         # SUPER_ADMIN can see all alerts
         if user.role == 'SUPER_ADMIN':
+            logger.info(f"[USER ALERTS] Super-admin {user.email} sees all alerts")
             return queryset
-        
-        # Get all geofences the user has access to
-        user_geofences = set()
-        
-        # Add geofences from user's geofences field
-        user_geofences.update(user.geofences.all())
-        
-        # For SUB_ADMIN, also include all geofences from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            org_geofences = Geofence.objects.filter(organization=user.organization)
-            user_geofences.update(org_geofences)
-        
-        # Note: Security officers' geofences are already included above via user.geofences.all()
-        
-        # If user has geofences, filter alerts that have any of those geofences
-        if user_geofences:
-            # Filter alerts where geofences ManyToMany contains any of user's geofences
-            # OR legacy geofence field matches
-            geofence_ids = [g.id for g in user_geofences]
-            return queryset.filter(
-                Q(geofences__in=geofence_ids) | 
-                Q(geofence__in=geofence_ids)
-            ).distinct()
-        
-        return queryset.none()
+
+        # For regular users: show alerts in their geofences (typically USER_SOS alerts)
+        # Users can see alerts in geofences they belong to
+        user_geofences = user.geofences.filter(active=True)
+        geofence_ids = list(user_geofences.values_list('id', flat=True))
+
+        logger.info(f"[USER ALERTS] User {user.email} has {len(geofence_ids)} geofences: {geofence_ids}")
+
+        # Filter alerts by user's geofences
+        queryset = queryset.filter(geofence_id__in=geofence_ids)
+
+        logger.info(f"[USER ALERTS] Found {queryset.count()} alerts for user {user.email}")
+        return queryset
     
     def get_permissions(self):
         """

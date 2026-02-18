@@ -41,7 +41,7 @@ class Command(BaseCommand):
             user = User.objects.create_user(
                 username=username,
                 email=email,
-                password=password,
+                password=password,  # Plain password will be hashed by create_user
                 role='security_officer',
                 first_name=first_name,
                 last_name=last_name,
@@ -49,6 +49,10 @@ class Command(BaseCommand):
                 is_staff=False,
                 is_superuser=False
             )
+            
+            # Hash password properly using Django's built-in method
+            user.set_password(password)
+            user.save()
 
             self.stdout.write(
                 self.style.SUCCESS('Security Officer created successfully!')

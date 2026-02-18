@@ -611,14 +611,13 @@ class ApiService {
   async getAlerts(): Promise<any> {
     const cacheKey = 'user_alerts';
     try {
-      // Use the admin alerts endpoint which filters by user's geofences
-      // The endpoint is at /api/auth/admin/alerts/
+      // Use the unified alerts endpoint at /api/user/alerts/
+      // This now returns alerts from the users_alert table filtered by user's geofences
       const baseUrl = await getApiBaseUrl();
-      const adminApiUrl = baseUrl.replace('/api/user', '/api/auth');
-      const url = `${adminApiUrl}/admin/alerts/`;
-      
+      const url = `${baseUrl}/alerts/`;
+
       console.log('[getAlerts] Fetching alerts from:', url);
-      
+
       return await cacheService.getOrFetch(
         cacheKey,
         async () => {
@@ -631,14 +630,14 @@ class ApiService {
           } else {
             console.warn('[getAlerts] No access token available');
           }
-          
+
           const response = await fetch(url, {
             method: 'GET',
             headers,
           });
-          
+
           console.log('[getAlerts] Response status:', response.status);
-          
+
           if (!response.ok) {
             const text = await response.text();
             let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -651,11 +650,11 @@ class ApiService {
             console.error('[getAlerts] Error response:', errorMessage);
             throw new Error(errorMessage);
           }
-          
+
           const data = await response.json();
           console.log('[getAlerts] Response data type:', Array.isArray(data) ? 'array' : typeof data);
           console.log('[getAlerts] Has results field:', 'results' in data);
-          
+
           // Handle paginated response (results field) or direct array
           const alerts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
           console.log('[getAlerts] Returning', alerts.length, 'alerts');

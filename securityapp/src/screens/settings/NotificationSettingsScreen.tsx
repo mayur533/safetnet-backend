@@ -15,13 +15,173 @@ import {
   setNotificationPermissionGranted,
 } from '../../store/slices/settingsSlice';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { colors } from '../../utils/colors';
+import { useTheme } from '../../contexts/ThemeContext';
 import { typography, spacing } from '../../utils';
 
 export const NotificationSettingsScreen = () => {
   const navigation = useNavigation();
   const dispatch = useAppDispatch();
   const settings = useAppSelector((state) => state.settings);
+  const { colors } = useTheme();
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.base,
+      paddingTop: 10,
+      paddingBottom: spacing.md,
+      backgroundColor: colors.cardBackground,
+      borderBottomLeftRadius: 24,
+      borderBottomRightRadius: 24,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+      borderWidth: 1,
+      borderBottomWidth: 2,
+      borderColor: colors.border,
+      borderBottomColor: colors.primary,
+    },
+    backButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.background,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    headerTitle: {
+      ...typography.screenHeader,
+      color: colors.darkText,
+      fontSize: 24,
+      fontWeight: '700',
+      letterSpacing: -0.5,
+    },
+    placeholder: {
+      width: 40,
+    },
+    scrollView: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    section: {
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.lg,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.md,
+    },
+    sectionIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: spacing.md,
+      backgroundColor: colors.primary,
+      borderWidth: 2,
+      borderColor: colors.primary,
+    },
+    sectionTitle: {
+      ...typography.cardTitle,
+      color: colors.darkText,
+      fontSize: 18,
+      fontWeight: '700',
+      letterSpacing: -0.2,
+    },
+    sectionContent: {
+      backgroundColor: colors.cardBackground,
+      borderRadius: 16,
+      padding: spacing.md,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    settingItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      borderBottomWidth: 1.5,
+      backgroundColor: colors.cardBackground,
+      borderBottomColor: colors.border,
+    },
+    settingContent: {
+      flex: 1,
+      flexDirection: 'column',
+    },
+    settingTitle: {
+      ...typography.body,
+      fontWeight: '600',
+      color: colors.darkText,
+      fontSize: 16,
+      flex: 1,
+    },
+    settingSubtitle: {
+      ...typography.caption,
+      marginTop: 4,
+      color: colors.mediumText,
+      fontSize: 13,
+    },
+    permissionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: spacing.md,
+    },
+    permissionInfo: {
+      flex: 1,
+    },
+    permissionTitle: {
+      ...typography.body,
+      color: colors.darkText,
+      fontWeight: '500',
+    },
+    permissionStatus: {
+      ...typography.caption,
+      marginTop: 2,
+    },
+    grantButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: 12,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
+    },
+    grantButtonText: {
+      ...typography.buttonSmall,
+      color: colors.textOnPrimary,
+      fontWeight: '600',
+    },
+  });
 
   const handleToggleNotifications = () => {
     if (!settings.notificationsEnabled && !settings.notificationPermissionGranted) {
@@ -98,7 +258,10 @@ export const NotificationSettingsScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* General Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>General</Text>
+          <View style={styles.sectionHeader}>
+            <Icon name="notifications" size={28} color={colors.white} style={styles.sectionIcon} />
+            <Text style={styles.sectionTitle}>General</Text>
+          </View>
           <View style={styles.sectionContent}>
             {renderSettingItem({
               title: 'Push Notifications',
@@ -119,7 +282,10 @@ export const NotificationSettingsScreen = () => {
 
         {/* Alert Types */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Alert Types</Text>
+          <View style={styles.sectionHeader}>
+            <Icon name="warning" size={28} color={colors.white} style={styles.sectionIcon} />
+            <Text style={styles.sectionTitle}>Alert Types</Text>
+          </View>
           <View style={styles.sectionContent}>
             {renderSettingItem({
               title: 'Security Alerts',
@@ -147,7 +313,10 @@ export const NotificationSettingsScreen = () => {
 
         {/* Schedule */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Schedule</Text>
+          <View style={styles.sectionHeader}>
+            <Icon name="schedule" size={28} color={colors.white} style={styles.sectionIcon} />
+            <Text style={styles.sectionTitle}>Schedule</Text>
+          </View>
           <View style={styles.sectionContent}>
             {renderSettingItem({
               title: 'Quiet Hours',
@@ -168,7 +337,10 @@ export const NotificationSettingsScreen = () => {
 
         {/* Advanced */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Advanced</Text>
+          <View style={styles.sectionHeader}>
+            <Icon name="settings" size={28} color={colors.white} style={styles.sectionIcon} />
+            <Text style={styles.sectionTitle}>Advanced</Text>
+          </View>
           <View style={styles.sectionContent}>
             {renderSettingItem({
               title: 'Vibration',
@@ -189,13 +361,16 @@ export const NotificationSettingsScreen = () => {
 
         {/* Permission Status */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Permission Status</Text>
+          <View style={styles.sectionHeader}>
+            <Icon name="security" size={28} color={colors.white} style={styles.sectionIcon} />
+            <Text style={styles.sectionTitle}>Permission Status</Text>
+          </View>
           <View style={styles.sectionContent}>
             <View style={styles.permissionItem}>
               <View style={styles.permissionInfo}>
                 <Text style={styles.permissionTitle}>Notification Permission</Text>
                 <Text style={[styles.permissionStatus, {
-                  color: settings.notificationPermissionGranted ? colors.successGreen : colors.emergencyRed
+                  color: settings.notificationPermissionGranted ? colors.success : colors.error
                 }]}>
                   {settings.notificationPermissionGranted ? 'Granted' : 'Not Granted'}
                 </Text>
@@ -219,100 +394,3 @@ export const NotificationSettingsScreen = () => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
-    paddingTop: 50, // Account for status bar
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  headerTitle: {
-    ...typography.screenHeader,
-    color: colors.darkText,
-  },
-  placeholder: {
-    width: 40, // Match back button width
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    marginTop: spacing.md,
-  },
-  sectionTitle: {
-    ...typography.sectionHeader,
-    color: colors.darkText,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  sectionContent: {
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    marginHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  settingContent: {
-    flex: 1,
-  },
-  settingTitle: {
-    ...typography.body,
-    color: colors.darkText,
-    fontWeight: '500',
-  },
-  settingSubtitle: {
-    ...typography.caption,
-    color: colors.mediumText,
-    marginTop: 2,
-  },
-  permissionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-  },
-  permissionInfo: {
-    flex: 1,
-  },
-  permissionTitle: {
-    ...typography.body,
-    color: colors.darkText,
-    fontWeight: '500',
-  },
-  permissionStatus: {
-    ...typography.caption,
-    marginTop: 2,
-  },
-  grantButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 6,
-  },
-  grantButtonText: {
-    ...typography.buttonSmall,
-    color: colors.textOnPrimary,
-    fontWeight: '600',
-  },
-});

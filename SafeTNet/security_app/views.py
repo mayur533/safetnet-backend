@@ -44,6 +44,8 @@ from .serializers import (
     LiveLocationSerializer,
     GeofenceSerializer,
 )
+# Import Alert serializers from users app
+from users.serializers import AlertSerializer, AlertCreateSerializer
 
 
 class OfficerOnlyMixin:
@@ -60,8 +62,8 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'create':
-            return SOSAlertCreateSerializer
-        return SOSAlertSerializer
+            return AlertCreateSerializer  # Use unified Alert serializer
+        return AlertSerializer  # Use unified Alert serializer
 
     def get_permissions(self):
         """
@@ -78,63 +80,119 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Get queryset with expiry filtering and area-based alert handling.
-        This implements the security requirement that expired alerts are not visible.
+        Get alerts from unified users_alert table with geofence-based filtering.
+        Security officers see alerts in their assigned geofences.
         """
+        from users.models import Alert
         from django.utils import timezone
-        
+
         user = self.request.user
         now = timezone.now()
-        
-        # Base queryset: non-deleted, non-expired alerts
-        base_queryset = SOSAlert.objects.filter(
-            is_deleted=False
-        ).exclude(
-            # Exclude expired area-based alerts
-            alert_type='area_user_alert',
-            expires_at__lt=now
-        )
 
-        # For Security Officers → show SOS alerts assigned to them or their geofence
-        # Security officers are User records with role='security_officer'
+        # Base queryset: active alerts from unified table
+        base_queryset = Alert.objects.filter(
+            status='ACTIVE',
+            created_at__gte=now - timezone.timedelta(days=7)  # Last 7 days only
+        ).select_related('user', 'geofence', 'assigned_officer')
+
+        logger.info(f"[SECURITY QUERIES] User {user.email} (role: {user.role}) requesting alerts")
+
+        # For Security Officers → show alerts in their assigned geofences
         if user.role == 'security_officer':
-            return base_queryset.filter(
-                Q(assigned_officer=user) | Q(geofence__in=user.geofences.all())
-            )
+            # Get officer's assigned geofences
+            officer_geofences = user.geofences.filter(active=True)
+            geofence_ids = list(officer_geofences.values_list('id', flat=True))
 
-        # For Sub-Admins → show SOS alerts within their managed geofence
-        elif hasattr(user, 'subadminprofile'):
-            return base_queryset.filter(
-                geofence=user.subadminprofile.geofence
-            )
+            logger.info(f"[SECURITY QUERIES] Officer {user.email} has {len(geofence_ids)} assigned geofences: {geofence_ids}")
 
-        # For Main Admins → see all active alerts (excluding expired)
-        elif user.is_superuser:
+            # Filter alerts by officer's geofences
+            queryset = base_queryset.filter(geofence_id__in=geofence_ids)
+
+            logger.info(f"[SECURITY QUERIES] Found {queryset.count()} alerts for officer {user.email}")
+            return queryset
+
+        # For Sub-Admins → show alerts in their organization's geofences
+        elif user.role == 'SUB_ADMIN' and hasattr(user, 'organization') and user.organization:
+            org_geofences = user.organization.geofences.filter(active=True)
+            geofence_ids = list(org_geofences.values_list('id', flat=True))
+
+            logger.info(f"[SECURITY QUERIES] Sub-admin {user.email} has {len(geofence_ids)} org geofences")
+
+            queryset = base_queryset.filter(geofence_id__in=geofence_ids)
+            return queryset
+
+        # For Super Admins → see all alerts
+        elif user.role == 'SUPER_ADMIN':
+            logger.info(f"[SECURITY QUERIES] Super-admin {user.email} sees all alerts")
             return base_queryset
 
-        # For normal users → show only their own alerts (excluding expired area alerts sent to others)
-        return base_queryset.filter(user=user)
+        # For other users → no alerts
+        logger.info(f"[SECURITY QUERIES] User {user.email} (role: {user.role}) has no access to alerts")
+        return Alert.objects.none()
 
     def perform_create(self, serializer):
-        """Create SOSAlert and automatically create LiveLocation for USER-created alerts."""
-        from django.db import transaction
-        
-        with transaction.atomic():
-            instance = serializer.save(user=self.request.user)
-            
-            # Automatically create LiveLocation for USER-created alerts only
-            if (instance.created_by_role == 'USER' and 
-                instance.location_lat is not None and 
-                instance.location_long is not None):
-                
-                LiveLocation.objects.get_or_create(
-                    sos_alert=instance,
-                    defaults={
-                        'user': instance.user,
-                        'latitude': instance.location_lat,
-                        'longitude': instance.location_long
-                    }
-                )
+        """Create alert in unified users_alert table instead of SOSAlert."""
+        from users.models import Alert
+        from users.utils import get_geofence_from_location
+
+        request = self.request
+        user = request.user
+        validated_data = serializer.validated_data
+
+        try:
+            # Get location data
+            location_lat = validated_data.get('location_lat')
+            location_long = validated_data.get('location_long')
+
+            # Find geofence for this location (officers create alerts for their assigned geofences)
+            geofence = None
+            if location_lat and location_long:
+                geofence = get_geofence_from_location(float(location_lat), float(location_long))
+                if not geofence:
+                    # If no geofence found, use officer's primary geofence
+                    officer_geofences = user.geofences.filter(active=True)
+                    if officer_geofences.exists():
+                        geofence = officer_geofences.first()
+
+            logger.info(f"[OFFICER ALERT] Officer {user.email} geofence: {geofence.name if geofence else 'None'}")
+
+            # Map alert type from SOSAlert to unified Alert
+            alert_type_mapping = {
+                'emergency': 'OFFICER_ALERT',
+                'security': 'OFFICER_ALERT',
+                'general': 'SYSTEM_ALERT',
+                'area_user_alert': 'OFFICER_ALERT'
+            }
+            alert_type = alert_type_mapping.get(validated_data.get('alert_type', 'security'), 'OFFICER_ALERT')
+
+            # Create alert in unified table
+            alert = Alert.objects.create(
+                user=user,
+                alert_type=alert_type,
+                title=f"Alert from {user.first_name or user.username}",
+                description=validated_data.get('description', validated_data.get('message', '')),
+                message=validated_data.get('message', ''),
+                location={
+                    'latitude': float(location_lat) if location_lat else None,
+                    'longitude': float(location_long) if location_long else None,
+                    'accuracy': 10.0
+                } if location_lat and location_long else None,
+                geofence=geofence,
+                severity='HIGH',  # Officer alerts are high priority
+                priority=validated_data.get('priority', 'medium'),
+                status='ACTIVE',
+                assigned_officer=user  # Officer assigns themselves
+            )
+
+            logger.info(f"[OFFICER ALERT] Created alert ID {alert.id} for officer {user.email}")
+
+            # Return the created alert (this replaces the old SOSAlert instance)
+            # We need to update the serializer to return Alert data instead of SOSAlert data
+            return alert
+
+        except Exception as e:
+            logger.error(f"[OFFICER ALERT] Error creating alert: {e}", exc_info=True)
+            raise
 
     def create(self, request, *args, **kwargs):
         """

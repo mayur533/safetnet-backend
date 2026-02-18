@@ -71,9 +71,19 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         """
 
         validated_data.pop('password_confirm')
-
+        
+        # Ensure password is not empty
+        password = validated_data.get('password', '')
+        if not password:
+            raise serializers.ValidationError('Password cannot be empty.')
+        
         user = User.objects.create_user(**validated_data)
-
+        
+        # Hash password properly using Django's set_password method
+        if password:
+            user.set_password(password)
+        
+        user.save()
         return user
 
 

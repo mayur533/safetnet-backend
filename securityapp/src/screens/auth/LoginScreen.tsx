@@ -21,7 +21,8 @@ import { useAppDispatch } from '../../store/hooks';
 import { loginSuccess } from '../../store/slices/authSlice';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useColors } from '../../utils/colors';
+import { useTheme } from '../../contexts/ThemeContext';
+import { typography, spacing } from '../../utils';
 import type { SecurityOfficer } from '../../types/user.types';
 
 type AuthStackParamList = {
@@ -42,7 +43,7 @@ try {
 }
 
 export const LoginScreen = () => {
-  const colors = useColors();
+  const { colors } = useTheme();
   const { width, height } = Dimensions.get('window');
   
   // Animation values
@@ -60,22 +61,24 @@ export const LoginScreen = () => {
     },
     // Premium gradient header
     header: {
-      height: height * 0.35, // Further reduced height
-      paddingTop: 50, // Reduced padding
-      paddingBottom: 16, // Reduced padding
-      paddingHorizontal: 24, // Reduced padding
+      height: height * 0.35,
+      paddingTop: 50,
+      paddingBottom: 16,
+      paddingHorizontal: 24,
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
       overflow: 'hidden',
       backgroundColor: colors.primary,
-      borderBottomLeftRadius: 30, // Smaller radius
+      borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       shadowColor: colors.shadow,
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.2,
       shadowRadius: 8,
       elevation: 6,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
     },
     logoContainer: {
       alignItems: 'center',
@@ -164,30 +167,30 @@ export const LoginScreen = () => {
       lineHeight: 16,
     },
     inputContainer: {
-      marginBottom: 16, // Further reduced
+      marginBottom: 16,
     },
     inputLabel: {
-      fontSize: 14, // Reduced
+      fontSize: 14,
       fontWeight: '600',
       color: colors.darkText,
-      marginBottom: 6, // Reduced margin
+      marginBottom: 6,
       marginLeft: 4,
     },
     inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.inputBackground,
-      borderRadius: 12, // Smaller radius
+      borderRadius: 16,
       borderWidth: 2,
       borderColor: colors.inputBorder,
-      paddingHorizontal: 16, // Reduced padding
+      paddingHorizontal: 16,
       paddingVertical: 2,
-      height: 44, // Reduced height
+      height: 44,
       shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.03,
-      shadowRadius: 2,
-      elevation: 1,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
     },
     inputFocused: {
       borderColor: colors.primary,
@@ -232,15 +235,17 @@ export const LoginScreen = () => {
     // Premium button
     loginButton: {
       backgroundColor: colors.primary,
-      borderRadius: 12, // Smaller radius
-      paddingVertical: 12, // Reduced padding
+      borderRadius: 16,
+      paddingVertical: 14,
       alignItems: 'center',
-      marginBottom: 16, // Reduced margin
+      marginBottom: 16,
       shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 6,
-      elevation: 3,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+      borderWidth: 1.5,
+      borderColor: colors.primary,
     },
     loginButtonText: {
       color: colors.white,
@@ -264,7 +269,7 @@ export const LoginScreen = () => {
     },
     versionText: {
       fontSize: 10, // Reduced
-      color: colors.captionText,
+      color: colors.mediumText,
       textAlign: 'center',
       marginTop: 4,
     },
@@ -318,7 +323,7 @@ export const LoginScreen = () => {
     },
     securityBadgeText: {
       fontSize: 10, // Reduced
-      color: colors.successGreen,
+      color: colors.success,
       fontWeight: '600',
       marginLeft: 4,
     },
@@ -681,7 +686,7 @@ export const LoginScreen = () => {
 
           {/* Security Badge */}
           <View style={styles.securityBadge}>
-            <Icon name="verified-user" size={14} color={colors.successGreen} />
+            <Icon name="verified-user" size={14} color={colors.success} />
             <Text style={styles.securityBadgeText}>Secure Connection</Text>
           </View>
 

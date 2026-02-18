@@ -158,55 +158,87 @@ class Geofence(models.Model):
 
 class Alert(models.Model):
     ALERT_TYPES = [
-        ('GEOFENCE_ENTER', 'Geofence Enter'),
-        ('GEOFENCE_EXIT', 'Geofence Exit'),
+        ('USER_SOS', 'User SOS Emergency'),
+        ('OFFICER_ALERT', 'Officer Alert'),
+        ('SYSTEM_ALERT', 'System Alert'),
         ('GEOFENCE_VIOLATION', 'Geofence Violation'),
-        ('SYSTEM_ERROR', 'System Error'),
         ('SECURITY_BREACH', 'Security Breach'),
-        ('MAINTENANCE', 'Maintenance'),
     ]
-    
+
     SEVERITY_CHOICES = [
         ('LOW', 'Low'),
         ('MEDIUM', 'Medium'),
         ('HIGH', 'High'),
         ('CRITICAL', 'Critical'),
     ]
-    
-    geofence = models.ForeignKey(
-        Geofence,
-        on_delete=models.CASCADE,
-        related_name='legacy_alerts',
-        null=True,
-        blank=True,
-        help_text='Legacy single geofence field (deprecated, use geofences instead)'
-    )
-    geofences = models.ManyToManyField(
-        Geofence,
-        blank=True,
-        related_name='alerts',
-        help_text='Geofences associated with this alert. All users, subadmins, and security officers associated with these geofences will see this alert.'
-    )
+
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('PENDING', 'Pending'),
+        ('ACCEPTED', 'Accepted'),
+        ('RESOLVED', 'Resolved'),
+    ]
+
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+
+    # Who created this alert
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='alerts',
-        null=True,
-        blank=True
+        related_name='alerts_created',
+        help_text="User who created this alert"
     )
+
+    # Alert type and metadata
     alert_type = models.CharField(
         max_length=20,
         choices=ALERT_TYPES,
-        default='GEOFENCE_ENTER'
+        default='USER_SOS',
+        help_text="Type of alert"
     )
     severity = models.CharField(
         max_length=10,
         choices=SEVERITY_CHOICES,
         default='MEDIUM'
     )
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default='medium'
+    )
+
+    # Content
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    message = models.TextField(blank=True, null=True, help_text="Additional message content")
+
+    # Location data (unified format)
+    location = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Location data: {'latitude': float, 'longitude': float, 'accuracy': float}"
+    )
+
+    # Geofence association (supports both single and multiple)
+    geofence = models.ForeignKey(
+        Geofence,
+        on_delete=models.CASCADE,
+        related_name='alerts',
+        null=True,
+        blank=True,
+        help_text='Geofence associated with this alert'
+    )
+
+    # Status and resolution
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='ACTIVE'
+    )
     is_resolved = models.BooleanField(default=False)
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolved_by = models.ForeignKey(
@@ -216,23 +248,107 @@ class Alert(models.Model):
         blank=True,
         related_name='resolved_alerts'
     )
+
+    # Officer assignment (for officer alerts)
+    assigned_officer = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_alerts',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer assigned to this alert"
+    )
+
+    # Read tracking (like SOSEvent)
+    read_by = models.ManyToManyField(
+        User,
+        related_name='read_alerts',
+        blank=True,
+        help_text="Users who have read this alert"
+    )
+    read_timestamps = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Timestamps when each user read this alert. Format: {'user_id': 'ISO_timestamp'}"
+    )
+
+    # Additional metadata
+    metadata = models.JSONField(default=dict, blank=True)
+
+    # Legacy fields (deprecated, but keeping for backward compatibility)
+    geofences = models.ManyToManyField(
+        Geofence,
+        blank=True,
+        related_name='legacy_alerts',
+        help_text='Legacy multiple geofences field (deprecated, use geofence instead)'
+    )
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name = 'Alert'
         verbose_name_plural = 'Alerts'
         ordering = ['-created_at']
-    
+        indexes = [
+            models.Index(fields=['alert_type', 'status']),
+            models.Index(fields=['geofence', 'created_at']),
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['assigned_officer', 'status']),
+        ]
+
     def __str__(self):
-        return f"{self.title} ({self.severity})"
-    
+        return f"{self.title} ({self.alert_type}) - {self.status}"
+
     def resolve(self, resolved_by_user):
         """Mark alert as resolved"""
         self.is_resolved = True
+        self.status = 'RESOLVED'
         self.resolved_at = timezone.now()
         self.resolved_by = resolved_by_user
         self.save()
+
+    def mark_as_read(self, user):
+        """
+        Mark this alert as read by a user.
+        Returns True if newly marked, False if already read.
+        """
+        from django.utils import timezone
+
+        if not user or not user.id:
+            return False
+
+        # Check if already read
+        if self.read_by.filter(id=user.id).exists():
+            return False
+
+        # Add to read_by
+        self.read_by.add(user)
+
+        # Add timestamp
+        if not isinstance(self.read_timestamps, dict):
+            self.read_timestamps = {}
+
+        self.read_timestamps[str(user.id)] = timezone.now().isoformat()
+        self.save(update_fields=['read_timestamps'])
+
+        return True
+
+    def is_read_by(self, user):
+        """Check if this alert has been read by the given user."""
+        if not user or not user.id:
+            return False
+        return self.read_by.filter(id=user.id).exists()
+
+    def get_read_timestamp(self, user):
+        """Get the timestamp when the user read this alert."""
+        if not user or not user.id:
+            return None
+        if isinstance(self.read_timestamps, dict):
+            return self.read_timestamps.get(str(user.id))
+        return None
 
 
 

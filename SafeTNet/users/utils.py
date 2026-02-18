@@ -239,3 +239,108 @@ def sanitize_file_upload(filename):
         raise ValidationError(f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}")
     
     return filename
+
+
+def get_geofence_from_location(latitude, longitude):
+    """
+    Find which geofence contains the given GPS coordinates.
+
+    Args:
+        latitude (float): Latitude coordinate
+        longitude (float): Longitude coordinate
+
+    Returns:
+        Geofence or None: The geofence containing the point, or None if not found
+    """
+    from .models import Geofence
+
+    logger.info(f"Looking for geofence containing location: lat={latitude}, lng={longitude}")
+
+    # Get all active geofences
+    geofences = Geofence.objects.filter(active=True)
+
+    for geofence in geofences:
+        if geofence.geofence_type == 'circle':
+            # Circle geofence check
+            if (geofence.center_latitude and geofence.center_longitude and geofence.radius):
+                # Simple distance calculation (could be improved with proper geospatial)
+                distance = calculate_distance(
+                    latitude, longitude,
+                    geofence.center_latitude, geofence.center_longitude
+                )
+                if distance <= geofence.radius:
+                    logger.info(f"Found matching circle geofence: {geofence.name}")
+                    return geofence
+
+        elif geofence.geofence_type == 'polygon':
+            # Polygon geofence check
+            if geofence.polygon_json:
+                if is_point_in_polygon(longitude, latitude, geofence.get_polygon_coordinates()):
+                    logger.info(f"Found matching polygon geofence: {geofence.name}")
+                    return geofence
+
+    logger.info("No matching geofence found for location")
+    return None
+
+
+def calculate_distance(lat1, lng1, lat2, lng2):
+    """
+    Calculate distance between two GPS coordinates using Haversine formula.
+    Returns distance in meters.
+    """
+    import math
+
+    # Convert to radians
+    lat1_rad = math.radians(lat1)
+    lng1_rad = math.radians(lng1)
+    lat2_rad = math.radians(lat2)
+    lng2_rad = math.radians(lng2)
+
+    # Haversine formula
+    dlat = lat2_rad - lat1_rad
+    dlng = lng2_rad - lng1_rad
+
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    # Earth's radius in meters
+    R = 6371000
+
+    return R * c
+
+
+def is_point_in_polygon(lng, lat, polygon_coords):
+    """
+    Check if a point is inside a polygon using ray casting algorithm.
+
+    Args:
+        lng (float): Longitude of point
+        lat (float): Latitude of point
+        polygon_coords (list): List of coordinate pairs [[lng1, lat1], [lng2, lat2], ...]
+
+    Returns:
+        bool: True if point is inside polygon
+    """
+    if not polygon_coords or len(polygon_coords) < 3:
+        return False
+
+    # Close the polygon if not already closed
+    if polygon_coords[0] != polygon_coords[-1]:
+        polygon_coords = polygon_coords + [polygon_coords[0]]
+
+    n = len(polygon_coords)
+    inside = False
+
+    p1x, p1y = polygon_coords[0]
+    for i in range(1, n + 1):
+        p2x, p2y = polygon_coords[i % n]
+        if lat > min(p1y, p2y):
+            if lat <= max(p1y, p2y):
+                if lng <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (lat - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or lng <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+
+    return inside

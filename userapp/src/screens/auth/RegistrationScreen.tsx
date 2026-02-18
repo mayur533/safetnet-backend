@@ -66,8 +66,8 @@ const RegistrationScreen = () => {
   };
 
   const handleSkip = () => {
-    // Skip to login with demo credentials
-    login('demo@example.com', 'demo123');
+    // Navigate to login screen
+    navigation.navigate('Login');
   };
 
   return (
