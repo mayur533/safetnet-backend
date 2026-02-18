@@ -766,6 +766,7 @@ class SOSTriggerView(APIView):
                 {'error': 'Failed to create SOS alert'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+def _is_user_premium(user):
     """Check if user has premium subscription by checking UserDetails."""
     try:
         from users.models import UserDetails
