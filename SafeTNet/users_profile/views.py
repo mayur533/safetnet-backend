@@ -30,7 +30,7 @@ from .serializers import (
     SubscriptionSerializer, LiveLocationShareSerializer, LiveLocationShareCreateSerializer,
     CommunityAlertSerializer, CommunityAlertCreateSerializer,
     ChatGroupSerializer, ChatGroupCreateSerializer,
-    ChatMessageSerializer, ChatMessageCreateSerializer
+    ChatMessageSerializer, ChatMessageCreateSerializer, GeofenceEventSerializer
 )
 from .services import SMSService
 
