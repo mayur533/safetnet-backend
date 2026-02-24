@@ -98,7 +98,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       console.log('📍 Getting REAL device location for alert...');
       
       // Use the proper geolocation package
-      import('@react-native-community/geolocation').then((GeolocationModule) => {
+      import('react-native-geolocation-service').then((GeolocationModule) => {
         const Geolocation = GeolocationModule.default;
         
         if (!Geolocation || !Geolocation.getCurrentPosition) {

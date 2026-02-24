@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 
 interface GPSOptions {
   enableHighAccuracy: boolean;

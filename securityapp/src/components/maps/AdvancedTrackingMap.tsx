@@ -113,7 +113,7 @@ export const AdvancedTrackingMap: React.FC<AdvancedTrackingMapProps> = ({
   const updateOfficerLocation = async () => {
     try {
       // Import geolocation dynamically
-      const GeolocationModule = await import('@react-native-community/geolocation');
+      const GeolocationModule = await import('react-native-geolocation-service');
       const Geolocation = GeolocationModule.default;
 
       if (!Geolocation || !Geolocation.getCurrentPosition) {

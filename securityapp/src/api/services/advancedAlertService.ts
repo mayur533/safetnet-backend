@@ -131,7 +131,7 @@ class AdvancedAlertService {
   private async captureCurrentGPS(): Promise<LocationData | null> {
     try {
       // Import geolocation dynamically
-      const GeolocationModule = await import('@react-native-community/geolocation');
+      const GeolocationModule = await import('react-native-geolocation-service');
       const Geolocation = GeolocationModule.default;
       
       if (!Geolocation || !Geolocation.getCurrentPosition) {

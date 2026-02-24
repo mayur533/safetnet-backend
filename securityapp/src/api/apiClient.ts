@@ -227,7 +227,9 @@ export const apiHelpers = {
 
   // Generic DELETE request
   delete: async (url: string): Promise<ApiResponse<null>> => {
-    const response = await apiClient.delete(url);
+    // Explicitly pass empty config to ensure NO request body is sent
+    // This prevents any data (including created_by_role) from being included
+    const response = await apiClient.delete(url, {});
     return {
       data: null,
       status: response.status,
