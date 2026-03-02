@@ -238,15 +238,9 @@ class EmergencyService:
         longitude = longitude if longitude is not None else 0.0
 
         try:
-            security_alert = SecuritySOSAlert.objects.create(
-                user=user,
-                geofence=primary_geofence,
-                location_lat=latitude,
-                location_long=longitude,
-                priority='high' if self._is_premium_user(user) else 'medium'
-            )
+            security_alert = None  # Remove alert creation - handled by security_app
         except Exception as create_error:
-            logger.error("Failed to create security SOS alert: %s", create_error)
+            logger.error("Security app handles alert creation: %s", create_error)
             return None
 
         User = get_user_model()

@@ -134,7 +134,7 @@ class OrganizationIsolationMixin:
 class IsOwnerAndPendingAlert(permissions.BasePermission):
     """
     Custom permission to allow users to update/delete their own alerts based on creator role:
-    - Users can modify their own alerts only if status is 'pending'
+    - Users can modify their own alerts regardless of status
     - Officers can modify their own alerts regardless of status
     - Admins can modify any alert
     """
@@ -149,14 +149,15 @@ class IsOwnerAndPendingAlert(permissions.BasePermission):
         
         # Officers can modify their own created alerts
         if request.user.role == 'security_officer':
-            return (obj.created_by_role == 'OFFICER' and 
-                   obj.user_id == request.user.id)
+            officer_geofence_ids = list(request.user.geofences.filter(active=True).values_list('id', flat=True))
+            return (
+                obj.geofence_id in officer_geofence_ids or
+                obj.assigned_officer_id == request.user.id
+            )
         
-        # Users can only modify their own alerts that are still pending
-        # Once status changes to 'accepted' or 'resolved', user cannot modify
+        # Users can modify their own alerts regardless of status
         if request.user.role == 'USER':
-            return (obj.user_id == request.user.id and 
-                   obj.status == 'pending')
+            return obj.user_id == request.user.id
         
         return False
 

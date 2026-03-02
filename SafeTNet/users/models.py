@@ -289,6 +289,8 @@ class Alert(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        managed = False
+        db_table = 'users_alert'
         verbose_name = 'Alert'
         verbose_name_plural = 'Alerts'
         ordering = ['-created_at']

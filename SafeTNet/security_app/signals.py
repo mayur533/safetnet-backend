@@ -125,27 +125,31 @@ def send_sos_alert_notification(sender, instance, created, **kwargs):
         
         # Create notifications and send FCM
         for officer in officers:
-            # Create database notification
-            notification = Notification.objects.create(
-                officer=officer,
-                title="New SOS Alert",
-                message=f"SOS alert from {instance.user.username} at {instance.location_lat}, {instance.location_long}",
-                notification_type='sos_alert',
-                sos_alert=instance
-            )
-            
-            # Send FCM push notification
-            fcm_service.send_to_officer(
-                officer=officer,
-                title="🚨 New SOS Alert",
-                body=f"Emergency alert from {instance.user.username}",
-                data={
-                    'type': 'sos_alert',
-                    'sos_alert_id': str(instance.id),
-                    'notification_id': str(notification.id),
-                    'location': f"{instance.location_lat},{instance.location_long}"
-                }
-            )
+            try:
+                # Create database notification
+                notification = Notification.objects.create(
+                    officer=officer,
+                    title="New SOS Alert",
+                    message=f"SOS alert from {instance.user.username} at {instance.location_lat}, {instance.location_long}",
+                    notification_type='sos_alert',
+                    sos_alert=instance
+                )
+                
+                # Send FCM push notification
+                fcm_service.send_to_officer(
+                    officer=officer,
+                    title="🚨 New SOS Alert",
+                    body=f"Emergency alert from {instance.user.username}",
+                    data={
+                        'type': 'sos_alert',
+                        'sos_alert_id': str(instance.id),
+                        'notification_id': str(notification.id),
+                        'location': f"{instance.location_lat},{instance.location_long}"
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Failed to send notification to officer {officer.username}: {str(e)}")
+                # Continue with other officers, don't fail the alert creation
 
 
 @receiver(post_save, sender=Case)

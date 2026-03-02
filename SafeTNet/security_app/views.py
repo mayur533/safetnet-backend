@@ -45,7 +45,7 @@ from .serializers import (
     GeofenceSerializer,
 )
 # Import Alert serializers from users app
-from users.serializers import AlertSerializer, AlertCreateSerializer
+from users.serializers import GeofenceSerializer
 
 
 class OfficerOnlyMixin:
@@ -62,8 +62,8 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action == 'create':
-            return AlertCreateSerializer  # Use unified Alert serializer
-        return AlertSerializer  # Use unified Alert serializer
+            return SOSAlertCreateSerializer  # Use SOSAlert serializer
+        return SOSAlertSerializer  # Use SOSAlert serializer
 
     def get_permissions(self):
         """
@@ -80,24 +80,19 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Get alerts from unified users_alert table with geofence-based filtering.
-        Security officers see alerts in their assigned geofences.
+        Get alerts from SOSAlert model with role-based filtering.
+        Security officers see alerts in their assigned geofences or assigned to them.
+        Users see their own alerts.
+        Admins see all alerts.
         """
-        from users.models import Alert
-        from django.utils import timezone
-
         user = self.request.user
-        now = timezone.now()
-
-        # Base queryset: active alerts from unified table
-        base_queryset = Alert.objects.filter(
-            status='ACTIVE',
-            created_at__gte=now - timezone.timedelta(days=7)  # Last 7 days only
-        ).select_related('user', 'geofence', 'assigned_officer')
+        
+        # Base queryset: active SOS alerts (not soft-deleted)
+        base_queryset = SOSAlert.objects.filter(is_deleted=False).select_related('user', 'geofence', 'assigned_officer')
 
         logger.info(f"[SECURITY QUERIES] User {user.email} (role: {user.role}) requesting alerts")
 
-        # For Security Officers → show alerts in their assigned geofences
+        # For Security Officers → show alerts in their assigned geofences or assigned to them
         if user.role == 'security_officer':
             # Get officer's assigned geofences
             officer_geofences = user.geofences.filter(active=True)
@@ -105,8 +100,10 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
             logger.info(f"[SECURITY QUERIES] Officer {user.email} has {len(geofence_ids)} assigned geofences: {geofence_ids}")
 
-            # Filter alerts by officer's geofences
-            queryset = base_queryset.filter(geofence_id__in=geofence_ids)
+            # Filter alerts by officer's geofences OR alerts assigned directly to them
+            queryset = base_queryset.filter(
+                Q(geofence_id__in=geofence_ids) | Q(assigned_officer=user)
+            )
 
             logger.info(f"[SECURITY QUERIES] Found {queryset.count()} alerts for officer {user.email}")
             return queryset
@@ -126,13 +123,17 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
             logger.info(f"[SECURITY QUERIES] Super-admin {user.email} sees all alerts")
             return base_queryset
 
+        # For Users → show only their own alerts
+        elif user.role == 'USER':
+            logger.info(f"[SECURITY QUERIES] User {user.email} sees their own alerts")
+            return base_queryset.filter(user=user, created_by_role='USER')
+
         # For other users → no alerts
         logger.info(f"[SECURITY QUERIES] User {user.email} (role: {user.role}) has no access to alerts")
-        return Alert.objects.none()
+        return SOSAlert.objects.none()
 
     def perform_create(self, serializer):
-        """Create alert in unified users_alert table instead of SOSAlert."""
-        from users.models import Alert
+        """Create SOSAlert in security_app instead of users Alert table."""
         from users.utils import get_geofence_from_location
 
         request = self.request
@@ -156,42 +157,31 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
 
             logger.info(f"[OFFICER ALERT] Officer {user.email} geofence: {geofence.name if geofence else 'None'}")
 
-            # Map alert type from SOSAlert to unified Alert
-            alert_type_mapping = {
-                'emergency': 'OFFICER_ALERT',
-                'security': 'OFFICER_ALERT',
-                'general': 'SYSTEM_ALERT',
-                'area_user_alert': 'OFFICER_ALERT'
-            }
-            alert_type = alert_type_mapping.get(validated_data.get('alert_type', 'security'), 'OFFICER_ALERT')
+            # Set created_by_role based on user role
+            created_by_role = 'OFFICER' if user.role == 'security_officer' else 'USER'
 
-            # Create alert in unified table
-            alert = Alert.objects.create(
+            # Create alert in security_app SOSAlert table
+            sos_alert = SOSAlert.objects.create(
                 user=user,
-                alert_type=alert_type,
-                title=f"Alert from {user.first_name or user.username}",
-                description=validated_data.get('description', validated_data.get('message', '')),
+                created_by_role=created_by_role,
+                alert_type=validated_data.get('alert_type', 'security'),
                 message=validated_data.get('message', ''),
-                location={
-                    'latitude': float(location_lat) if location_lat else None,
-                    'longitude': float(location_long) if location_long else None,
-                    'accuracy': 10.0
-                } if location_lat and location_long else None,
+                description=validated_data.get('description', ''),
+                location_lat=float(location_lat) if location_lat else None,
+                location_long=float(location_long) if location_long else None,
                 geofence=geofence,
-                severity='HIGH',  # Officer alerts are high priority
                 priority=validated_data.get('priority', 'medium'),
-                status='ACTIVE',
-                assigned_officer=user  # Officer assigns themselves
+                status='pending',  # SOSAlert uses 'pending' not 'ACTIVE'
+                assigned_officer=user if user.role == 'security_officer' else None
             )
 
-            logger.info(f"[OFFICER ALERT] Created alert ID {alert.id} for officer {user.email}")
+            logger.info(f"[OFFICER ALERT] Created SOSAlert ID {sos_alert.id} for user {user.email}")
 
-            # Return the created alert (this replaces the old SOSAlert instance)
-            # We need to update the serializer to return Alert data instead of SOSAlert data
-            return alert
+            # Return the created SOSAlert instance
+            return sos_alert
 
         except Exception as e:
-            logger.error(f"[OFFICER ALERT] Error creating alert: {e}", exc_info=True)
+            logger.error(f"[OFFICER ALERT] Error creating SOSAlert: {e}", exc_info=True)
             raise
 
     def create(self, request, *args, **kwargs):
@@ -759,32 +749,79 @@ class LiveLocationViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
 
-class GeofenceDetailView(OfficerOnlyMixin, APIView):
+class DashboardView(OfficerOnlyMixin, APIView):
     """
-    Get geofence details by ID.
-    Verifies that the geofence is assigned to the requesting security officer.
-    GET /api/security/geofence/{id}/
+    Dashboard API for security officers.
+    GET /api/security/dashboard/
+    Returns alert counts and officer info.
     """
-    def get(self, request, geofence_id):
-        """Get specific geofence by ID (only if assigned to the officer)"""
-        try:
-            officer = User.objects.get(email=request.user.email, role='security_officer')
-        except User.DoesNotExist:
-            return Response({
-                'error': 'Security officer profile not found',
-                'detail': 'Officer not found for user.'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        # Verify the requested geofence matches the officer's assignment
-        if not officer.geofences.filter(id=geofence_id).exists():
-            return Response({
-                'error': 'You are not authorized to access this geofence',
-                'detail': 'This geofence is not assigned to you.'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        geofence = get_object_or_404(Geofence, id=geofence_id)
-        serializer = GeofenceSerializer(geofence)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def get(self, request):
+        user = request.user
+
+        # Get base queryset (same logic as SOSAlertViewSet.get_queryset)
+        base_queryset = SOSAlert.objects.filter(is_deleted=False).select_related('user', 'geofence', 'assigned_officer')
+
+        # Apply role-based filtering (same as SOSAlertViewSet)
+        if user.role == 'security_officer':
+            # Get officer's assigned geofences
+            officer_geofences = user.geofences.filter(active=True)
+            geofence_ids = list(officer_geofences.values_list('id', flat=True))
+
+            # Filter alerts by officer's geofences OR alerts assigned directly to them
+            queryset = base_queryset.filter(
+                Q(geofence_id__in=geofence_ids) | Q(assigned_officer=user)
+            )
+        elif user.role == 'SUB_ADMIN' and hasattr(user, 'organization') and user.organization:
+            org_geofences = user.organization.geofences.filter(active=True)
+            geofence_ids = list(org_geofences.values_list('id', flat=True))
+            queryset = base_queryset.filter(geofence_id__in=geofence_ids)
+        elif user.role == 'SUPER_ADMIN':
+            queryset = base_queryset
+        else:
+            queryset = SOSAlert.objects.none()
+
+        # Count alerts by status
+        pending_count = queryset.filter(status='pending').count()
+        accepted_count = queryset.filter(status='accepted').count()
+        resolved_count = queryset.filter(status='resolved').count()
+
+        # Recent alerts (last 5)
+        recent_alerts = queryset.order_by('-created_at')[:5]
+        recent_alerts_data = []
+        for alert in recent_alerts:
+            recent_alerts_data.append({
+                'id': alert.id,
+                'message': alert.message,
+                'status': alert.status,
+                'priority': alert.priority,
+                'created_at': alert.created_at.isoformat(),
+                'user_name': alert.user.get_full_name() or alert.user.username,
+            })
+
+        # Officer info
+        officer_info = {
+            'id': user.id,
+            'name': user.get_full_name() or user.username,
+            'email': user.email,
+            'badge_number': getattr(user, 'badge_number', None),
+            'on_duty': True,  # Assume on duty
+            'organization': user.organization.name if hasattr(user, 'organization') and user.organization else None,
+        }
+
+        data = {
+            'stats': {
+                'active_sos_alerts': accepted_count,
+                'assigned_cases': pending_count,
+                'resolved_today': resolved_count,
+                'total_alerts': pending_count + accepted_count + resolved_count,
+                'on_duty_status': True,
+            },
+            'recent_alerts': recent_alerts_data,
+            'officer_info': officer_info,
+        }
+
+        return Response(data)
 
 
     """
