@@ -496,6 +496,7 @@ export const alertServiceWithGeofenceFilter = {
     } catch (error: any) {
       console.error('Failed to create alert:', error.message || error);
       console.error('Error details:', error.response?.data || error);
+      console.error('Full error response:', JSON.stringify(error.details, null, 2));
       // Check if this is a backend logger issue
       if (error.message?.includes('logger') || error.response?.data?.message?.includes('logger')) {
         console.error('🔍 BACKEND ISSUE: The server is missing logger import.');
