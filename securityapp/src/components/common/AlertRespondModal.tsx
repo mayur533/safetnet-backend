@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   ActivityIndicator,
+  Alert,
   Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -13,8 +14,7 @@ import { useAlertsStore } from '../../store/alertsStore';
 import { alertService } from '../../api/services/alertService';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import { Alert } from '../../types/alert.types';
-import Toast from 'react-native-toast-message';
+import { Alert as AlertType } from '../../types/alert.types';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -34,7 +34,7 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
   const colors = useColors();
   const { updateAlert: storeUpdateAlert } = useAlertsStore();
   
-  const [alert, setAlert] = useState<Alert | null>(null);
+  const [currentAlert, setCurrentAlert] = useState<AlertType | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +64,7 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
 
         console.log('📡 Fetching alert details for modal:', alertId);
         const alertData = await alertService.getAlertById(alertId);
-        setAlert(alertData);
+        setCurrentAlert(alertData);
         console.log('✅ Alert details fetched for modal:', alertData);
       } catch (error: any) {
         console.error('❌ Failed to fetch alert details for modal:', error);
@@ -89,38 +89,26 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
 
   // Handle accept alert response
   const handleAcceptAlert = async () => {
-    if (!alert) return;
+    if (!currentAlert) return;
 
     try {
       setIsAccepting(true);
-      console.log('📞 Accepting alert response for ID:', alert.id);
+      console.log('📞 Accepting alert response for ID:', currentAlert.id);
 
       // Change status to 'accepted'
-      await storeUpdateAlert(alert.id, { status: 'accepted' });
+      await storeUpdateAlert(currentAlert.id, { status: 'accepted' });
 
       console.log('✅ Alert response accepted successfully');
 
-      // Show success toast
-      Toast.show({
-        type: 'success',
-        text1: 'Response Accepted',
-        text2: 'You are now responding to this alert.',
-        visibilityTime: 3000,
-        position: 'bottom',
-      });
+      // Show success alert
+      Alert.alert('Success', 'You are now responding to this alert.');
 
       // Close modal and notify parent
       onResponseAccepted();
       onClose();
     } catch (error: any) {
       console.error('❌ Failed to accept alert response:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to accept alert response. Please try again.',
-        visibilityTime: 3000,
-        position: 'bottom',
-      });
+      Alert.alert('Error', 'Failed to accept alert response. Please try again.');
     } finally {
       setIsAccepting(false);
     }
@@ -167,7 +155,7 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                   Loading alert details...
                 </Text>
               </View>
-            ) : error || !alert ? (
+            ) : error || !currentAlert ? (
               <View style={styles.errorContainer}>
                 <Icon name="error" size={48} color={colors.emergencyRed} />
                 <Text style={styles.errorText}>
@@ -182,7 +170,7 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                     style={[styles.retryButton, { backgroundColor: colors.primary }]}
                     onPress={() => {
                       // Retry fetching by resetting state and triggering useEffect
-                      setAlert(null);
+                      setCurrentAlert(null);
                       setError(null);
                       setAutoCloseCountdown(null);
                       setIsLoading(true);
@@ -200,19 +188,19 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                 <View style={styles.alertHeader}>
                   <View style={styles.alertTypeContainer}>
                     <Icon
-                      name={alert.alert_type === 'emergency' ? 'warning' : 'notification-important'}
+                      name={currentAlert.alert_type === 'emergency' ? 'warning' : 'notification-important'}
                       size={20}
-                      color={alert.alert_type === 'emergency' ? colors.emergencyRed : colors.warning}
+                      color={currentAlert.alert_type === 'emergency' ? colors.emergencyRed : colors.warning}
                     />
                     <Text style={[
                       styles.alertType,
-                      { color: alert.alert_type === 'emergency' ? colors.emergencyRed : colors.warning }
+                      { color: currentAlert.alert_type === 'emergency' ? colors.emergencyRed : colors.warning }
                     ]}>
-                      {alert.alert_type.toUpperCase()}
+                      {currentAlert.alert_type.toUpperCase()}
                     </Text>
                   </View>
                   <Text style={[styles.alertTime, { color: colors.mediumText }]}>
-                    {formatTime(alert.created_at)}
+                    {formatTime(currentAlert.created_at)}
                   </Text>
                 </View>
 
@@ -220,16 +208,16 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                 <View style={[styles.messageContainer, { backgroundColor: colors.lightGrayBg }]}>
                   <Text style={[styles.messageLabel, { color: colors.mediumText }]}>Message:</Text>
                   <Text style={[styles.messageText, { color: colors.darkText }]}>
-                    {alert.message}
+                    {currentAlert.message}
                   </Text>
                 </View>
 
                 {/* Alert Description */}
-                {alert.description && (
+                {currentAlert.description && (
                   <View style={[styles.descriptionContainer, { backgroundColor: colors.lightGrayBg }]}>
                     <Text style={[styles.descriptionLabel, { color: colors.mediumText }]}>Details:</Text>
                     <Text style={[styles.descriptionText, { color: colors.darkText }]}>
-                      {alert.description}
+                      {currentAlert.description}
                     </Text>
                   </View>
                 )}
@@ -240,14 +228,14 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                   <View style={styles.userDetails}>
                     <Icon name="person" size={16} color={colors.primary} />
                     <Text style={[styles.userName, { color: colors.darkText }]}>
-                      {alert.user_name || 'Unknown User'}
+                      {currentAlert.user_name || 'Unknown User'}
                     </Text>
                   </View>
-                  {alert.user_phone && (
+                  {currentAlert.user_phone && (
                     <View style={styles.userDetails}>
                       <Icon name="phone" size={16} color={colors.primary} />
                       <Text style={[styles.userPhone, { color: colors.darkText }]}>
-                        {alert.user_phone}
+                        {currentAlert.user_phone}
                       </Text>
                     </View>
                   )}
@@ -258,9 +246,9 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
                   <Text style={[styles.statusLabel, { color: colors.mediumText }]}>Status:</Text>
                   <Text style={[
                     styles.statusText,
-                    { color: alert.status === 'pending' ? colors.warning : colors.success }
+                    { color: currentAlert.status === 'pending' ? colors.warning : colors.success }
                   ]}>
-                    {alert.status || 'pending'}
+                    {currentAlert.status || 'pending'}
                   </Text>
                 </View>
               </>
@@ -268,7 +256,7 @@ export const AlertRespondModal: React.FC<AlertRespondModalProps> = ({
           </View>
 
           {/* Footer Actions */}
-          {!isLoading && !error && alert && (
+          {!isLoading && !error && currentAlert && (
             <View style={[styles.footer, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 style={[styles.cancelButton, { backgroundColor: colors.lightGrayBg }]}

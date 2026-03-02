@@ -9,7 +9,7 @@ declare global {
   var __REMOTEDEV__: boolean;
 }
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider, useDispatch } from 'react-redux';
@@ -79,6 +79,7 @@ function AppContent() {
 }
 
 function App() {
+
   return (
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>

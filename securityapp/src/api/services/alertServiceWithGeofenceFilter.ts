@@ -427,14 +427,12 @@ export const alertServiceWithGeofenceFilter = {
       message: string;
       description: string;
       priority: string;
-      location: { latitude: number; longitude: number };
       expires_at?: string;
     } = {
       alert_type: alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
       priority: alertData.priority || 'medium',
-      location: alertData.location || { latitude: 0, longitude: 0 },
     };
 
     // Add expiry for area-based alerts
@@ -445,12 +443,11 @@ export const alertServiceWithGeofenceFilter = {
     console.log('📤 Alert Creation Debug (Backend-Authoritative):');
     console.log('   📤 Alert Type:', apiData.alert_type);
     console.log('   📤 Message:', apiData.message);
-    console.log('   📤 Location:', apiData.location.latitude, apiData.location.longitude);
     console.log('   📤 Priority:', apiData.priority);
     console.log('   � Expires at:', apiData.expires_at || 'Not set');
 
-    // Location data is now included in API call
-    console.log('📤 Sending alert data with location coordinates');
+    // API call for alert creation
+    console.log('📤 Sending alert data');
 
     try {
       console.log('📡 Creating alert with data:', apiData);
@@ -499,7 +496,6 @@ export const alertServiceWithGeofenceFilter = {
     } catch (error: any) {
       console.error('Failed to create alert:', error.message || error);
       console.error('Error details:', error.response?.data || error);
-      
       // Check if this is a backend logger issue
       if (error.message?.includes('logger') || error.response?.data?.message?.includes('logger')) {
         console.error('🔍 BACKEND ISSUE: The server is missing logger import.');
