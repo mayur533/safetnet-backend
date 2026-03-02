@@ -28,6 +28,7 @@ def sync_sos_event_to_security_alert(sender, instance, created, **kwargs):
     
     try:
         from django.db import transaction
+        from users.utils import get_geofence_from_location
         with transaction.atomic():
             # Validate location data
             if not instance.location or not isinstance(instance.location, dict):
@@ -52,6 +53,9 @@ def sync_sos_event_to_security_alert(sender, instance, created, **kwargs):
                 logger.error(f"SOSEvent {instance.id} has invalid coordinates: lat={latitude}, lon={longitude}")
                 return
             
+            # Find geofence for this location
+            geofence = get_geofence_from_location(lat_float, lon_float)
+            
             # Create corresponding SOSAlert
             sos_alert = SOSAlert.objects.create(
                 user=instance.user,
@@ -59,6 +63,7 @@ def sync_sos_event_to_security_alert(sender, instance, created, **kwargs):
                 message=instance.notes or '',
                 location_lat=lat_float,
                 location_long=lon_float,
+                geofence=geofence,
                 status="pending",
                 priority="high",
                 source_sos_event=instance
