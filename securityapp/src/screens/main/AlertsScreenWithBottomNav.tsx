@@ -14,6 +14,7 @@ import { useAlertsStore } from '../../store/alertsStore';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/store';
 import Geolocation from 'react-native-geolocation-service';
+import { handleAxiosError } from '../../utils/errorHandler';
 
 export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
@@ -280,7 +281,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       
       showToast('Alert created successfully!', 'success');
     } catch (error: any) {
-      console.error('ALERT CREATION FAILED:', error);
+      handleAxiosError(error);
       
       if (error?.message?.includes('GPS') || error?.message?.includes('location') || error?.message?.includes('coordinates')) {
         showToast('Unable to get device location. Alert not created.', 'error');
