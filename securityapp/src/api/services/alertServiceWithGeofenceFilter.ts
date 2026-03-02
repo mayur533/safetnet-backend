@@ -3,6 +3,23 @@ import { API_ENDPOINTS } from '../endpoints';
 import { Alert } from '../../types/alert.types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Status mapping function
+const mapStatus = (backendStatus: string | undefined): string => {
+  if (!backendStatus) return 'pending';
+  
+  switch (backendStatus.toUpperCase()) {
+    case 'ACTIVE':
+    case 'PENDING':
+      return 'pending';
+    case 'ACCEPTED':
+      return 'accepted';
+    case 'RESOLVED':
+      return 'resolved';
+    default:
+      return 'pending';
+  }
+};
+
 // Storage keys for local alerts
 const LOCAL_ALERTS_KEY = '@local_alerts';
 
@@ -400,8 +417,7 @@ export const alertServiceWithGeofenceFilter = {
     alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    location_lat?: number;
-    location_long?: number;
+    location?: { latitude: number; longitude: number };
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
   }): Promise<Alert> => {
@@ -410,17 +426,15 @@ export const alertServiceWithGeofenceFilter = {
       alert_type: string;
       message: string;
       description: string;
-      location_lat: number;
-      location_long: number;
       priority: string;
+      location: { latitude: number; longitude: number };
       expires_at?: string;
     } = {
       alert_type: alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
-      location_lat: alertData.location_lat || 0, // Default to 0 if not provided
-      location_long: alertData.location_long || 0, // Default to 0 if not provided
       priority: alertData.priority || 'medium',
+      location: alertData.location || { latitude: 0, longitude: 0 },
     };
 
     // Add expiry for area-based alerts
@@ -431,7 +445,7 @@ export const alertServiceWithGeofenceFilter = {
     console.log('📤 Alert Creation Debug (Backend-Authoritative):');
     console.log('   📤 Alert Type:', apiData.alert_type);
     console.log('   📤 Message:', apiData.message);
-    console.log('   📤 Location:', apiData.location_lat, apiData.location_long);
+    console.log('   📤 Location:', apiData.location.latitude, apiData.location.longitude);
     console.log('   📤 Priority:', apiData.priority);
     console.log('   � Expires at:', apiData.expires_at || 'Not set');
 

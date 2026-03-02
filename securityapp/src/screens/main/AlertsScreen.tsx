@@ -19,8 +19,10 @@ import { Alert } from '../../types/alert.types';
 import { useAlertsStore } from '../../store/alertsStore';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
+import { AlertRespondModal } from '../../components/common/AlertRespondModal';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
+import Toast from 'react-native-toast-message';
 
 interface AlertsScreenProps {}
 
@@ -76,9 +78,9 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
-  // Respond modal state
-  const [respondModalVisible, setRespondModalVisible] = useState(false);
-  const [selectedAlertForRespond, setSelectedAlertForRespond] = useState<Alert | null>(null);
+  // Respond modal state - using AlertRespondModal component
+  const [showRespondModal, setShowRespondModal] = useState(false);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
   // Reset filter and fetch alerts when screen comes into focus
   useFocusEffect(
@@ -124,31 +126,33 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
 
   const handleRespond = async (alert: Alert) => {
     console.log('📱 Opening alert response modal for alert:', alert.id);
-    // Show respond modal with alert details
-    setSelectedAlertForRespond(alert);
-    setRespondModalVisible(true);
+    
+    // Validate alert data before showing modal
+    if (!alert || !alert.id) {
+      console.error('❌ Invalid alert data:', alert);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Invalid alert data. Please refresh and try again.',
+        visibilityTime: 3000,
+        position: 'bottom',
+      });
+      return;
+    }
+    
+    setSelectedAlertId(String(alert.id));
+    setShowRespondModal(true);
   };
 
-  const handleAcceptRespond = async () => {
-    if (!selectedAlertForRespond) return;
+  // Modal handlers
+  const handleCloseRespondModal = () => {
+    setShowRespondModal(false);
+    setSelectedAlertId(null);
+  };
 
-    try {
-      console.log('📞 Accepting alert response for ID:', selectedAlertForRespond.id);
-      
-      // Update alert status to 'accepted'
-      await storeUpdateAlert(selectedAlertForRespond.id, { status: 'accepted' });
-      
-      console.log('✅ Alert response accepted successfully');
-      showToast('Alert accepted! You are now responding.', 'success');
-      
-      // Close modal
-      setRespondModalVisible(false);
-      setSelectedAlertForRespond(null);
-      
-    } catch (acceptError: any) {
-      console.error('❌ Failed to accept alert response:', acceptError);
-      showToast('Failed to accept alert. Please try again.', 'error');
-    }
+  const handleResponseAccepted = () => {
+    // Refresh alerts after accepting response
+    fetchAlerts();
   };
 
   const handleDelete = (alert: Alert) => {
@@ -949,125 +953,13 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
         </View>
       </Modal>
 
-      {/* Respond Alert Modal */}
-      <Modal
-        visible={respondModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setRespondModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Alert Details</Text>
-              <TouchableOpacity
-                onPress={() => setRespondModalVisible(false)}
-                style={styles.closeButton}
-              >
-                <Icon name="close" size={24} color={colors.mediumText} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {selectedAlertForRespond && (
-                <>
-                  {/* Alert Type and Priority */}
-                  <View style={styles.alertDetailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Alert Type</Text>
-                    <View style={styles.respondAlertTypeContainer}>
-                      <View style={[
-                        styles.alertTypeBadge, 
-                        { backgroundColor: selectedAlertForRespond.alert_type === 'emergency' ? colors.emergencyRed : 
-                                         selectedAlertForRespond.alert_type === 'security' ? colors.warningOrange : 
-                                         colors.primary }
-                      ]}>
-                        <Text style={[styles.alertTypeText, { color: colors.white }]}>
-                          {selectedAlertForRespond.alert_type?.toUpperCase() || 'SECURITY'}
-                        </Text>
-                      </View>
-                      <Text style={[styles.priorityText, { color: colors.darkText }]}>
-                        Priority: {selectedAlertForRespond.priority?.toUpperCase() || 'MEDIUM'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Message */}
-                  <View style={styles.alertDetailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Message</Text>
-                    <Text style={[styles.detailMessage, { color: colors.darkText }]}>
-                      {selectedAlertForRespond.message || 'No message'}
-                    </Text>
-                  </View>
-
-                  {/* Description */}
-                  {selectedAlertForRespond.description && (
-                    <View style={styles.alertDetailSection}>
-                      <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Description</Text>
-                      <Text style={[styles.detailDescription, { color: colors.darkText }]}>
-                        {selectedAlertForRespond.description}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* User Information */}
-                  <View style={styles.alertDetailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Reported By</Text>
-                    <Text style={[styles.detailText, { color: colors.darkText }]}>
-                      {selectedAlertForRespond.user_name || 'Unknown User'}
-                    </Text>
-                    {selectedAlertForRespond.user_phone && (
-                      <Text style={[styles.detailText, { color: colors.darkText }]}>
-                        📞 {selectedAlertForRespond.user_phone}
-                      </Text>
-                    )}
-                  </View>
-
-                  {/* Time Information */}
-                  <View style={styles.alertDetailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Time</Text>
-                    <Text style={[styles.detailText, { color: colors.darkText }]}>
-                      🕐 {selectedAlertForRespond.created_at ? 
-                        new Date(selectedAlertForRespond.created_at).toLocaleString() : 
-                        'Unknown time'
-                      }
-                    </Text>
-                  </View>
-
-                  {/* Location Information */}
-                  <View style={styles.alertDetailSection}>
-                    <Text style={[styles.detailLabel, { color: colors.mediumText }]}>Location</Text>
-                    <Text style={[styles.detailText, { color: colors.darkText }]}>
-                      📍 {selectedAlertForRespond.location?.address || 'Unknown location'}
-                    </Text>
-                    {selectedAlertForRespond.location?.latitude && selectedAlertForRespond.location?.longitude && (
-                      <Text style={[styles.coordinatesText, { color: colors.mediumText }]}>
-                        GPS: {selectedAlertForRespond.location.latitude.toFixed(6)}, {selectedAlertForRespond.location.longitude.toFixed(6)}
-                      </Text>
-                    )}
-                  </View>
-                </>
-              )}
-            </ScrollView>
-
-            {/* Accept Button at Bottom */}
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => setRespondModalVisible(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.acceptButton, { backgroundColor: colors.successGreen }]}
-                onPress={handleAcceptRespond}
-              >
-                <Icon name="check" size={18} color={colors.white} style={styles.buttonIcon} />
-                <Text style={[styles.modalButtonText, { color: colors.white }]}>Accept & Respond</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Alert Respond Modal */}
+      <AlertRespondModal
+        visible={showRespondModal}
+        alertId={selectedAlertId || ''}
+        onClose={handleCloseRespondModal}
+        onResponseAccepted={handleResponseAccepted}
+      />
 
       {/* Toast Message */}
       {toastVisible && (

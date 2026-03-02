@@ -148,21 +148,19 @@ export const DashboardScreen = () => {
     fetchAlerts();
   };
 
-  // Calculate stats from dashboard API data
-  const stats = dashboardData?.stats || null;
-
+  // Calculate stats from backend API data
+  const stats = dashboardData?.stats;
+  
   // Get recent alerts from alertsStore
   const recentAlerts = getRecentAlerts(5);
-  const pendingAlertsCount = getPendingAlertsCount();
-  const resolvedAlertsCount = getResolvedAlertsCount();
   
   // CRITICAL: Log exact counts for debugging
   console.log('🔍 CRITICAL DEBUG - Dashboard Analysis:');
   console.log(`   📊 Total alerts in store: ${alerts.length}`);
   console.log(`   📊 Recent alerts shown: ${recentAlerts.length}`);
-  console.log(`   📊 Pending alerts count: ${pendingAlertsCount}`);
-  console.log(`   📊 Resolved alerts count: ${resolvedAlertsCount}`);
-  console.log(`   📊 Dashboard stats - Active (frontend): ${alerts.length}, Resolved (backend): ${stats?.resolved_today}`);
+  console.log(`   📊 Active alerts (backend): ${stats?.active_sos_alerts}`);
+  console.log(`   📊 Pending alerts (backend): ${stats?.assigned_cases}`);
+  console.log(`   📊 Resolved alerts (backend): ${stats?.resolved_today}`);
   
   if (recentAlerts.length > 0) {
     const newestAlertId = recentAlerts[0]?.id;
@@ -411,7 +409,7 @@ export const DashboardScreen = () => {
   }
 
   // Show error state
-  if (dashboardError || !stats) {
+  if (dashboardError) {
     const isNetworkError = dashboardError?.includes('SSL connection') || dashboardError?.includes('Network Error') || dashboardError?.includes('timeout') || dashboardError?.includes('ECONNREFUSED');
     const errorTitle = isNetworkError ? 'Backend Server Unavailable' : 'Error Loading Dashboard';
     const errorMessage = isNetworkError
@@ -463,17 +461,17 @@ export const DashboardScreen = () => {
       <View style={styles.statsSection}>
         <View style={styles.statsCard}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{alerts.length}</Text>
+            <Text style={styles.statValue}>{stats?.active_sos_alerts || 0}</Text>
             <Text style={styles.statLabel}>Active</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, styles.pendingValue]}>{getPendingAlertsCount()}</Text>
+            <Text style={[styles.statValue, styles.pendingValue]}>{stats?.assigned_cases || 0}</Text>
             <Text style={styles.statLabel}>Pending</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, styles.resolvedValue]}>{resolvedAlertsCount}</Text>
+            <Text style={[styles.statValue, styles.resolvedValue]}>{stats?.resolved_today || 0}</Text>
             <Text style={styles.statLabel}>Resolved</Text>
           </View>
         </View>

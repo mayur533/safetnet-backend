@@ -292,18 +292,8 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
           </View>
         ) : (
           <>
-            {/* Top row: Update and Delete buttons */}
+            {/* Top row: Delete button only */}
             <View style={styles(colors).topButtonsContainer}>
-              {onUpdate && (
-                <TouchableOpacity
-                  style={styles(colors).updateButtonTop}
-                  onPress={() => onUpdate(alert)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="edit" size={18} color={colors.warningOrange} />
-                  <Text style={styles(colors).updateButtonTextTop}>UPDATE</Text>
-                </TouchableOpacity>
-              )}
               {onDelete && (
                 <TouchableOpacity
                   style={styles(colors).deleteButtonTop}
@@ -316,21 +306,19 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
               )}
             </View>
             
-            {/* Bottom row: Respond button - Only show for user-created alerts */}
-            {!isOfficerCreated && (
-              <View style={styles(colors).respondButtonContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles(colors).respondButtonBottom,
-                    isEmergency && styles(colors).respondButtonBottomEmergency,
-                  ]}
-                  onPress={() => onRespond(alert)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles(colors).respondButtonBottomText}>RESPOND</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            {/* Bottom row: Respond button - Show for all pending alerts */}
+            <View style={styles(colors).respondButtonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles(colors).respondButtonBottom,
+                  isEmergency && styles(colors).respondButtonBottomEmergency,
+                ]}
+                onPress={() => onRespond(alert)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles(colors).respondButtonBottomText}>RESPOND</Text>
+              </TouchableOpacity>
+            </View>
           </>
         )}
       </View>

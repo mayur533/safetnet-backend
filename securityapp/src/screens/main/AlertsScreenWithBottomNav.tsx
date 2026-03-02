@@ -11,6 +11,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { typography, spacing } from '../../utils';
 import { alertService } from '../../api/services/alertService';
 import { useAlertsStore } from '../../store/alertsStore';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store/store';
+import Geolocation from 'react-native-geolocation-service';
 
 export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
@@ -35,6 +38,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
   // Other hooks can be called after all useState hooks
   const { createAlert: storeCreateAlert } = useAlertsStore();
+  const officer = useSelector((state: RootState) => state.auth.officer);
 
   // Ref to access AlertsScreen methods
   const alertsScreenRef = useRef<{
@@ -95,127 +99,118 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       setGpsStatus('waiting');
       setGpsMessage('Getting device location...');
 
-      console.log('📍 Getting REAL device location for alert...');
+      console.log('Getting device location for alert...');
       
-      // Use the proper geolocation package
-      import('react-native-geolocation-service').then((GeolocationModule) => {
-        const Geolocation = GeolocationModule.default;
-        
-        if (!Geolocation || !Geolocation.getCurrentPosition) {
-          console.log('❌ Geolocation package not available');
-          setGpsStatus('error');
-          setGpsMessage('Geolocation package not available');
-          reject(new Error('Geolocation package not available'));
-          return;
-        }
-
-        Geolocation.getCurrentPosition(
-          (position: any) => {
-            console.log('✅ REAL device location captured:', position);
-            
-            const { latitude, longitude, accuracy } = position.coords;
-            const timestamp = new Date().toISOString();
-            
-            // Smooth location to prevent jumping
-            const smoothedLocation = smoothLocation({ latitude, longitude });
-            
-            console.log('📱 REAL DEVICE LOCATION FOR ALERT:', smoothedLocation.latitude, smoothedLocation.longitude, accuracy, timestamp);
-            console.log('🎯 Location smoothed to prevent jumping');
-            
-            setGpsStatus('accurate');
-            setGpsMessage(`Stable location captured (±${accuracy?.toFixed(0) || 0}m)`);
-            resolve(smoothedLocation);
-          },
-          (error: any) => {
-            // Reduce console noise for common GPS timeouts
-            if (error.code === 3) {
-              console.log('⏰ GPS timeout - trying faster fallback options...');
-            } else {
-              console.error('❌ GPS error:', error);
-            }
-            
-            let errorMessage = 'GPS not available';
-            let shouldRetry = false;
-            
-            if (error.code === 3) {
-              errorMessage = 'GPS taking too long, using faster options...';
-              shouldRetry = true;
-            } else if (error.code === 2) {
-              errorMessage = 'GPS unavailable. Enable location services.';
-            } else if (error.code === 1) {
-              errorMessage = 'Location permission denied. Allow location access.';
-            }
-            
-            setGpsStatus('waiting');
-            setGpsMessage(errorMessage);
-            
-            // For timeout errors, try to get cached location as fallback
-            if (shouldRetry) {
-              console.log('⏰ GPS timeout, trying cached location as fallback...');
-              
-              // Try to get cached location with very short timeout
-              Geolocation.getCurrentPosition(
-                (position) => {
-                  console.log('📍 Using cached GPS location as fallback');
-                  const { latitude, longitude, accuracy } = position.coords;
-                  
-                  if (accuracy > 100) {
-                    console.warn('⚠️ Cached GPS accuracy is poor:', accuracy, 'meters');
-                    setGpsStatus('weak');
-                    setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
-                  } else {
-                    console.log('✅ Cached GPS accuracy acceptable:', accuracy, 'meters');
-                    setGpsStatus('accurate');
-                    setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
-                  }
-                  
-                  resolve({
-                    latitude,
-                    longitude
-                  });
-                },
-                (fallbackError) => {
-                  console.log('❌ No cached location available either');
-                  setGpsStatus('weak');
-                  setGpsMessage('GPS unavailable - alert will be created without location');
-                  
-                  // Resolve with default location to allow alert creation
-                  resolve({
-                    latitude: 0,  // Default coordinates - will be handled by backend
-                    longitude: 0
-                  });
-                },
-                {
-                  enableHighAccuracy: false,  // Don't require high accuracy for fallback
-                  timeout: 5000,              // Very short timeout for cached location
-                  maximumAge: 300000          // Allow 5-minute old cached location
-                }
-              );
-              return; // Don't reject yet, wait for fallback
-            }
-            
-            // Final fallback - allow alert creation without GPS
-            setGpsStatus('weak');
-            setGpsMessage('GPS unavailable - alert will be created without location');
-            
-            // Resolve with default location to allow alert creation
-            resolve({
-              latitude: 0,  // Default coordinates - will be handled by backend
-              longitude: 0
-            });
-          },
-          {
-            enableHighAccuracy: false,  // Start with lower accuracy for faster response
-            timeout: 8000,              // 8 seconds for alert creation (much faster!)
-            maximumAge: 30000          // Allow 30-second cache for faster response
-          }
-        );
-      }).catch((error) => {
-        console.error('❌ Failed to import geolocation package:', error);
+      // Check if geolocation is available
+      if (!Geolocation || !Geolocation.getCurrentPosition) {
+        console.log('Geolocation package not available');
         setGpsStatus('error');
-        setGpsMessage('Geolocation package not installed');
+        setGpsMessage('Geolocation package not available');
         reject(new Error('Geolocation package not available'));
-      });
+        return;
+      }
+
+      Geolocation.getCurrentPosition(
+        (position: any) => {
+          console.log('Device location captured:', position);
+          
+          const { latitude, longitude, accuracy } = position.coords;
+          const timestamp = new Date().toISOString();
+          
+          // Smooth location to prevent jumping
+          const smoothedLocation = smoothLocation({ latitude, longitude });
+          
+          console.log('Device location:', smoothedLocation.latitude, smoothedLocation.longitude, accuracy, timestamp);
+          console.log('Location smoothed to prevent jumping');
+          
+          setGpsStatus('accurate');
+          setGpsMessage(`Stable location captured (±${accuracy?.toFixed(0) || 0}m)`);
+          resolve(smoothedLocation);
+        },
+        (error: any) => {
+          // Reduce console noise for common GPS timeouts
+          if (error.code === 3) {
+            console.log('GPS timeout - trying faster fallback options...');
+          } else {
+            console.error('GPS error:', error);
+          }
+          
+          let errorMessage = 'GPS not available';
+          let shouldRetry = false;
+          
+          if (error.code === 3) {
+            errorMessage = 'GPS taking too long, using faster options...';
+            shouldRetry = true;
+          } else if (error.code === 2) {
+            errorMessage = 'GPS unavailable. Enable location services.';
+          } else if (error.code === 1) {
+            errorMessage = 'Location permission denied. Allow location access.';
+          }
+          
+          setGpsStatus('waiting');
+          setGpsMessage(errorMessage);
+          
+          // For timeout errors, try to get cached location as fallback
+          if (shouldRetry) {
+            console.log('GPS timeout, trying cached location as fallback...');
+            
+            // Try to get cached location with very short timeout
+            Geolocation.getCurrentPosition(
+              (position) => {
+                console.log('Using cached GPS location as fallback');
+                const { latitude, longitude, accuracy } = position.coords;
+                
+                if (accuracy > 100) {
+                  console.warn('Cached GPS accuracy is poor:', accuracy, 'meters');
+                  setGpsStatus('weak');
+                  setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
+                } else {
+                  console.log('Cached GPS accuracy acceptable:', accuracy, 'meters');
+                  setGpsStatus('accurate');
+                  setGpsMessage(`Using cached location (accuracy: ${Math.round(accuracy)}m)`);
+                }
+                
+                resolve({
+                  latitude,
+                  longitude
+                });
+              },
+              (fallbackError) => {
+                console.log('No cached location available either');
+                setGpsStatus('weak');
+                setGpsMessage('GPS unavailable - alert will be created without location');
+                
+                // Resolve with default location to allow alert creation
+                resolve({
+                  latitude: 0,  // Default coordinates - will be handled by backend
+                  longitude: 0
+                });
+              },
+              {
+                enableHighAccuracy: false,  // Don't require high accuracy for fallback
+                timeout: 5000,              // Very short timeout for cached location
+                maximumAge: 300000          // Allow 5-minute old cached location
+              }
+            );
+            return; // Don't reject yet, wait for fallback
+          }
+          
+          // Final fallback - allow alert creation without GPS
+          setGpsStatus('weak');
+          setGpsMessage('GPS unavailable - alert will be created without location');
+          
+          // Resolve with default location to allow alert creation
+          resolve({
+            latitude: 0,  // Default coordinates - will be handled by backend
+            longitude: 0
+          });
+        },
+        {
+          enableHighAccuracy: false,  // Start with lower accuracy for faster response
+          timeout: 8000,              // 8 seconds for alert creation (much faster!)
+          maximumAge: 30000          // Allow 30-second cache for faster response
+        }
+      );
     });
   };
   // Create new alert function
@@ -234,54 +229,65 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
     setCreatingAlert(true);
     try {
-      // Get current device location when creating alert
-      console.log('� Getting device location for alert...');
-      const deviceLocation = await getCurrentDeviceLocation();
+      // Get device location only for USER role (officer is null for users)
+      let deviceLocation;
+      if (!officer) {
+        console.log('USER role - getting device location for alert...');
+        deviceLocation = await getCurrentDeviceLocation();
+      } else {
+        console.log('OFFICER role - using fallback location (no GPS needed)');
+        deviceLocation = { latitude: 0, longitude: 0 };
+      }
       
-      console.log('✅ Device location captured:', deviceLocation);
+      console.log('Location captured:', deviceLocation);
       
-      // Store coordinates to prevent duplicates
-      setLastAlertCoordinates({ lat: deviceLocation.latitude, lng: deviceLocation.longitude });
+      // Store coordinates to prevent duplicates (only for users)
+      if (!officer) {
+        setLastAlertCoordinates({ lat: deviceLocation.latitude, lng: deviceLocation.longitude });
+      }
 
-      console.log('📡 Creating alert with device coordinates');
-      console.log('📍 Location data for backend:', {
+      console.log('Creating alert with coordinates');
+      console.log('Location data for backend:', {
         location_lat: deviceLocation.latitude,
         location_long: deviceLocation.longitude
       });
 
-      // Create alert with device location
+      // Create alert with location
       const createdAlert = await storeCreateAlert({
         alert_type: alertType,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
+        priority: "medium",
         location_lat: deviceLocation.latitude,
-        location_long: deviceLocation.longitude,
+        location_long: deviceLocation.longitude
       });
 
-      console.log('🎯 Alert created with device location and stored permanently');
-      console.log('   📍 Location stored:', deviceLocation.latitude, deviceLocation.longitude);
-      console.log('   📱 Alerts page (full list - synced with backend)');
-      console.log('   📊 Dashboard Recent Alerts (synced with backend)');
-      console.log('   💾 Backend database (persists across app restarts)');
+      console.log('Alert created and stored permanently');
+      console.log('   Location stored:', deviceLocation.latitude, deviceLocation.longitude);
+      console.log('   Alerts page (full list - synced with backend)');
+      console.log('   Dashboard Recent Alerts (synced with backend)');
+      console.log('   Backend database (persists across app restarts)');
 
       // Reset form and GPS state
       setAlertMessage('');
       setAlertDescription('');
       setAlertType('security');
       setCreateModalVisible(false);
-      setGpsStatus('waiting');
-      setGpsMessage('Getting device location...');
+      if (!officer) {
+        setGpsStatus('waiting');
+        setGpsMessage('Getting device location...');
+      }
       
-      showToast('Alert created with device location!', 'success');
+      showToast('Alert created successfully!', 'success');
     } catch (error: any) {
-      console.error('❌ ALERT CREATION FAILED:', error);
+      console.error('ALERT CREATION FAILED:', error);
       
       if (error?.message?.includes('GPS') || error?.message?.includes('location') || error?.message?.includes('coordinates')) {
         showToast('Unable to get device location. Alert not created.', 'error');
-        console.error('🚫 Location requirement failed - Alert creation blocked');
+        console.error('Location requirement failed - Alert creation blocked');
       } else {
         showToast('Failed to create alert. Please try again.', 'error');
-        console.error('🚫 Other error during alert creation');
+        console.error('Other error during alert creation');
       }
     } finally {
       setCreatingAlert(false);
