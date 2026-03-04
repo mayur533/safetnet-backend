@@ -117,21 +117,12 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
         
         # Validate GPS coordinates for area-based alerts
         if alert_type == 'area_user_alert':
-            lat = attrs.get('location_lat')
-            lon = attrs.get('location_long')
-            
-            if not lat or not lon:
-                raise serializers.ValidationError({
-                    'location_lat': 'GPS coordinates are required for area-based alerts.',
-                    'location_long': 'GPS coordinates are required for area-based alerts.'
-                })
-            
-            # Validate coordinate ranges
-            if not (-90 <= float(lat) <= 90) or not (-180 <= float(lon) <= 180):
-                raise serializers.ValidationError({
-                    'location_lat': 'Latitude must be between -90 and 90 degrees.',
-                    'location_long': 'Longitude must be between -180 and 180 degrees.'
-                })
+            # Area alerts use geofence targeting, GPS is optional
+            # Set default coordinates if not provided
+            if not attrs.get('location_lat'):
+                attrs['location_lat'] = 0.0
+            if not attrs.get('location_long'):
+                attrs['location_long'] = 0.0
         
         return attrs
 
