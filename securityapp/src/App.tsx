@@ -19,7 +19,7 @@ import { AppNavigator } from './navigation/AppNavigator';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginSuccess } from './store/slices/authSlice';
-import Toast from 'react-native-toast-message';
+
 
 // Disable debugger connections to prevent registration errors
 if (__DEV__) {
