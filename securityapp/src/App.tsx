@@ -87,7 +87,6 @@ function App() {
           <SafeAreaProvider>
             <AppContent />
           </SafeAreaProvider>
-          <Toast ref={(ref) => {}} />
         </ThemeProvider>
       </PersistGate>
     </Provider>

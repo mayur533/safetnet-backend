@@ -22,7 +22,6 @@ import { EmptyState } from '../../components/common/EmptyState';
 import { AlertRespondModal } from '../../components/common/AlertRespondModal';
 import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import Toast from 'react-native-toast-message';
 
 interface AlertsScreenProps {}
 
@@ -130,13 +129,7 @@ export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((prop
     // Validate alert data before showing modal
     if (!alert || !alert.id) {
       console.error('❌ Invalid alert data:', alert);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Invalid alert data. Please refresh and try again.',
-        visibilityTime: 3000,
-        position: 'bottom',
-      });
+      showToast('Invalid alert data. Please refresh and try again.', 'error');
       return;
     }
     

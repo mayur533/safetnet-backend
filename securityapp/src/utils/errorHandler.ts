@@ -1,4 +1,4 @@
-import { Alert } from 'react-native';
+import Toast from 'react-native-root-toast';
 
 export function handleAxiosError(error: any) {
   // Log full backend response for debugging
@@ -35,6 +35,15 @@ export function handleAxiosError(error: any) {
     }
   }
 
-  // Show user-friendly message using Alert.alert
-  Alert.alert('Error', errorMessage);
+  // Show user-friendly message using Toast.show
+  Toast.show(errorMessage, {
+    duration: Toast.durations.LONG,
+    position: Toast.positions.TOP,
+    backgroundColor: '#FF6B6B', // Error red color
+    textColor: 'white',
+    shadow: true,
+    animation: true,
+    hideOnPress: true,
+    delay: 0,
+  });
 }

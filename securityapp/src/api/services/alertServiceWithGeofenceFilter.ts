@@ -420,6 +420,8 @@ export const alertServiceWithGeofenceFilter = {
     location?: { latitude: number; longitude: number };
     priority?: 'high' | 'medium' | 'low';
     expires_at?: string; // For area-based alerts
+    location_lat?: number; // Direct latitude field
+    location_long?: number; // Direct longitude field
   }): Promise<Alert> => {
     // Create API payload with location data
     const apiData: {
@@ -428,12 +430,23 @@ export const alertServiceWithGeofenceFilter = {
       description: string;
       priority: string;
       expires_at?: string;
+      location_lat?: number; // Add location fields to API payload
+      location_long?: number;
     } = {
       alert_type: alertData.alert_type,
       message: alertData.message,
       description: alertData.description || alertData.message,
       priority: alertData.priority || 'medium',
     };
+
+    // Add location data - prefer direct fields, fallback to location object
+    if (alertData.location_lat !== undefined && alertData.location_long !== undefined) {
+      apiData.location_lat = alertData.location_lat;
+      apiData.location_long = alertData.location_long;
+    } else if (alertData.location) {
+      apiData.location_lat = alertData.location.latitude;
+      apiData.location_long = alertData.location.longitude;
+    }
 
     // Add expiry for area-based alerts
     if (alertData.alert_type === 'area_user_alert' && alertData.expires_at) {
@@ -444,6 +457,8 @@ export const alertServiceWithGeofenceFilter = {
     console.log('   📤 Alert Type:', apiData.alert_type);
     console.log('   📤 Message:', apiData.message);
     console.log('   📤 Priority:', apiData.priority);
+    console.log('   📤 Location Lat:', apiData.location_lat);
+    console.log('   📤 Location Long:', apiData.location_long);
     console.log('   � Expires at:', apiData.expires_at || 'Not set');
 
     // API call for alert creation
@@ -469,10 +484,12 @@ export const alertServiceWithGeofenceFilter = {
         priority: response.data.priority || (apiData.alert_type === 'emergency' || apiData.alert_type === 'area_user_alert' ? 'high' : 'medium'),
         message: response.data.message || apiData.message,
         location: response.data.location || {
-          latitude: 0,
-          longitude: 0,
+          latitude: apiData.location_lat || 0,
+          longitude: apiData.location_long || 0,
           address: 'Backend assigned location'
         },
+        location_lat: response.data.location_lat || apiData.location_lat || 0,
+        location_long: response.data.location_long || apiData.location_long || 0,
         timestamp: response.data.timestamp || response.data.created_at || new Date().toISOString(),
         status: response.data.status || 'pending',
         geofence_id: response.data.geofence_id || '',
@@ -511,6 +528,9 @@ export const alertServiceWithGeofenceFilter = {
             alert_type: apiData.alert_type,
             message: apiData.message,
             priority: apiData.priority || 'medium',
+            // Include location data in workaround too
+            location_lat: apiData.location_lat,
+            location_long: apiData.location_long,
             // Location fields removed - backend handles location assignment
           };
           
@@ -533,12 +553,12 @@ export const alertServiceWithGeofenceFilter = {
             message: response.data.message || apiData.message,
             description: response.data.description || apiData.description || apiData.message,
             location: response.data.location || {
-              latitude: 0,
-              longitude: 0,
+              latitude: apiData.location_lat || 0,
+              longitude: apiData.location_long || 0,
               address: 'Backend assigned location'
             },
-            location_lat: response.data.location_lat || 0,
-            location_long: response.data.location_long || 0,
+            location_lat: response.data.location_lat || apiData.location_lat || 0,
+            location_long: response.data.location_long || apiData.location_long || 0,
             timestamp: response.data.timestamp || response.data.created_at || new Date().toISOString(),
             status: response.data.status || 'pending',
             geofence_id: response.data.geofence_id || '',
@@ -574,12 +594,12 @@ export const alertServiceWithGeofenceFilter = {
             description: apiData.description || apiData.message,
             created_by_role: undefined, // No default - must be set explicitly by backend
             location: {
-              latitude: 0,
-              longitude: 0,
+              latitude: apiData.location_lat || 0,
+              longitude: apiData.location_long || 0,
               address: 'Backend assigned location'
             },
-            location_lat: 0,
-            location_long: 0,
+            location_lat: apiData.location_lat || 0,
+            location_long: apiData.location_long || 0,
             timestamp: new Date().toISOString(),
             status: 'pending' as const,
             geofence_id: '',

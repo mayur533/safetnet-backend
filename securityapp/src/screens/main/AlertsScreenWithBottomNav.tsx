@@ -15,6 +15,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../../store/store';
 import Geolocation from 'react-native-geolocation-service';
 import { handleAxiosError } from '../../utils/errorHandler';
+import Toast from 'react-native-root-toast';
 
 export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
@@ -26,11 +27,6 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
 
-  // Toast message state
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState<'success' | 'error'>('success');
-  
   // GPS state
   const [gpsStatus, setGpsStatus] = useState<'waiting' | 'accurate' | 'weak' | 'error'>('waiting');
   const [gpsMessage, setGpsMessage] = useState('Getting device location...');
@@ -45,18 +41,6 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const alertsScreenRef = useRef<{
     fetchAlertsWithRetry: () => void;
   }>(null);
-
-  // Toast function
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage(message);
-    setToastType(type);
-    setToastVisible(true);
-    
-    // Auto-hide after 2 seconds
-    setTimeout(() => {
-      setToastVisible(false);
-    }, 2000);
-  };
 
   // Smooth GPS location to prevent jumping
   const smoothLocation = (newLocation: {latitude: number, longitude: number}): {latitude: number, longitude: number} => {
@@ -217,7 +201,16 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
-      showToast('Please enter an alert message', 'error');
+      Toast.show('Please enter an alert message', {
+        duration: Toast.durations.LONG,
+        position: Toast.positions.TOP,
+        backgroundColor: colors.emergencyRed,
+        textColor: 'white',
+        shadow: true,
+        animation: true,
+        hideOnPress: true,
+        delay: 0,
+      });
       return;
     }
 
@@ -279,15 +272,42 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
         setGpsMessage('Getting device location...');
       }
       
-      showToast('Alert created successfully!', 'success');
+      Toast.show('Alert created successfully!', {
+        duration: Toast.durations.LONG,
+        position: Toast.positions.TOP,
+        backgroundColor: colors.successGreen,
+        textColor: 'white',
+        shadow: true,
+        animation: true,
+        hideOnPress: true,
+        delay: 0,
+      });
     } catch (error: any) {
       handleAxiosError(error);
       
       if (error?.message?.includes('GPS') || error?.message?.includes('location') || error?.message?.includes('coordinates')) {
-        showToast('Unable to get device location. Alert not created.', 'error');
+        Toast.show('Unable to get device location. Alert not created.', {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.TOP,
+          backgroundColor: colors.emergencyRed,
+          textColor: 'white',
+          shadow: true,
+          animation: true,
+          hideOnPress: true,
+          delay: 0,
+        });
         console.error('Location requirement failed - Alert creation blocked');
       } else {
-        showToast('Failed to create alert. Please try again.', 'error');
+        Toast.show('Failed to create alert. Please try again.', {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.TOP,
+          backgroundColor: colors.emergencyRed,
+          textColor: 'white',
+          shadow: true,
+          animation: true,
+          hideOnPress: true,
+          delay: 0,
+        });
         console.error('Other error during alert creation');
       }
     } finally {
@@ -476,15 +496,6 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
         </View>
       </Modal>
 
-      {/* Toast Message */}
-      {toastVisible && (
-        <View style={[
-          styles.toastContainer,
-          { backgroundColor: toastType === 'success' ? colors.successGreen : colors.emergencyRed }
-        ]}>
-          <Text style={styles.toastMessage}>{toastMessage}</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -640,33 +651,6 @@ const styles = StyleSheet.create({
   },
   buttonIcon: {
     marginRight: spacing.xs,
-  },
-  // Toast styles
-  toastContainer: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    right: 20,
-    backgroundColor: colors.successGreen,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    zIndex: 1000,
-  },
-  toastMessage: {
-    ...typography.buttonSmall,
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: 14,
   },
 });
 
