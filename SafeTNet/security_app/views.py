@@ -315,7 +315,10 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
             # Step 7: Update alert with area-based metadata
             alert.affected_users_count = affected_users_count
             alert.expires_at = expires_at
-            alert.save(update_fields=['affected_users_count', 'expires_at'])
+            alert.geofence = officer_geofences.first()
+            alert.save(update_fields=['affected_users_count', 'expires_at', 'geofence'])
+            
+            logger.info(f"✅ Alert {alert.id} saved with geofence_id={alert.geofence_id}")
             
             logger.info(f"✅ Area-based alert created: ID={alert.id}, Users={affected_users_count}")
             
