@@ -439,18 +439,24 @@ export const alertServiceWithGeofenceFilter = {
       priority: alertData.priority || 'medium',
     };
 
-    // Add location data - prefer direct fields, fallback to location object
+    // Add location data - ensure location_lat and location_long are always present
     if (alertData.location_lat !== undefined && alertData.location_long !== undefined) {
       apiData.location_lat = alertData.location_lat;
       apiData.location_long = alertData.location_long;
     } else if (alertData.location) {
       apiData.location_lat = alertData.location.latitude;
       apiData.location_long = alertData.location.longitude;
+    } else {
+      // For area_user_alert or when location is not available, use dummy coordinates
+      // Backend will handle geofence assignment for area alerts
+      apiData.location_lat = 0.0;
+      apiData.location_long = 0.0;
     }
 
-    // Add expiry for area-based alerts
-    if (alertData.alert_type === 'area_user_alert' && alertData.expires_at) {
-      apiData.expires_at = alertData.expires_at;
+    // Add expiry for area-based alerts - always include for area_user_alert
+    if (alertData.alert_type === 'area_user_alert') {
+      // Use provided expires_at or default to 30 minutes from now
+      apiData.expires_at = alertData.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString();
     }
 
     console.log('📤 Alert Creation Debug (Backend-Authoritative):');
@@ -531,7 +537,8 @@ export const alertServiceWithGeofenceFilter = {
             // Include location data in workaround too
             location_lat: apiData.location_lat,
             location_long: apiData.location_long,
-            // Location fields removed - backend handles location assignment
+            // Include expires_at for area_user_alert
+            ...(apiData.alert_type === 'area_user_alert' && { expires_at: apiData.expires_at }),
           };
           
           console.log('📤 Sending simplified alert data:', simplifiedAlertData);

@@ -189,21 +189,57 @@ class SOSAlertViewSet(OfficerOnlyMixin, viewsets.ModelViewSet):
         Override create to handle area-based user alerts with backend-authoritative logic.
         This method implements the core security requirements for evacuation alerts.
         """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # 🚨 ALERT REQUEST RECEIVED - Log incoming request details
+        logger.info(f"🚨 ALERT REQUEST RECEIVED")
+        logger.info(f"👤 User: {request.user.username} (role: {getattr(request.user, 'role', 'unknown')})")
+        logger.info(f"📦 Payload: {dict(request.data)}")
         
-        alert_type = serializer.validated_data.get('alert_type', 'security')
-        
-        # Handle area-based user alerts with backend-authoritative logic
-        if alert_type == 'area_user_alert':
-            return self._create_area_user_alert(request, serializer)
-        
-        # Handle regular alerts with existing logic
-        self.perform_create(serializer)
-        instance = serializer.instance
-        response_serializer = SOSAlertSerializer(instance)
-        headers = self.get_success_headers(response_serializer.data)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            
+            # 🔍 SERIALIZER VALIDATION - Log validation attempt
+            logger.info(f"🔍 Starting serializer validation...")
+            serializer.is_valid(raise_exception=True)
+            
+            # ✅ SERIALIZER VALIDATION SUCCESS
+            logger.info(f"✅ Serializer validation passed")
+            logger.info(f"📋 Validated data: {dict(serializer.validated_data)}")
+            
+            alert_type = serializer.validated_data.get('alert_type', 'security')
+            logger.info(f"🏷️ Alert type: {alert_type}")
+            
+            # Handle area-based user alerts with backend-authoritative logic
+            if alert_type == 'area_user_alert':
+                return self._create_area_user_alert(request, serializer)
+            
+            # Handle regular alerts with existing logic
+            logger.info(f"🔄 Processing regular alert creation")
+            self.perform_create(serializer)
+            instance = serializer.instance
+            
+            # ✅ ALERT CREATED SUCCESSFULLY
+            logger.info(f"✅ ALERT CREATED: ID={instance.id}")
+            
+            response_serializer = SOSAlertSerializer(instance)
+            headers = self.get_success_headers(response_serializer.data)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except serializers.ValidationError as e:
+            # ❌ SERIALIZER VALIDATION FAILED
+            logger.error(f"❌ Serializer validation failed")
+            logger.error(f"🚫 Validation errors: {dict(e.detail)}")
+            logger.error(f"📦 Failed payload: {dict(request.data)}")
+            raise
+        except Exception as e:
+            # 💥 UNEXPECTED ERROR
+            logger.error(f"💥 Unexpected error during alert creation")
+            logger.error(f"🔍 Error type: {type(e).__name__}")
+            logger.error(f"📝 Error message: {str(e)}")
+            logger.error(f"📦 Request payload: {dict(request.data)}")
+            logger.error(f"👤 User: {request.user.username} (role: {getattr(request.user, 'role', 'unknown')})")
+            import traceback
+            logger.error(f"📚 Full traceback:\n{traceback.format_exc()}")
+            raise
 
     def _create_area_user_alert(self, request, serializer):
         """

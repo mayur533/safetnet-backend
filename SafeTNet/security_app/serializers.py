@@ -99,22 +99,34 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        """Cross-field validation for area-based alerts."""
+        """Cross-field validation for alerts based on user role."""
+        request = self.context.get("request")
+        user = request.user if request else None
+
         alert_type = attrs.get('alert_type')
+        location_lat = attrs.get('location_lat')
+        location_long = attrs.get('location_long')
         expires_at = attrs.get('expires_at')
-        
-        # Area-based alerts require expiry time
+
+        # If alert is from normal user → require location
+        if user and hasattr(user, 'role') and user.role == "user":
+            if not location_lat or not location_long:
+                raise serializers.ValidationError({
+                    "location": "User alerts require location."
+                })
+
+        # If alert is area based → require expiry
         if alert_type == 'area_user_alert' and not expires_at:
             raise serializers.ValidationError({
                 'expires_at': 'Expiry time is required for area-based alerts.'
             })
-        
+
         # Regular alerts should not have expiry time
         if alert_type != 'area_user_alert' and expires_at:
             raise serializers.ValidationError({
                 'expires_at': 'Expiry time is only allowed for area-based alerts.'
             })
-        
+
         # Validate GPS coordinates for area-based alerts
         if alert_type == 'area_user_alert':
             # Area alerts use geofence targeting, GPS is optional
@@ -123,7 +135,7 @@ class SOSAlertCreateSerializer(serializers.ModelSerializer):
                 attrs['location_lat'] = 0.0
             if not attrs.get('location_long'):
                 attrs['location_long'] = 0.0
-        
+
         return attrs
 
     def create(self, validated_data):
