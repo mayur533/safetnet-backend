@@ -8,7 +8,7 @@ export const DashboardScreenWithBottomNav = ({ navigation }: any) => {
   const colors = useColors();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.lightGrayBg }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <DashboardScreen />
       <BottomTabNavigator />
     </View>

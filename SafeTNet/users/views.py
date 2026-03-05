@@ -29,10 +29,11 @@ from .serializers import (
     NotificationSerializer, NotificationCreateSerializer, NotificationSendSerializer,
     PromoCodeSerializer, PromoCodeCreateSerializer,
     DiscountEmailSerializer, DiscountEmailCreateSerializer,
-    UserReplySerializer, UserDetailsSerializer
+    UserReplySerializer, UserDetailsSerializer,
+    OfficerGeofenceAssignmentSerializer, GeofenceAssignmentSerializer
 )
-from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP
-from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences
+from .models import User, Organization, Geofence, Alert, GlobalReport, Incident, Notification, PromoCode, DiscountEmail, UserReply, UserDetails, PasswordResetOTP, OfficerGeofenceAssignment
+from .permissions import IsSuperAdmin, IsSuperAdminOrSubAdmin, OrganizationIsolationMixin, IsAuthenticatedOrReadOnlyForOwnGeofences, IsOwnerAndPendingAlert
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -470,42 +471,37 @@ class AlertViewSet(ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
-        
+
+        logger.info(f"[USER ALERTS] User {user.email} (role: {user.role}) requesting alerts")
+
         # SUPER_ADMIN can see all alerts
         if user.role == 'SUPER_ADMIN':
+            logger.info(f"[USER ALERTS] Super-admin {user.email} sees all alerts")
             return queryset
-        
-        # Get all geofences the user has access to
-        user_geofences = set()
-        
-        # Add geofences from user's geofences field
-        user_geofences.update(user.geofences.all())
-        
-        # For SUB_ADMIN, also include all geofences from their organization
-        if user.role == 'SUB_ADMIN' and user.organization:
-            org_geofences = Geofence.objects.filter(organization=user.organization)
-            user_geofences.update(org_geofences)
-        
-        # Note: Security officers' geofences are already included above via user.geofences.all()
-        
-        # If user has geofences, filter alerts that have any of those geofences
-        if user_geofences:
-            # Filter alerts where geofences ManyToMany contains any of user's geofences
-            # OR legacy geofence field matches
-            geofence_ids = [g.id for g in user_geofences]
-            return queryset.filter(
-                Q(geofences__in=geofence_ids) | 
-                Q(geofence__in=geofence_ids)
-            ).distinct()
-        
-        return queryset.none()
+
+        # For regular users: show alerts in their geofences (typically USER_SOS alerts)
+        # Users can see alerts in geofences they belong to
+        user_geofences = user.geofences.filter(active=True)
+        geofence_ids = list(user_geofences.values_list('id', flat=True))
+
+        logger.info(f"[USER ALERTS] User {user.email} has {len(geofence_ids)} geofences: {geofence_ids}")
+
+        # Filter alerts by user's geofences
+        queryset = queryset.filter(geofence_id__in=geofence_ids)
+
+        logger.info(f"[USER ALERTS] Found {queryset.count()} alerts for user {user.email}")
+        return queryset
     
     def get_permissions(self):
         """
-        Override to allow all authenticated users to read alerts for their geofences.
+        Override permissions:
+        - Read operations: Any authenticated user
+        - Update/Delete operations: SUPER_ADMIN/SUB_ADMIN OR owner of unresolved alert
         """
         if self.action in ['list', 'retrieve']:
             return [IsAuthenticated()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsOwnerAndPendingAlert()]
         return [IsAuthenticated(), IsSuperAdminOrSubAdmin()]
     
     def perform_create(self, serializer):
@@ -801,12 +797,162 @@ class SecurityOfficerViewSet(OrganizationIsolationMixin, ModelViewSet):
             return User.objects.none()
     
     def perform_create(self, serializer):
+        print(f"DEBUG - SecurityOfficerViewSet request.data: {self.request.data}")
+        print(f"DEBUG - serializer.initial_data: {serializer.initial_data}")
+        print(f"DEBUG - serializer.validated_data: {serializer.validated_data}")
+        
+        # Check if assigned_geofence is present
+        if 'assigned_geofence' in self.request.data:
+            print(f"DEBUG - assigned_geofence found in request.data: {self.request.data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in request.data")
+        
+        if 'assigned_geofence' in serializer.initial_data:
+            print(f"DEBUG - assigned_geofence found in serializer.initial_data: {serializer.initial_data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in serializer.initial_data")
+        
+        if 'assigned_geofence' in serializer.validated_data:
+            print(f"DEBUG - assigned_geofence found in serializer.validated_data: {serializer.validated_data['assigned_geofence']}")
+        else:
+            print("DEBUG - assigned_geofence NOT found in serializer.validated_data")
+        
         # For SUB_ADMIN, automatically set organization to their organization
         if self.request.user.role == 'SUB_ADMIN' and self.request.user.organization:
             serializer.save(organization=self.request.user.organization)
         else:
             # For SUPER_ADMIN, organization should be provided in request data
             serializer.save()
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsSuperAdminOrSubAdmin])
+    def assign_geofence(self, request, pk=None):
+        """
+        Assign a geofence to a security officer
+        POST /api/subadmin/officers/{officer_id}/assign_geofence/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Validate geofence data
+            serializer = GeofenceAssignmentSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            geofence_id = serializer.validated_data['geofence_id']
+            
+            # Validate geofence exists and is active
+            try:
+                geofence = Geofence.objects.get(id=geofence_id, active=True)
+            except Geofence.DoesNotExist:
+                return Response(
+                    {'error': 'Geofence not found or inactive'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Check for existing active assignment
+            existing_assignment = OfficerGeofenceAssignment.objects.filter(
+                officer=officer,
+                geofence=geofence,
+                is_active=True
+            ).first()
+            
+            if existing_assignment:
+                return Response(
+                    {'error': 'Geofence already assigned to this officer'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create assignment
+            assignment = OfficerGeofenceAssignment.objects.create(
+                officer=officer,
+                geofence=geofence,
+                assigned_by=request.user
+            )
+            
+            # Also add geofence to officer's ManyToMany field
+            officer.geofences.add(geofence)
+            
+            # Return assignment details
+            response_serializer = OfficerGeofenceAssignmentSerializer(assignment)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to assign geofence: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def geofences(self, request, pk=None):
+        """
+        Get all active geofence assignments for an officer
+        GET /api/subadmin/officers/{officer_id}/geofences/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Check permissions
+            user = request.user
+            if user.role not in ['SUPER_ADMIN', 'SUB_ADMIN'] and user.id != officer.id:
+                return Response(
+                    {'error': 'Permission denied'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Get active assignments
+            assignments = OfficerGeofenceAssignment.objects.filter(
+                officer=officer,
+                is_active=True
+            ).select_related('geofence', 'assigned_by')
+            
+            serializer = OfficerGeofenceAssignmentSerializer(assignments, many=True)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to fetch assignments: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['patch'], url_path='geofences/(?P<geofence_id>[^/.]+)', permission_classes=[IsAuthenticated, IsSuperAdminOrSubAdmin])
+    def deactivate_geofence_assignment(self, request, pk=None, geofence_id=None):
+        """
+        Deactivate a geofence assignment
+        PATCH /api/subadmin/officers/{officer_id}/geofences/{geofence_id}/
+        """
+        try:
+            officer = self.get_object()
+            
+            # Get existing assignment
+            try:
+                assignment = OfficerGeofenceAssignment.objects.get(
+                    officer=officer,
+                    geofence_id=geofence_id,
+                    is_active=True
+                )
+            except OfficerGeofenceAssignment.DoesNotExist:
+                return Response(
+                    {'error': 'Active assignment not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Deactivate (soft delete)
+            assignment.is_active = False
+            assignment.save()
+            
+            # Also remove geofence from officer's ManyToMany field
+            officer.geofences.remove(assignment.geofence)
+            
+            return Response({
+                'message': 'Geofence assignment deactivated successfully',
+                'assignment_id': assignment.id
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to deactivate assignment: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
 
 def create(self, request, *args, **kwargs):

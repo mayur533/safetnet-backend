@@ -1,15 +1,24 @@
 import React, { useState, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Modal, TextInput, ScrollView, ActivityIndicator, Alert as RNAlert } from 'react-native';
 import { AlertsScreen } from './AlertsScreen';
+
+type AlertsScreenRef = React.RefObject<{
+  fetchAlertsWithRetry: () => void;
+}>;
 import { BottomTabNavigator } from '../../components/navigation/BottomTabNavigator';
 import { colors } from '../../utils/colors';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { typography, spacing } from '../../utils';
 import { alertService } from '../../api/services/alertService';
 import { useAlertsStore } from '../../store/alertsStore';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store/store';
+import Toast from 'react-native-root-toast';
+import { broadcastService } from '../../api/services/broadcastService';
 
 export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
 
+  // ALL useState hooks must be called first
   // Create alert modal state
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [creatingAlert, setCreatingAlert] = useState(false);
@@ -17,42 +26,71 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
 
-  // Use Zustand alerts store
+  // Other hooks can be called after all useState hooks
   const { createAlert: storeCreateAlert } = useAlertsStore();
+  const officer = useSelector((state: RootState) => state.auth.officer);
 
   // Ref to access AlertsScreen methods
-  const alertsScreenRef = useRef<any>(null);
+  const alertsScreenRef = useRef<{
+    fetchAlertsWithRetry: () => void;
+  }>(null);
 
-  // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
-      RNAlert.alert('Error', 'Please enter an alert message');
+      Toast.show('Please enter an alert message', {
+        duration: Toast.durations.LONG,
+        position: Toast.positions.TOP,
+        backgroundColor: colors.emergencyRed,
+        textColor: 'white',
+        shadow: true,
+        animation: true,
+        hideOnPress: true,
+        delay: 0,
+      });
       return;
     }
 
-    console.log('🚀 ADD ALERT BUTTON PRESSED - Starting alert creation process');
-    console.log('📝 Form data:', {
+    if (!officer) {
+      Toast.show('Officer information not available', {
+        duration: Toast.durations.LONG,
+        position: Toast.positions.TOP,
+        backgroundColor: colors.emergencyRed,
+        textColor: 'white',
+        shadow: true,
+        animation: true,
+        hideOnPress: true,
+        delay: 0,
+      });
+      return;
+    }
+
+    console.log('🚨 Creating area evacuation alert...');
+    console.log('📝 Alert data:', {
       alertType,
       alertMessage: alertMessage.trim(),
       alertDescription: alertDescription.trim() || alertMessage.trim(),
     });
+    console.log('👮 Officer data:', {
+      security_id: officer.security_id,
+      geofence_id: officer.geofence_id,
+      name: officer.name
+    });
 
     setCreatingAlert(true);
     try {
-      console.log('📡 Calling store.createAlert() - this will attempt API call with optimistic updates');
-      const createdAlert = await storeCreateAlert({
-        alert_type: alertType,
+      // Use area_user_alert type for officer→user broadcasts
+      // Backend will automatically filter recipients by officer's geofence
+      const alertData = {
+        alert_type: 'area_user_alert' as const,
         message: alertMessage.trim(),
         description: alertDescription.trim() || alertMessage.trim(),
-      });
+        priority: (alertType === 'emergency' ? 'high' : alertType === 'security' ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+      };
 
-      console.log('✅ Alert created successfully!');
-      console.log('📊 Created alert details:', {
-        id: createdAlert.id,
-        message: createdAlert.message,
-        status: createdAlert.status,
-        alert_type: createdAlert.alert_type
-      });
+      // Create alert using existing SOS endpoint with area_user_alert type
+      const alertResult = await storeCreateAlert(alertData);
+
+      console.log('✅ Area evacuation alert created successfully:', alertResult);
 
       // Reset form and close modal
       setAlertMessage('');
@@ -60,15 +98,43 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
       setAlertType('security');
       setCreateModalVisible(false);
 
-      RNAlert.alert('Success', 'Alert created successfully!');
+      Toast.show('Evacuation alert sent successfully!', {
+        duration: Toast.durations.LONG,
+        position: Toast.positions.TOP,
+        backgroundColor: colors.successGreen,
+        textColor: 'white',
+        shadow: true,
+        animation: true,
+        hideOnPress: true,
+        delay: 0,
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to create evacuation alert:', error);
 
-      console.log('🎯 Alert verified and will appear in:');
-      console.log('   📱 Alerts page (full list - synced with backend)');
-      console.log('   📊 Dashboard Recent Alerts (synced with backend)');
-      console.log('   💾 Backend database (persists across app restarts)');
-    } catch (error) {
-      console.error('Error creating alert:', error);
-      RNAlert.alert('Error', 'Failed to create alert. Please try again.');
+      // Handle specific error types
+      if (error.message?.includes('geofence') || error.response?.data?.message?.includes('geofence')) {
+        Toast.show('Geofence not configured. Please contact administrator.', {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.TOP,
+          backgroundColor: colors.emergencyRed,
+          textColor: 'white',
+          shadow: true,
+          animation: true,
+          hideOnPress: true,
+          delay: 0,
+        });
+      } else {
+        Toast.show('Failed to send evacuation alert. Please try again.', {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.TOP,
+          backgroundColor: colors.emergencyRed,
+          textColor: 'white',
+          shadow: true,
+          animation: true,
+          hideOnPress: true,
+          delay: 0,
+        });
+      }
     } finally {
       setCreatingAlert(false);
     }
@@ -182,7 +248,9 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => setCreateModalVisible(false)}
+                onPress={() => {
+                  setCreateModalVisible(false);
+                }}
                 disabled={creatingAlert}
               >
                 <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
@@ -215,6 +283,7 @@ export const AlertsScreenWithBottomNav = ({ navigation }: any) => {
           </View>
         </View>
       </Modal>
+
     </View>
   );
 };
@@ -354,4 +423,3 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
 });
-

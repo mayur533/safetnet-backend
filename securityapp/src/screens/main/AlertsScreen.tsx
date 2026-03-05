@@ -1,29 +1,37 @@
-import React, { useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+
+import React, { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
-  FlatList,
-  StyleSheet,
-  RefreshControl,
   Text,
+  FlatList,
   TouchableOpacity,
-  Alert as RNAlert,
-  ActivityIndicator,
+  StyleSheet,
   ScrollView,
   Modal,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { Alert } from '../../types/alert.types';
+import { useAlertsStore } from '../../store/alertsStore';
 import { AlertCard } from '../../components/alerts/AlertCard';
 import { EmptyState } from '../../components/common/EmptyState';
-import { Alert } from '../../types/alert.types';
-import { alertService } from '../../api/services/alertService';
-import { colors } from '../../utils/colors';
+import { AlertRespondModal } from '../../components/common/AlertRespondModal';
+import { useColors } from '../../utils/colors';
 import { typography, spacing } from '../../utils';
-import { useAlertsStore } from '../../store/alertsStore';
 
-export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
+interface AlertsScreenProps {}
+
+interface AlertsScreenRef {
+  fetchAlertsWithRetry: () => void;
+}
+
+export const AlertsScreen = forwardRef<AlertsScreenRef, AlertsScreenProps>((props, ref) => {
+  const colors = useColors();
+
   // Use Zustand alerts store
   const {
     alerts,
@@ -41,26 +49,55 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
   // Create alert modal state (local to this screen)
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [creatingAlert, setCreatingAlert] = useState(false);
-  const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general'>('security');
+  const [alertType, setAlertType] = useState<'emergency' | 'security' | 'general' | 'area_user_alert'>('security');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertDescription, setAlertDescription] = useState('');
+  // Location state removed - frontend no longer handles location
+  
+  // Area-based alert specific state
+  const [alertExpiry, setAlertExpiry] = useState<string>('');
+  
+  // Location input removed - frontend no longer handles location data
+
+  // Delete confirmation modal state
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [alertToDelete, setAlertToDelete] = useState<Alert | null>(null);
+  const [deletingAlert, setDeletingAlert] = useState(false);
+
+  // Update alert modal state
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [alertToUpdate, setAlertToUpdate] = useState<Alert | null>(null);
+  const [updatingAlert, setUpdatingAlert] = useState(false);
+  const [updatedAlertMessage, setUpdatedAlertMessage] = useState('');
+  const [_updatedAlertDescription, setUpdatedAlertDescription] = useState('');
+  const [updatedAlertType, setUpdatedAlertType] = useState<'emergency' | 'security' | 'normal'>('security');
+
+  // Toast message state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+
+  // Respond modal state - using AlertRespondModal component
+  const [showRespondModal, setShowRespondModal] = useState(false);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
 
   // Reset filter and fetch alerts when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('🚨 AlertsScreen: Screen focused, resetting filter and fetching alerts...');
-      setSelectedFilter('all');
+      console.log('🚨 AlertsScreen: Screen focused, resetting filter and fetching fresh alerts...');
+      console.log('🔍 Current alerts in store:', alerts.length);
+      console.log('🔍 Store last updated:', useAlertsStore.getState().lastUpdated);
+      
+      // Force fetch fresh data with backend-authoritative filtering
       fetchAlerts();
-    }, [fetchAlerts])
+    }, [])
   );
 
-  // Handle filter changes - only refetch for 'all' filter to ensure fresh data
+  // Handle filter changes - always refetch for fresh data
   useEffect(() => {
-    if (selectedFilter === 'all') {
-      console.log('🔄 Fetching all alerts for filter...');
-      fetchAlerts();
-    }
-  }, [selectedFilter, fetchAlerts]);
+    console.log('🔄 Filter changed, fetching fresh alerts...');
+    fetchAlerts();
+  }, [selectedFilter]);
 
   // Expose refresh function to parent component
   useImperativeHandle(ref, () => ({
@@ -72,79 +109,296 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
 
   // Aggressive retry logic to fetch real data
   const onRefresh = useCallback(async () => {
-    console.log('🔄 Refreshing alerts from pull-to-refresh...');
-    await fetchAlerts();
+    console.log('🔄 Pull-to-refresh: Force fetching fresh alerts...');
+    try {
+      // Force multiple fetch attempts to ensure fresh data
+      await fetchAlerts();
+      // Small delay and fetch again to be absolutely sure
+      setTimeout(() => {
+        console.log('🔄 Second fetch attempt for freshness...');
+        fetchAlerts();
+      }, 500);
+    } catch (refreshError: any) {
+      console.error('❌ Pull-to-refresh failed:', refreshError);
+    }
   }, [fetchAlerts]);
 
   const handleRespond = async (alert: Alert) => {
-    console.log('🗺️ Navigating to respond map for alert:', alert.id);
-    (navigation as any).navigate('AlertRespondMap', { alertId: alert.id });
+    console.log('📱 Opening alert response modal for alert:', alert.id);
+    
+    // Validate alert data before showing modal
+    if (!alert || !alert.id) {
+      console.error('❌ Invalid alert data:', alert);
+      showToast('Invalid alert data. Please refresh and try again.', 'error');
+      return;
+    }
+    
+    setSelectedAlertId(String(alert.id));
+    setShowRespondModal(true);
   };
 
-  const handleDelete = async (alert: Alert) => {
+  // Modal handlers
+  const handleCloseRespondModal = () => {
+    setShowRespondModal(false);
+    setSelectedAlertId(null);
+  };
+
+  const handleResponseAccepted = () => {
+    // Refresh alerts after accepting response
+    fetchAlerts();
+  };
+
+  const handleDelete = (alert: Alert) => {
+    console.log('📱 AlertsScreen: Showing delete confirmation for alert:', alert.id);
+    setAlertToDelete(alert);
+    setDeleteModalVisible(true);
+  };
+
+  const handleUpdate = (alert: Alert) => {
+    console.log('📱 AlertsScreen: Opening update modal for alert:', alert.id);
+    setAlertToUpdate(alert);
+    setUpdatedAlertMessage(alert.message || '');
+    setUpdatedAlertDescription(''); // Initialize empty since description field doesn't exist
+    
+    // Set alert type - map to allowed types
+    let responseAlertType: 'emergency' | 'security' | 'normal' = 'security';
+    if (alert.original_alert_type === 'emergency' || alert.original_alert_type === 'warning') {
+      responseAlertType = 'emergency';
+    } else if (alert.original_alert_type === 'general') {
+      responseAlertType = 'normal'; // Map 'general' to 'normal'
+    } else if (alert.alert_type === 'emergency') {
+      responseAlertType = 'emergency';
+    } else if (alert.alert_type === 'security') {
+      responseAlertType = 'security';
+    } else {
+      responseAlertType = 'normal'; // Default to 'normal'
+    }
+    
+    setUpdatedAlertType(responseAlertType);
+    setUpdateModalVisible(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!alertToDelete) return;
+
     try {
-      console.log('📱 AlertsScreen: handleDelete called for alert:', alert.id);
-      await storeDeleteAlert(alert.id);
+      console.log('📱 AlertsScreen: Confirming delete for alert:', alertToDelete.id);
+      setDeletingAlert(true);
+      await storeDeleteAlert(alertToDelete.id);
       console.log('✅ AlertsScreen: Alert deleted successfully');
-      RNAlert.alert('Success', 'Alert deleted successfully!');
-    } catch (error: any) {
-      console.error('❌ AlertsScreen: Failed to delete alert:', error);
-      const errorMessage = error?.message || 'Failed to delete alert. Please try again.';
-      RNAlert.alert('Error', errorMessage);
+      setDeleteModalVisible(false);
+      setAlertToDelete(null);
+      showToast('Alert deleted successfully!', 'success');
+    } catch (deleteError: any) {
+      console.error('❌ AlertsScreen: Failed to delete alert:', deleteError);
+      
+      // Handle specific 404 error - alert already deleted
+      if (deleteError?.status === 404 || deleteError?.message?.includes('No SOSAlert matches the given query')) {
+        console.log('✅ Alert was already deleted - updating UI');
+        setDeleteModalVisible(false);
+        setAlertToDelete(null);
+        showToast('Alert was already removed', 'success');
+        // Refresh alerts to ensure UI is in sync
+        fetchAlerts();
+        return;
+      }
+      
+      // Handle network or other errors
+      const errorMessage = deleteError?.message || 'Failed to delete alert. Please try again.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setDeletingAlert(false);
     }
   };
 
-  const handleSolve = async (alert: Alert) => {
+  const cancelDelete = () => {
+    console.log('📱 AlertsScreen: Cancelled delete for alert:', alertToDelete?.id);
+    setDeleteModalVisible(false);
+    setAlertToDelete(null);
+  };
+
+  const confirmUpdate = async () => {
+    if (!alertToUpdate) return;
+
     try {
-      console.log('✅ Resolving alert:', alert.id);
+      console.log('📱 AlertsScreen: Confirming update for alert:', alertToUpdate.id);
+      setUpdatingAlert(true);
+      
+      // Set priority based on alert type
+      let priority: 'high' | 'medium' | 'low' = 'medium';
+      console.log('🎯 Alert Update Priority Debug:');
+      console.log(`   updatedAlertType: "${updatedAlertType}"`);
+      
+      if (updatedAlertType === 'emergency') {
+        priority = 'high';
+        console.log('   → Set priority to HIGH for emergency');
+      } else if (updatedAlertType === 'security') {
+        priority = 'medium';
+        console.log('   → Set priority to MEDIUM for security');
+      } else if (updatedAlertType === 'normal') {
+        priority = 'low';
+        console.log('   → Set priority to LOW for normal (general)');
+      } else {
+        console.log(`   → Unknown alert type "${updatedAlertType}", defaulting to medium`);
+      }
+      
+      console.log(`   Final priority: "${priority}"`);
+      
+      // Update the alert with the new message, type, and priority
+      await storeUpdateAlert(alertToUpdate.id, {
+        message: updatedAlertMessage.trim(),
+        alert_type: updatedAlertType,
+        original_alert_type: updatedAlertType === 'emergency' ? 'emergency' : 
+                           updatedAlertType === 'security' ? 'warning' : 'general',
+        priority: priority,
+      });
+      
+      console.log('✅ AlertsScreen: Alert updated successfully with priority:', priority);
+      setUpdateModalVisible(false);
+      setAlertToUpdate(null);
+      setUpdatedAlertMessage('');
+      setUpdatedAlertDescription('');
+      setUpdatedAlertType('security');
+      showToast('Alert updated successfully!', 'success');
+    } catch (updateError: any) {
+      console.error('❌ AlertsScreen: Failed to update alert:', updateError);
+      const errorMessage = updateError?.message || 'Failed to update alert. Please try again.';
+      showToast(errorMessage, 'error');
+    } finally {
+      setUpdatingAlert(false);
+    }
+  };
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+    
+    // Auto-hide after 2 seconds
+    setTimeout(() => {
+      setToastVisible(false);
+    }, 2000);
+  };
+
+  const handleSolve = async (alert: Alert) => {
+    console.log('🔧 AlertsScreen: Solve button pressed for alert:', alert.id);
+    try {
       // TODO: Use storeResolveAlert once TypeScript issue is resolved
       await storeUpdateAlert(alert.id, { status: 'completed' });
       console.log('✅ Alert resolved successfully');
-      RNAlert.alert('Success', 'Alert marked as solved!');
-    } catch (error) {
-      console.error('❌ Failed to resolve alert:', error);
-      RNAlert.alert('Error', 'Failed to mark alert as solved. Please try again.');
+      showToast('Alert marked as solved!', 'success');
+    } catch (resolveError: any) {
+      console.error('❌ Failed to resolve alert:', resolveError);
+      showToast('Failed to mark alert as solved. Please try again.', 'error');
     }
   };
 
   // Create new alert function
   const handleCreateAlert = async () => {
     if (!alertMessage.trim()) {
-      RNAlert.alert('Error', 'Please enter an alert message');
+      showToast('Please enter an alert message', 'error');
       return;
     }
 
     setCreatingAlert(true);
+    // Location state removed - frontend no longer handles location
+    console.log('🚨 AlertsScreen: Creating new alert without location...');
+
     try {
-      console.log('🚨 Creating alert via store...');
-      await storeCreateAlert({
+      // Location handling removed - frontend no longer handles GPS or location data
+      // Backend will handle location assignment based on user context
+      const alertData = {
         alert_type: alertType,
-        message: alertMessage.trim(),
-        description: alertDescription.trim() || alertMessage.trim(),
-      });
+        message: alertMessage,
+        description: alertDescription,
+        priority: (alertType === 'emergency' ? 'high' : alertType === 'security' ? 'medium' : 'low') as 'high' | 'medium' | 'low',
+        // Location data removed - backend handles location assignment
+        expires_at: alertExpiry || undefined
+      };
+
+      // Create alert without location data - backend handles location assignment
+      console.log('📤 Creating alert without location data - backend will handle location assignment');
+      await storeCreateAlert(alertData);
+
+      console.log('✅ Alert created successfully without location data');
 
       // Reset form and close modal
       setAlertMessage('');
       setAlertDescription('');
       setAlertType('security');
+      setAlertExpiry('');
       setCreateModalVisible(false);
 
-      RNAlert.alert('Success', 'Alert created successfully!');
-    } catch (error) {
-      console.error('Error creating alert:', error);
-      RNAlert.alert('Error', 'Failed to create alert. Please try again.');
+      // IMPORTANT: Refresh alerts list after creating to get fresh data
+      console.log('🔄 Refreshing alerts list after creating new alert...');
+      await fetchAlerts();
+
+      showToast('Alert created successfully!', 'success');
+
+    } catch (createError: any) {
+      console.error('❌ Failed to create alert:', createError);
+      const errorMessage = createError?.message || 'Failed to create alert. Please try again.';
+      showToast(errorMessage, 'error');
     } finally {
       setCreatingAlert(false);
+      // Location state removed - frontend no longer handles location
     }
   };
 
   // Filter alerts based on selected section
   const getFilteredAlerts = () => {
-    if (selectedFilter === 'all') return alerts;
-    if (selectedFilter === 'emergency') return alerts.filter(alert => alert.alert_type === 'emergency' || alert.priority === 'high');
-    if (selectedFilter === 'pending') return alerts.filter(alert => alert.status === 'pending' || !alert.status);
-    if (selectedFilter === 'accepted') return alerts.filter(alert => alert.status === 'accepted');
-    if (selectedFilter === 'completed') return alerts.filter(alert => alert.status === 'completed');
+    // CRITICAL: Log exact counts for debugging
+    console.log('🔍 CRITICAL DEBUG - AlertsScreen Analysis:');
+    console.log(`   📊 Total alerts in alertsStore: ${alerts.length}`);
+    console.log(`   📊 Selected filter: ${selectedFilter}`);
+    
+    // Log each alert's status and type for debugging
+    alerts.forEach((alert, index) => {
+      console.log(`   � Alert ${index + 1}: id=${alert.id}, status='${alert.status}', alert_type='${alert.alert_type}', priority='${alert.priority}'`);
+    });
+    
+    if (selectedFilter === 'all') {
+      console.log(`   📊 All filter: returning all ${alerts.length} alerts`);
+      return alerts;
+    }
+    
+    if (selectedFilter === 'emergency') {
+      const filtered = alerts.filter(alert => 
+        (alert.alert_type === 'emergency' || alert.priority === 'high') &&
+        alert.status !== 'completed' && 
+        alert.status !== 'resolved'
+      );
+      console.log(`   📊 Emergency filtered count: ${filtered.length}`);
+      console.log(`   📊 Emergency alerts: ${filtered.map(a => a.id).join(', ')}`);
+      return filtered;
+    }
+    
+    if (selectedFilter === 'pending') {
+      const filtered = alerts.filter(alert => alert.status === 'pending' || !alert.status);
+      console.log(`   📊 Pending filtered count: ${filtered.length}`);
+      console.log(`   📊 Pending alerts: ${filtered.map(a => a.id).join(', ')}`);
+      return filtered;
+    }
+    
+    if (selectedFilter === 'accepted') {
+      const filtered = alerts.filter(alert => 
+        alert.status === 'accepted'
+      );
+      console.log(`   📊 Accepted filtered count: ${filtered.length}`);
+      console.log(`   📊 Accepted alerts: ${filtered.map(a => a.id).join(', ')}`);
+      return filtered;
+    }
+    
+    if (selectedFilter === 'completed') {
+      const filtered = alerts.filter(alert => 
+        alert.status === 'completed' || alert.status === 'resolved'
+      );
+      console.log(`   📊 Completed filtered count: ${filtered.length}`);
+      console.log(`   📊 Completed alerts: ${filtered.map(a => a.id).join(', ')}`);
+      return filtered;
+    }
+    
+    console.log(`   📊 Default filter: returning all ${alerts.length} alerts`);
     return alerts;
   };
 
@@ -154,6 +408,7 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
       onRespond={handleRespond}
       onDelete={handleDelete}
       onSolve={handleSolve}
+      onUpdate={handleUpdate}
     />
   );
 
@@ -163,7 +418,7 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.darkText }]}>Loading alerts...</Text>
-        <Text style={[styles.loadingText, { fontSize: 12, marginTop: 8, opacity: 0.7, color: colors.darkText }]}>
+        <Text style={[styles.loadingText, styles.loadingSubtext, { color: colors.darkText }]}>
           Connecting to SafeTNet backend
         </Text>
       </View>
@@ -182,7 +437,7 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.lightGrayBg }]}>
         <Icon name={isNetworkError ? 'wifi-off' : 'error'} size={48} color={colors.emergencyRed} />
         <Text style={[styles.errorTitle, { color: colors.emergencyRed }]}>{errorTitle}</Text>
-        <Text style={[styles.errorText, { color: colors.mediumText, textAlign: 'center', lineHeight: 20 }]}>{errorMessage}</Text>
+        <Text style={[styles.errorText, styles.errorTextCentered, { color: colors.mediumText }]}>{errorMessage}</Text>
         <TouchableOpacity
           style={[styles.retryButton, { backgroundColor: colors.primary }]}
           onPress={onRefresh}
@@ -196,13 +451,8 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.lightGrayBg }]}>
-      <View style={[styles.header, {
+      <View style={[styles.header, styles.headerShadow, {
         backgroundColor: colors.white,
-        shadowColor: colors.darkText,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
       }]}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
@@ -218,18 +468,49 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
             <View style={[styles.statBadge, { backgroundColor: colors.primary }]}>
               <Text style={[styles.statText, { color: colors.white }]}>{alerts.length}</Text>
             </View>
+            {/* Hard reset button */}
+            <TouchableOpacity 
+              style={[styles.statBadge, styles.hardResetButton]}
+              onPress={async () => {
+                console.log('🔥 HARD RESET: Clearing alerts cache only...');
+                try {
+                  // Clear only alerts-related cache, preserve authentication
+                  const keysToRemove = [
+                    'cached_alerts',
+                    'alerts_timestamp',
+                    'alerts_last_fetch',
+                    'recent_alerts_cache'
+                  ];
+                  
+                  await AsyncStorage.multiRemove(keysToRemove);
+                  
+                  // Flush Redux persistor (don't purge auth)
+                  const { persistor } = require('../../store/store');
+                  if (persistor) {
+                    await persistor.flush();
+                  }
+                  
+                  await fetchAlerts();
+                  console.log('✅ Hard reset complete (auth preserved)');
+                } catch (resetError: any) {
+                  console.error('❌ Hard reset failed:', resetError);
+                }
+              }}
+            >
+              <Icon name="refresh" size={12} color={colors.white} />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
 
       {/* Filter Sections - Horizontal Scrollable */}
-      <View style={[styles.filterSection, {
-        backgroundColor: colors.white,
-        shadowColor: colors.darkText
+      <View style={[styles.filterSection, styles.filterBorder, {
+        backgroundColor: colors.lightGrayBg,
+        borderColor: colors.border
       }]}>
         <View style={styles.filterHeader}>
-          <Icon name="filter-list" size={16} color={colors.mediumText} />
-          <Text style={[styles.filterTitle, { color: colors.mediumText }]}>Filter by Status</Text>
+          <Icon name="filter-list" size={16} color={colors.darkText} />
+          <Text style={[styles.filterTitle, { color: colors.darkText }]}>Filter by Status</Text>
         </View>
         <ScrollView
           horizontal
@@ -239,8 +520,8 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
         >
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'all' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
-            borderColor: selectedFilter === 'all' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+            backgroundColor: selectedFilter === 'all' ? colors.primary : 'rgba(59, 130, 246, 0.15)',
+            borderColor: selectedFilter === 'all' ? colors.primary : colors.border
           }]}
           onPress={() => setSelectedFilter('all')}
         >
@@ -250,8 +531,8 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'emergency' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.1)',
-            borderColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(220, 38, 38, 0.2)'
+            backgroundColor: selectedFilter === 'emergency' ? colors.emergencyRed : 'rgba(239, 68, 68, 0.15)',
+            borderColor: selectedFilter === 'emergency' ? colors.emergencyRed : colors.border
           }]}
           onPress={() => setSelectedFilter('emergency')}
         >
@@ -261,30 +542,30 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'pending' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.1)',
-            borderColor: selectedFilter === 'pending' ? colors.warningOrange : 'rgba(249, 115, 22, 0.2)'
+            backgroundColor: selectedFilter === 'pending' ? colors.warning : 'rgba(245, 158, 11, 0.15)',
+            borderColor: selectedFilter === 'pending' ? colors.warning : colors.border
           }]}
           onPress={() => setSelectedFilter('pending')}
         >
-          <Icon name="schedule" size={16} color={selectedFilter === 'pending' ? colors.white : colors.warningOrange} style={styles.filterIcon} />
-          <Text style={[styles.filterText, { color: selectedFilter === 'pending' ? colors.white : colors.warningOrange }]}>Pending</Text>
+          <Icon name="schedule" size={16} color={selectedFilter === 'pending' ? colors.white : colors.warning} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'pending' ? colors.white : colors.warning }]}>Pending</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'accepted' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.1)',
-            borderColor: selectedFilter === 'accepted' ? colors.successGreen : 'rgba(16, 185, 129, 0.2)'
+            backgroundColor: selectedFilter === 'accepted' ? colors.success : 'rgba(16, 185, 129, 0.15)',
+            borderColor: selectedFilter === 'accepted' ? colors.success : colors.border
           }]}
           onPress={() => setSelectedFilter('accepted')}
         >
-          <Icon name="check-circle" size={16} color={selectedFilter === 'accepted' ? colors.white : colors.successGreen} style={styles.filterIcon} />
-          <Text style={[styles.filterText, { color: selectedFilter === 'accepted' ? colors.white : colors.successGreen }]}>Accepted</Text>
+          <Icon name="check-circle" size={16} color={selectedFilter === 'accepted' ? colors.white : colors.success} style={styles.filterIcon} />
+          <Text style={[styles.filterText, { color: selectedFilter === 'accepted' ? colors.white : colors.success }]}>Accepted</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.filterButton, selectedFilter === 'completed' && styles.filterButtonActive, {
-            backgroundColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.1)',
-            borderColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.2)'
+            backgroundColor: selectedFilter === 'completed' ? colors.primary : 'rgba(37, 99, 235, 0.15)',
+            borderColor: selectedFilter === 'completed' ? colors.primary : colors.border
           }]}
           onPress={() => setSelectedFilter('completed')}
         >
@@ -335,8 +616,8 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
         onRequestClose={() => setCreateModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.white }]}>
-            <View style={styles.modalHeader}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.darkText }]}>Create New Alert</Text>
               <TouchableOpacity
                 onPress={() => setCreateModalVisible(false)}
@@ -349,11 +630,12 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
               {/* Alert Type Selection */}
               <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type</Text>
-              <View style={styles.alertTypeContainer}>
+              <View style={styles.createAlertTypeContainer}>
                 {[
                   { key: 'emergency', label: 'Emergency', color: colors.emergencyRed, icon: 'warning' },
                   { key: 'security', label: 'Security', color: colors.warningOrange, icon: 'security' },
                   { key: 'general', label: 'General', color: colors.primary, icon: 'info' },
+                  { key: 'area_user_alert', label: 'Area Evacuation', color: '#8B5CF6', icon: 'people' },
                 ].map((type) => (
                   <TouchableOpacity
                     key={type.key}
@@ -407,15 +689,43 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
                   backgroundColor: colors.lightGrayBg,
                   color: colors.darkText
                 }]}
-                placeholder="Additional details..."
+                placeholder="Enter detailed description..."
                 placeholderTextColor={colors.mediumText}
                 value={alertDescription}
                 onChangeText={setAlertDescription}
                 multiline
-                numberOfLines={4}
-                maxLength={500}
+                numberOfLines={2}
+                maxLength={300}
               />
+
+              {/* Area-based Alert Expiry */}
+              {alertType === 'area_user_alert' && (
+                <>
+                  <Text style={[styles.inputLabel, { color: colors.darkText }]}>
+                    Alert Expiry Time *
+                  </Text>
+                  <Text style={[styles.inputSubLabel, { color: colors.mediumText }]}>
+                    Set when this evacuation alert should expire
+                  </Text>
+                  <TextInput
+                    style={[styles.textInput, {
+                      borderColor: colors.border,
+                      backgroundColor: colors.lightGrayBg,
+                      color: colors.darkText
+                    }]}
+                    placeholder="YYYY-MM-DD HH:MM"
+                    placeholderTextColor={colors.mediumText}
+                    value={alertExpiry}
+                    onChangeText={setAlertExpiry}
+                  />
+                  <Text style={[styles.helperText, { color: colors.mediumText }]}>
+                    Example: 2024-12-31 23:59
+                  </Text>
+                </>
+              )}
             </ScrollView>
+
+            {/* Location error display removed - frontend no longer handles location */}
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -453,6 +763,206 @@ export const AlertsScreen = forwardRef(({ navigation }: any, ref) => {
           </View>
         </View>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={cancelDelete}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Delete Alert</Text>
+              <TouchableOpacity
+                onPress={cancelDelete}
+                style={styles.closeButton}
+              >
+                <Icon name="close" size={24} color={colors.mediumText} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBody}>
+              <View style={styles.deleteConfirmationContainer}>
+                <Icon name="warning" size={48} color={colors.emergencyRed} style={styles.deleteWarningIcon} />
+                <Text style={[styles.deleteConfirmationText, { color: colors.darkText }]}>
+                  Are you sure you want to delete this alert?
+                </Text>
+                {alertToDelete && (
+                  <View style={[styles.alertPreviewContainer, { backgroundColor: colors.inputBackground }]}>
+                    <Text style={[styles.alertPreviewLabel, { color: colors.mediumText }]}>
+                      Alert Details:
+                    </Text>
+                    <Text style={[styles.alertPreviewMessage, { color: colors.darkText }]}>
+                      {alertToDelete.message?.substring(0, 100)}
+                      {alertToDelete.message && alertToDelete.message.length > 100 ? '...' : ''}
+                    </Text>
+                    <Text style={[styles.alertPreviewMeta, { color: colors.mediumText }]}>
+                      Type: {alertToDelete.alert_type} • Status: {alertToDelete.status}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton, { backgroundColor: colors.inputBackground }]}
+                  onPress={cancelDelete}
+                  disabled={deletingAlert}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.darkText }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.deleteButton, { backgroundColor: colors.emergencyRed }]}
+                  onPress={confirmDelete}
+                  disabled={deletingAlert}
+                >
+                  {deletingAlert ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Delete</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Update Alert Modal */}
+      <Modal
+        visible={updateModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setUpdateModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.darkText }]}>Update Alert</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setUpdateModalVisible(false)}
+              >
+                <Icon name="close" size={24} color={colors.mediumText} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Alert Type Selection */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Type *</Text>
+                <View style={styles.createAlertTypeContainer}>
+                  {[
+                    { key: 'emergency', label: '🚨 Emergency', color: colors.emergencyRed },
+                    { key: 'security', label: '🛡️ Security', color: colors.warningOrange },
+                    { key: 'normal', label: '📢 General', color: colors.infoBlue },
+                  ].map((type) => (
+                    <TouchableOpacity
+                      key={type.key}
+                      style={[
+                        styles.alertTypeButton,
+                        {
+                          backgroundColor: updatedAlertType === type.key 
+                            ? type.color 
+                            : colors.lightGrayBg,
+                          borderColor: updatedAlertType === type.key 
+                            ? type.color 
+                            : colors.border,
+                        }
+                      ]}
+                      onPress={() => setUpdatedAlertType(type.key as 'emergency' | 'security' | 'normal')}
+                    >
+                      <Text style={[
+                        styles.alertTypeButtonText,
+                        {
+                          color: updatedAlertType === type.key 
+                            ? colors.white 
+                            : type.color,
+                        }
+                      ]}>
+                        {type.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.darkText }]}>Alert Message *</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.descriptionInput,
+                    styles.textAreaVerticalTop,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.lightGrayBg,
+                      color: colors.darkText,
+                    }
+                  ]}
+                  placeholder="Enter alert message..."
+                  placeholderTextColor={colors.mediumText}
+                  value={updatedAlertMessage}
+                  onChangeText={setUpdatedAlertMessage}
+                  multiline
+                  maxLength={500}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
+                onPress={() => setUpdateModalVisible(false)}
+                disabled={updatingAlert}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.mediumText }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  styles.updateButton,
+                  {
+                    backgroundColor: updatingAlert ? colors.mediumText : colors.warningOrange
+                  }
+                ]}
+                onPress={confirmUpdate}
+                disabled={updatingAlert || !updatedAlertMessage.trim()}
+              >
+                {updatingAlert ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <>
+                    <Icon name="edit" size={18} color={colors.white} style={styles.buttonIcon} />
+                    <Text style={[styles.modalButtonText, { color: colors.white }]}>Update Alert</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Alert Respond Modal */}
+      <AlertRespondModal
+        visible={showRespondModal}
+        alertId={selectedAlertId || ''}
+        onClose={handleCloseRespondModal}
+        onResponseAccepted={handleResponseAccepted}
+      />
+
+      {/* Toast Message */}
+      {toastVisible && (
+        <View style={[
+          styles.toastContainer,
+          { backgroundColor: toastType === 'success' ? colors.successGreen : colors.emergencyRed }
+        ]}>
+          <Text style={[styles.toastMessage, { color: colors.white }]}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 });
@@ -582,7 +1092,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 36,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#374151',
   },
   filterButtonActive: {
     shadowOffset: { width: 0, height: 2 },
@@ -637,7 +1147,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   modalTitle: {
     ...typography.screenHeader,
@@ -656,31 +1165,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: spacing.sm,
-    marginTop: spacing.md,
   },
-  alertTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
+  inputSubLabel: {
+    ...typography.secondary,
+    fontSize: 14,
+    marginBottom: spacing.xs,
   },
-  alertTypeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: 12,
-    marginHorizontal: 2,
-    borderWidth: 2,
-  },
-  alertTypeIcon: {
-    marginRight: spacing.xs,
-  },
-  alertTypeText: {
-    ...typography.buttonSmall,
-    fontWeight: '600',
+  helperText: {
+    ...typography.caption,
     fontSize: 12,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
   },
   textInput: {
     borderWidth: 1,
@@ -698,7 +1193,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#E2E8F0',
     gap: spacing.md,
   },
   modalButton: {
@@ -710,17 +1205,242 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     minHeight: 48,
   },
-  cancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
+  // Respond modal specific styles
+  alertDetailSection: {
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  modalButtonText: {
-    ...typography.buttonSmall,
+  detailText: {
+    ...typography.body,
+    fontSize: 16,
+    marginBottom: spacing.xs,
+  },
+  detailLabel: {
+    ...typography.captionMedium,
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 14,
+    marginBottom: spacing.xs,
+    color: '#64748B',
+  },
+  respondAlertTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  alertTypeText: {
+    ...typography.captionMedium,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   buttonIcon: {
     marginRight: spacing.xs,
   },
+  // Toast styles
+  toastContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    backgroundColor: '#10B981',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  toastMessage: {
+    ...typography.body,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  // Missing styles for location inputs
+  locationSection: {
+    marginBottom: spacing.md,
+  },
+  locationToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    marginBottom: spacing.sm,
+  },
+  locationToggleText: {
+    ...typography.body,
+    marginLeft: spacing.sm,
+    fontWeight: '500',
+  },
+  locationInputs: {
+    marginTop: spacing.sm,
+  },
+  locationInputRow: {
+    marginBottom: spacing.md,
+  },
+  locationInput: {
+    marginTop: spacing.xs,
+  },
+  // Missing button styles
+  modalButtonText: {
+    ...typography.buttonMedium,
+    fontWeight: '600',
+  },
+  // Missing confirmation modal styles
+  deleteConfirmationContainer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  deleteWarningIcon: {
+    marginBottom: spacing.md,
+  },
+  deleteConfirmationText: {
+    ...typography.body,
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    lineHeight: 20,
+  },
+  alertPreviewContainer: {
+    backgroundColor: '#F8FAFC',
+    padding: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  alertPreviewLabel: {
+    ...typography.caption,
+    color: '#64748B',
+    marginBottom: spacing.xs,
+    fontWeight: '500',
+  },
+  alertPreviewMessage: {
+    ...typography.body,
+    color: '#0F172A',
+    marginBottom: spacing.sm,
+    fontWeight: '500',
+  },
+  alertPreviewMeta: {
+    ...typography.caption,
+    color: '#64748B',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
+  },
+  deleteButton: {
+    backgroundColor: '#EF4444',
+    flex: 1,
+  },
+  inputGroup: {
+    marginBottom: spacing.md,
+  },
+  updateButton: {
+    backgroundColor: '#F97316',
+    flex: 1,
+  },
+  // Alert type selector styles
+  createAlertTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  alertTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertTypeButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // Additional styles for create modal
+  alertTypeIcon: {
+    marginRight: 6,
+  },
+  detailMessage: {
+    ...typography.body,
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: spacing.sm,
+  },
+  detailDescription: {
+    ...typography.secondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  alertTypeBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 6,
+    marginRight: spacing.sm,
+  },
+  priorityText: {
+    fontFamily: 'System',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 20,
+    letterSpacing: -0.1,
+    color: '#64748B',
+  },
+  coordinatesText: {
+    fontFamily: 'System',
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+    letterSpacing: 0,
+    color: '#94A3B8',
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
+  },
+  acceptButton: {
+    backgroundColor: '#10B981',
+  },
+  // Inline styles converted to StyleSheet
+  loadingSubtext: {
+    fontSize: 12,
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  errorTextCentered: {
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  headerShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  hardResetButton: {
+    backgroundColor: '#FF9800',
+    marginLeft: 4,
+  },
+  filterBorder: {
+    borderWidth: 1,
+  },
+  textAreaVerticalTop: {
+    textAlignVertical: 'top',
+  },
 });
-

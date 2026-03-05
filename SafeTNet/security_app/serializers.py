@@ -1,11 +1,12 @@
 import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import SOSAlert, Case, Incident, OfficerProfile, Notification  # new models for security_app
+from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, LiveLocation, OfficerAlert, AlertRead
 from users.models import Geofence
 import math
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class SOSAlertSerializer(serializers.ModelSerializer):
@@ -13,31 +14,161 @@ class SOSAlertSerializer(serializers.ModelSerializer):
     user_email = serializers.CharField(source='user.email', read_only=True)
     geofence_name = serializers.CharField(source='geofence.name', read_only=True)
     assigned_officer_name = serializers.SerializerMethodField()
+    created_by_role = serializers.SerializerMethodField()
     
     def get_assigned_officer_name(self, obj):
         if obj.assigned_officer:
             name = f"{obj.assigned_officer.first_name} {obj.assigned_officer.last_name}".strip()
             return name or obj.assigned_officer.username
         return None
+    
+    def get_created_by_role(self, obj):
+        """Ensure created_by_role always has a value"""
+        if obj.created_by_role:
+            return obj.created_by_role
+            
+        # Fallback logic based on user role if field is not set
+        if hasattr(obj.user, 'role') and obj.user.role == 'security_officer':
+            return 'OFFICER'
+            
+        return 'USER'
+
+    def update(self, instance, validated_data):
+        """Apply officer field restrictions during update operations only"""
+        request = self.context.get('request')
+        
+        # Only apply restrictions for security officers updating USER-created alerts
+        if (request and 
+            hasattr(request, 'user') and 
+            request.user and 
+            request.user.role == 'security_officer' and
+            instance and 
+            hasattr(instance, 'created_by_role') and 
+            instance.created_by_role == 'USER'):
+            
+            # Make user-provided fields read-only for officers updating USER-created alerts
+            user_fields = ['message', 'description', 'location_lat', 'location_long']
+            for field in user_fields:
+                if field in validated_data:
+                    raise serializers.ValidationError({
+                        field: f"Security officers cannot modify {field} on USER-created alerts"
+                    })
+        
+        return super().update(instance, validated_data)
 
     class Meta:
         model = SOSAlert
         fields = (
             'id', 'user', 'user_username', 'user_email', 'geofence', 'geofence_name',
             'alert_type', 'message', 'description', 'location_lat', 'location_long', 'status', 'priority',
-            'assigned_officer', 'assigned_officer_name', 'created_at', 'updated_at'
+            'assigned_officer', 'assigned_officer_name', 'created_by_role', 'created_at', 'updated_at',
+            # Area-based alert fields
+            'expires_at', 'affected_users_count', 'notification_sent', 'notification_sent_at'
         )
-        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'user_username', 'user_email', 'created_by_role', 'created_at', 'updated_at', 
+                           'affected_users_count', 'notification_sent', 'notification_sent_at')
 
 
 class SOSAlertCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SOSAlert
-        fields = ('id', 'alert_type', 'message', 'description', 'geofence', 'location_lat', 'location_long', 'priority', 'status', 'created_at')
+        fields = (
+            'id', 'alert_type', 'message', 'description', 'geofence', 
+            'location_lat', 'location_long', 'priority', 'status', 'created_at',
+            # Area-based alert fields
+            'expires_at'
+        )
         read_only_fields = ('id', 'status', 'created_at')
 
+    def validate_alert_type(self, value):
+        """Validate alert type is one of the allowed choices."""
+        valid_types = [choice[0] for choice in SOSAlert.ALERT_TYPE_CHOICES]
+        if value not in valid_types:
+            raise serializers.ValidationError(f"Invalid alert type. Must be one of: {valid_types}")
+        return value
+
+    def validate_expires_at(self, value):
+        """Validate expiry time for area-based alerts."""
+        if value is None:
+            return value
+        
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError("Expiry time cannot be in the past.")
+        
+        return value
+
+    def validate(self, attrs):
+        """Cross-field validation for alerts based on user role."""
+        request = self.context.get("request")
+        user = request.user if request else None
+
+        alert_type = attrs.get('alert_type')
+        location_lat = attrs.get('location_lat')
+        location_long = attrs.get('location_long')
+        expires_at = attrs.get('expires_at')
+
+        # If alert is from normal user → require location
+        if user and hasattr(user, 'role') and user.role == "user":
+            if not location_lat or not location_long:
+                raise serializers.ValidationError({
+                    "location": "User alerts require location."
+                })
+
+        # If alert is area based → require expiry
+        if alert_type == 'area_user_alert' and not expires_at:
+            raise serializers.ValidationError({
+                'expires_at': 'Expiry time is required for area-based alerts.'
+            })
+
+        # Regular alerts should not have expiry time
+        if alert_type != 'area_user_alert' and expires_at:
+            raise serializers.ValidationError({
+                'expires_at': 'Expiry time is only allowed for area-based alerts.'
+            })
+
+        # Validate GPS coordinates for area-based alerts
+        if alert_type == 'area_user_alert':
+            # Area alerts use geofence targeting, GPS is optional
+            # Set default coordinates if not provided
+            if not attrs.get('location_lat'):
+                attrs['location_lat'] = 0.0
+            if not attrs.get('location_long'):
+                attrs['location_long'] = 0.0
+
+        return attrs
+
     def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
+        """
+        Create alert with backend-authoritative logic.
+        For area-based alerts, the backend handles all geofence and user targeting.
+        """
+        request_user = self.context['request'].user
+        validated_data['user'] = request_user
+        
+        # Set created_by_role based on user role
+        if hasattr(request_user, 'role') and request_user.role == 'security_officer':
+            validated_data['created_by_role'] = 'OFFICER'
+        else:
+            validated_data['created_by_role'] = 'USER'
+        
+        # For area-based alerts, don't auto-assign geofence - backend will handle it
+        if validated_data.get('alert_type') == 'area_user_alert':
+            # Backend will determine geofence assignment based on officer's assigned areas
+            logger.info(f"🚨 Creating area-based alert, backend will handle geofence assignment")
+        else:
+            # Regular alerts: maintain existing geofence assignment logic
+            officer = request_user
+            validated_data['assigned_officer'] = officer
+            
+            # Auto-assign geofence if not provided (existing logic)
+            if not validated_data.get('geofence'):
+                if officer.geofences.exists():
+                    validated_data['geofence'] = officer.geofences.first()
+                    logger.info(f"✅ Assigned geofence: {validated_data['geofence'].name}")
+                else:
+                    logger.warning("⚠️ Officer has no geofences assigned")
+        
         return super().create(validated_data)
 
 
@@ -410,9 +541,6 @@ class OfficerLoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True, style={'input_type': 'password'})
 
     def validate(self, attrs):
-        import logging
-        logger = logging.getLogger(__name__)
-
         username = attrs.get("username")
         password = attrs.get("password")
 
@@ -463,3 +591,78 @@ class OfficerLoginSerializer(serializers.Serializer):
         attrs["user"] = user
         return attrs
 
+
+class LiveLocationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for LiveLocation model with SOS alert relationship.
+    """
+    sos_alert_id = serializers.IntegerField(source='sos_alert.id', read_only=True)
+    sos_alert_status = serializers.CharField(source='sos_alert.status', read_only=True)
+    
+    class Meta:
+        model = LiveLocation
+        fields = (
+            'id', 'sos_alert', 'sos_alert_id', 'user', 'latitude', 'longitude', 
+            'updated_at', 'sos_alert_status'
+        )
+        read_only_fields = ('id', 'sos_alert', 'user', 'updated_at', 'sos_alert_status')
+
+
+class UnifiedAlertSerializer(serializers.Serializer):
+    """
+    Unified format for all alert types.
+    This is what gets returned to the frontend.
+    """
+    id = serializers.CharField()  # Composite ID like "officer_123" or "sos_456"
+    alert_type = serializers.CharField()  # 'emergency', 'warning', 'info', 'all_clear'
+    alert_source = serializers.CharField()  # 'officer', 'sos', 'community', 'system'
+    title = serializers.CharField()
+    message = serializers.CharField()
+    location = serializers.CharField(required=False, allow_null=True)
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+    created_at = serializers.DateTimeField()
+    time_ago = serializers.CharField()
+    is_read = serializers.BooleanField(default=False)
+    
+    # Optional fields
+    officer_name = serializers.CharField(required=False, allow_null=True)
+    status = serializers.CharField(required=False, allow_null=True)
+
+
+class OfficerAlertSerializer(serializers.ModelSerializer):
+    """Serializer for officer broadcasts"""
+    
+    officer_name = serializers.CharField(source='officer.get_full_name', read_only=True)
+    time_ago = serializers.SerializerMethodField()
+    is_read = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = OfficerAlert
+        fields = [
+            'id',
+            'alert_type',
+            'title',
+            'message',
+            'location',
+            'latitude',
+            'longitude',
+            'officer_name',
+            'is_broadcast',
+            'created_at',
+            'time_ago',
+            'is_read',
+        ]
+    
+    def get_time_ago(self, obj):
+        from django.utils.timesince import timesince
+        return f"{timesince(obj.created_at)} ago"
+    
+    def get_is_read(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return AlertRead.objects.filter(
+                user=request.user,
+                officer_alert=obj
+            ).exists()
+        return False

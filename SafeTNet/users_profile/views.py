@@ -21,7 +21,8 @@ from .models import (
     LiveLocationShare, CommunityAlert, ChatGroup, ChatMessage, FREE_TIER_LIMITS
 )
 # Import PromoCode and Alert from users app
-from users.models import PromoCode, Alert
+from users.models import PromoCode
+from security_app.models import SOSAlert
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer, UserProfileSerializer,
     FamilyContactSerializer, FamilyContactCreateSerializer,
@@ -571,45 +572,30 @@ class GeofenceEventView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Determine alert type and severity
-            alert_type = 'GEOFENCE_ENTER' if event_type == 'enter' else 'GEOFENCE_EXIT'
-            severity = 'LOW'  # Geofence events are typically low severity
-            
-            # Create title and description
-            action = 'entered' if event_type == 'enter' else 'exited'
-            title = f"Geofence {event_type.title()}: {geofence.name}"
-            description = f"User {action} geofence '{geofence.name}' at {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            # Create Alert record for tracking
-            # Note: We use users.Alert model which is for admin tracking
-            # The geofence field can be null since it's for admin geofences
-            alert = Alert.objects.create(
+            # Create GeofenceEvent record for tracking
+            geofence_event = GeofenceEvent.objects.create(
                 user=user,
-                alert_type=alert_type,
-                severity=severity,
-                title=title,
-                description=description,
-                metadata={
-                    'geofence_id': geofence_id,
-                    'geofence_name': geofence.name,
-                    'latitude': latitude,
-                    'longitude': longitude,
-                    'event_type': event_type,
-                    'source': 'user_app',
-                },
-                is_resolved=False,
+                geofence=geofence,
+                event_type='entry' if event_type == 'enter' else 'exit',
+                latitude=latitude,
+                longitude=longitude,
+                timestamp=timezone.now()
             )
-            
-            logger.info(
-                f"Geofence {event_type} event recorded: User {user.email} {action} geofence '{geofence.name}' (Alert ID: {alert.id})"
-            )
-            
+
             return Response({
-                'message': f'Geofence {event_type} event recorded successfully',
-                'alert_id': alert.id,
-                'geofence_name': geofence.name,
-                'event_type': event_type,
-                'timestamp': timestamp.isoformat(),
+                'message': 'Geofence event recorded successfully',
+                'geofence': {
+                    'id': geofence.id,
+                    'name': geofence.name,
+                    'radius': geofence.radius,
+                    'center_lat': geofence.center_latitude,
+                    'center_lng': geofence.center_longitude,
+                },
+                'event': {
+                    'id': geofence_event.id,
+                    'type': geofence_event.event_type,
+                    'timestamp': geofence_event.timestamp,
+                }
             }, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -684,7 +670,77 @@ def user_stats(request, user_id):
     return Response(stats)
 
 
-# Helper function to check if user is premium
+class SOSTriggerView(APIView):
+    """
+    Trigger SOS alert and create entry in unified users_alert table.
+    POST /users/<user_id>/sos/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, user_id):
+        """Create SOS alert in unified alert system."""
+        if request.user.id != int(user_id):
+            return Response(
+                {'error': 'You can only trigger SOS for your own account.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        user = request.user
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        notes = request.data.get('notes', '')
+
+        if latitude is None or longitude is None:
+            return Response(
+                {'error': 'latitude and longitude are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Import required models
+        from users.utils import get_geofence_from_location
+
+        try:
+            # Find geofence for this location
+            geofence = get_geofence_from_location(float(latitude), float(longitude))
+            logger.info(f"[SOS] User {user.email} geofence: {geofence.name if geofence else 'None'}")
+
+            # Create SOS event - signal will create alert
+            sos_event = SOSEvent.objects.create(
+                user=user,
+                notes=notes,
+                location={'longitude': longitude, 'latitude': latitude},
+                status='triggered'
+            )
+
+            logger.info(f"[SOS] SOS event created for user {user.email}")
+
+            # Send SMS to emergency contacts (existing logic)
+            try:
+                from .services import SMSService
+                sms_service = SMSService()
+
+                # Get family contacts
+                family_contacts = FamilyContact.objects.filter(user=user, is_primary=True)
+                if family_contacts.exists():
+                    contact = family_contacts.first()
+                    message = f"EMERGENCY: {user.first_name or user.username} triggered SOS at {latitude}, {longitude}"
+                    sms_service.send_sms(contact.phone, message)
+                    logger.info(f"[SOS] SMS sent to {contact.phone}")
+            except Exception as sms_error:
+                logger.error(f"[SOS] SMS failed: {sms_error}")
+
+            return Response({
+                'message': 'SOS event created successfully',
+                'sos_event_id': sos_event.id,
+                'geofence': geofence.name if geofence else None,
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"[SOS] Error creating SOS event: {e}", exc_info=True)
+            return Response(
+                {'error': 'Failed to create SOS event'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 def _is_user_premium(user):
     """Check if user has premium subscription by checking UserDetails."""
     try:

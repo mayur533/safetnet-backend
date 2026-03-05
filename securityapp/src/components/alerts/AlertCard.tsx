@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert as RNAlert } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Alert } from '../../types/alert.types';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import { shadows } from '../../utils';
 import { formatRelativeTime, formatExactTime } from '../../utils/helpers';
 
@@ -11,9 +11,11 @@ interface AlertCardProps {
   onRespond: (alert: Alert) => void;
   onDelete?: (alert: Alert) => void;
   onSolve?: (alert: Alert) => void;
+  onUpdate?: (alert: Alert) => void;
 }
 
-export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete, onSolve }) => {
+export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete, onSolve, onUpdate }) => {
+  const colors = useColors();
   // Check if emergency based on original_alert_type or alert_type
   const isEmergency = alert.original_alert_type === 'emergency' ||
                       alert.original_alert_type === 'warning' ||
@@ -24,23 +26,13 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
   const isCompleted = alertStatus === 'completed' || alertStatus === 'resolved';
   const isAccepted = alert.status === 'accepted';
 
+  // Check if alert was created by officer (hide Respond button for officer-created alerts)
+  const isOfficerCreated = alert.created_by_role === 'OFFICER';
+
   const handleDelete = () => {
     console.log('🗑️ AlertCard: Delete button pressed for alert:', alert.id);
-    RNAlert.alert(
-      'Delete Alert',
-      'Are you sure you want to delete this alert?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            console.log('✅ AlertCard: User confirmed delete, calling onDelete for alert:', alert.id);
-            onDelete && onDelete(alert);
-          },
-        },
-      ]
-    );
+    // Directly call onDelete without showing RNAlert - let the parent handle confirmation
+    onDelete && onDelete(alert);
   };
 
   // Get alert type description
@@ -91,59 +83,138 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
   const getBadgeStyle = () => {
     if (isEmergency) {
       return {
-        backgroundColor: colors.badgeRedBg,
+        backgroundColor: '#FEE2E2',
         text: '🚨 EMERGENCY',
-        textColor: colors.emergencyRed,
+        textColor: '#DC2626',
       };
     }
     if (isCompleted) {
       return {
-        backgroundColor: colors.badgeGreenBg,
+        backgroundColor: '#D1FAE5',
         text: '✓ SOLVED',
-        textColor: colors.successGreen,
+        textColor: '#34C759',
       };
     }
     return {
-      backgroundColor: colors.badgeBlueBg,
+      backgroundColor: '#DBEAFE',
       text: '🔔 ACTIVE',
-      textColor: colors.infoBlue,
+      textColor: '#3B82F6',
     };
   };
 
   const badgeStyle = getBadgeStyle();
 
+  const getLeftAccentColor = () => {
+    // Emergency alerts get red
+    if (isEmergency) {
+      return colors.emergencyRed;
+    }
+    
+    // Completed/resolved alerts get green
+    if (isCompleted) {
+      return colors.successGreen;
+    }
+    
+    // Accepted alerts get orange
+    if (isAccepted) {
+      return colors.warningOrange;
+    }
+    
+    // Different colors based on alert type
+    switch (alert.alert_type) {
+      case 'security':
+        return colors.infoBlue;  // Blue for security
+      case 'area_user_alert':
+        return '#8B5CF6';  // Purple for area alerts
+      case 'normal':
+        return '#6B7280';  // Gray for normal
+      default:
+        return colors.infoBlue;  // Default blue
+    }
+  };
+
+  // Get officer display name with fallbacks
+  const getOfficerDisplayName = (): string => {
+    // Priority 1: Check if alert has first_name and last_name from backend
+    if (alert.first_name && alert.last_name) {
+      const firstName = alert.first_name.trim();
+      const lastName = alert.last_name.trim();
+      if (firstName && lastName) {
+        return `${firstName} ${lastName}`;
+      }
+    }
+    
+    // Priority 2: Check if alert has a single name field
+    if (alert.first_name && !alert.last_name) {
+      const firstName = alert.first_name.trim();
+      if (firstName) {
+        return firstName;
+      }
+    }
+    
+    // Priority 3: user_name (should contain full name like "John Doe" or "Sam karan")
+    if (alert.user_name && typeof alert.user_name === 'string' && alert.user_name.trim()) {
+      const name = alert.user_name.trim();
+      // Check if it looks like a real name (not just numbers)
+      if (!/^\d+$/.test(name)) {
+        return name;
+      }
+    }
+    
+    // Priority 4: Extract from email but format as proper name
+    if (alert.user_email && typeof alert.user_email === 'string') {
+      const emailName = alert.user_email.split('@')[0];
+      if (emailName && !/^\d+$/.test(emailName)) {
+        // Convert username to proper name format
+        const formattedName = emailName
+          .replace(/[_-]/g, ' ')
+          .replace(/\b\w/g, l => l.toUpperCase());
+        return formattedName;
+      }
+    }
+    
+    // Priority 5: user_id if it's not just numbers
+    if (alert.user_id && typeof alert.user_id === 'string' && alert.user_id.trim() && !/^\d+$/.test(alert.user_id.trim())) {
+      const id = alert.user_id.trim();
+      // Format as proper name
+      const formattedName = id
+        .replace(/[_-]/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase());
+      return formattedName;
+    }
+    
+    // Last resort - show a generic officer name
+    return 'Security Officer';
+  };
+
   return (
     <View
       style={[
-        { backgroundColor: colors.white },
-        styles.card,
-        isEmergency && styles.emergencyCard,
-        isCompleted && styles.completedCard,
+        { backgroundColor: colors.cardBackground },
+        styles(colors).card,
       ]}
     >
       <View
         style={[
-          styles.leftAccent,
+          styles(colors).leftAccent,
           {
-            backgroundColor: isEmergency
-              ? colors.emergencyRed
-              : (isCompleted ? colors.successGreen : colors.infoBlue),
+            backgroundColor: getLeftAccentColor(),
           },
         ]}
       />
 
-      <View style={styles.cardContent}>
+      <View style={styles(colors).cardContent}>
         {/* Status Badge */}
-        <View style={[styles.badge, { backgroundColor: badgeStyle.backgroundColor }]}>
-          <Text style={[styles.badgeText, { color: badgeStyle.textColor }]}>
+        <View style={[styles(colors).badge, { backgroundColor: badgeStyle.backgroundColor }]}>
+          <Text style={[styles(colors).badgeText, { color: badgeStyle.textColor }]}>
             {badgeStyle.text}
           </Text>
         </View>
 
-        <View style={styles.content}>
+        <View style={styles(colors).content}>
           {/* Alert Type Details */}
-          <View style={styles.alertDetailsRow}>
-            <View style={styles.alertTypeContainer}>
+          <View style={styles(colors).alertDetailsRow}>
+            <View style={styles(colors).alertTypeContainer}>
               <Icon
                 name={
                   isEmergency
@@ -155,97 +226,107 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onRespond, onDelete
                 size={14}
                 color={isEmergency ? colors.emergencyRed : colors.infoBlue}
               />
-              <View style={styles.alertTypeInfo}>
-                <Text style={[styles.alertTypeText, isCompleted && styles.completedText]}>
+              <View style={styles(colors).alertTypeInfo}>
+                <Text style={[styles(colors).alertTypeText, isCompleted && styles(colors).completedText]}>
                   {getAlertTypeDescription().type}
                 </Text>
-                <Text style={[styles.alertTypeDescription, isCompleted && styles.completedText]} numberOfLines={1}>
+                <Text style={[styles(colors).alertTypeDescription, isCompleted && styles(colors).completedText]} numberOfLines={1}>
                   {getAlertTypeDescription().description}
                 </Text>
               </View>
             </View>
             {alert.priority && (
               <View style={[
-                styles.priorityBadge,
-                alert.priority === 'high' && styles.priorityHigh,
-                alert.priority === 'medium' && styles.priorityMedium,
+                styles(colors).priorityBadge,
+                alert.priority === 'high' && styles(colors).priorityHigh,
+                alert.priority === 'medium' && styles(colors).priorityMedium,
+                alert.priority === 'low' && styles(colors).priorityLow,
               ]}>
-                <Text style={styles.priorityText}>{alert.priority.toUpperCase()}</Text>
+                <Text style={styles(colors).priorityText}>{alert.priority.toUpperCase()}</Text>
               </View>
             )}
           </View>
 
-          <Text style={[styles.userName, isCompleted && styles.completedText]}>
-            {alert.user_name}
+          <Text style={[styles(colors).userName, isCompleted && styles(colors).completedText]}>
+            {getOfficerDisplayName()}
           </Text>
-          <Text style={[styles.message, isCompleted && styles.completedText]} numberOfLines={2}>
+          
+          {/* Location indicator removed - frontend no longer displays GPS coordinates */}
+          <Text style={[styles(colors).message, isCompleted && styles(colors).completedText]} numberOfLines={2}>
             {alert.message}
           </Text>
 
-          <Text style={[styles.timestamp, isCompleted && styles.completedText]}>
+          <Text style={[styles(colors).timestamp, isCompleted && styles(colors).completedText]}>
             {formatExactTime(alert.created_at || alert.timestamp)}
           </Text>
-          <Text style={[styles.relativeTime, isCompleted && styles.completedText]}>
+          <Text style={[styles(colors).relativeTime, isCompleted && styles(colors).completedText]}>
             {formatRelativeTime(alert.created_at || alert.timestamp)}
           </Text>
         </View>
 
         {/* Bottom buttons section */}
         {isCompleted ? (
-          <View style={styles.completedActions}>
-            <View style={styles.solvedBadge}>
+          <View style={styles(colors).completedActions}>
+            <View style={styles(colors).solvedBadge}>
               <Icon name="check-circle" size={18} color={colors.successGreen} />
-              <Text style={styles.solvedBadgeText}>SOLVED</Text>
+              <Text style={styles(colors).solvedBadgeText}>SOLVED</Text>
             </View>
           </View>
         ) : isAccepted ? (
-          <View style={styles.acceptedActions}>
+          <View style={styles(colors).acceptedActions}>
             {onSolve ? (
               <TouchableOpacity
-                style={styles.solveButton}
+                style={styles(colors).solveButton}
                 onPress={() => onSolve(alert)}
                 activeOpacity={0.7}
               >
                 <Icon name="check-circle" size={18} color={colors.white} />
-                <Text style={styles.solveButtonText}>MARK SOLVED</Text>
+                <Text style={styles(colors).solveButtonText}>MARK SOLVED</Text>
               </TouchableOpacity>
             ) : (
-              <View style={styles.acceptedBadge}>
+              <View style={styles(colors).acceptedBadge}>
                 <Icon name="check-circle" size={18} color={colors.successGreen} />
-                <Text style={styles.acceptedText}>RESPOND ACCEPTED</Text>
+                <Text style={styles(colors).acceptedText}>RESPOND ACCEPTED</Text>
               </View>
             )}
           </View>
         ) : (
-          <View style={styles.bottomButtonsContainer}>
-            <TouchableOpacity
-              style={[
-                styles.respondButtonBottom,
-                isEmergency && styles.respondButtonBottomEmergency,
-              ]}
-              onPress={() => onRespond(alert)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.respondButtonBottomText}>RESPOND</Text>
-            </TouchableOpacity>
-            {onDelete && (
+          <>
+            {/* Top row: Delete button only */}
+            <View style={styles(colors).topButtonsContainer}>
+              {onDelete && (
+                <TouchableOpacity
+                  style={styles(colors).deleteButtonTop}
+                  onPress={handleDelete}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="delete" size={18} color={colors.emergencyRed} />
+                  <Text style={styles(colors).deleteButtonTextTop}>DELETE</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            {/* Bottom row: Respond button - Show for all pending alerts */}
+            <View style={styles(colors).respondButtonContainer}>
               <TouchableOpacity
-                style={styles.deleteButtonBottom}
-                onPress={handleDelete}
+                style={[
+                  styles(colors).respondButtonBottom,
+                  isEmergency && styles(colors).respondButtonBottomEmergency,
+                ]}
+                onPress={() => onRespond(alert)}
                 activeOpacity={0.7}
               >
-                <Icon name="delete" size={18} color={colors.emergencyRed} />
-                <Text style={styles.deleteButtonText}>DELETE</Text>
+                <Text style={styles(colors).respondButtonBottomText}>RESPOND</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          </>
         )}
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   card: {
     borderRadius: 16,
     padding: 16,
@@ -257,7 +338,8 @@ const styles = StyleSheet.create({
     ...shadows.emergency,
   },
   completedCard: {
-    opacity: 0.6,
+    // Remove opacity reduction to keep visual consistency
+    // opacity: 0.6,
   },
   leftAccent: {
     position: 'absolute',
@@ -295,7 +377,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   alertTypeContainer: {
     flexDirection: 'row',
@@ -315,7 +397,7 @@ const styles = StyleSheet.create({
   alertTypeDescription: {
     fontSize: 11,
     fontWeight: '400',
-    color: colors.captionText,
+    color: colors.lightText,
     lineHeight: 14,
   },
   priorityBadge: {
@@ -329,6 +411,9 @@ const styles = StyleSheet.create({
   },
   priorityMedium: {
     backgroundColor: 'rgba(251, 191, 36, 0.15)',
+  },
+  priorityLow: {
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
   },
   priorityText: {
     fontSize: 10,
@@ -353,17 +438,19 @@ const styles = StyleSheet.create({
   timestamp: {
     fontSize: 12,
     fontWeight: '400',
-    color: colors.captionText,
+    color: colors.lightText,
   },
   relativeTime: {
     fontSize: 11,
     fontWeight: '400',
-    color: colors.captionText,
+    color: colors.lightText,
     marginTop: 2,
-    opacity: 0.8,
+    // Remove opacity reduction for visual consistency
+    // opacity: 0.8,
   },
   completedText: {
-    opacity: 0.7,
+    // Remove opacity reduction to keep visual consistency
+    // opacity: 0.7,
   },
   bottomButtonsContainer: {
     flexDirection: 'row',
@@ -371,43 +458,141 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border || '#E5E7EB',
+    borderTopColor: colors.border,
   },
   respondButtonBottom: {
     flex: 1,
     height: 44,
-    backgroundColor: colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
   },
   respondButtonBottomEmergency: {
-    backgroundColor: colors.emergencyRed,
+    backgroundColor: '#DC2626',
   },
   respondButtonBottomText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.white,
+    color: colors.darkText,
     letterSpacing: 0.5,
   },
   deleteButtonBottom: {
     flex: 1,
     height: 44,
     borderRadius: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: '#EF4444',
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: '#DC2626',
     gap: 6,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   deleteButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: colors.emergencyRed,
+    fontWeight: '700',
+    color: '#FFFFFF',
     letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  updateButtonBottom: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#D97706',
+    gap: 6,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  updateButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // New layout styles
+  topButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#6B7280',
+  },
+  updateButtonTop: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#D97706',
+    gap: 6,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  updateButtonTextTop: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  deleteButtonTop: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    gap: 6,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  deleteButtonTextTop: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  respondButtonContainer: {
+    marginTop: 8,
   },
   completedActions: {
     flexDirection: 'row',
@@ -416,14 +601,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border || '#E5E7EB',
+    borderTopColor: colors.border,
   },
   solvedBadge: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.badgeGreenBg,
+    backgroundColor: '#D1FAE5',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -432,7 +617,7 @@ const styles = StyleSheet.create({
   solvedBadgeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.successGreen,
+    color: '#10B981',
     letterSpacing: 0.5,
   },
   acceptedActions: {
@@ -442,14 +627,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border || '#E5E7EB',
+    borderTopColor: colors.border,
   },
   acceptedBadge: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.badgeGreenBg,
+    backgroundColor: '#D1FAE5',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -458,13 +643,13 @@ const styles = StyleSheet.create({
   acceptedText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.successGreen,
+    color: '#10B981',
     letterSpacing: 0.5,
   },
   solveButton: {
     width: '100%',
     height: 44,
-    backgroundColor: colors.successGreen,
+    backgroundColor: '#10B981',
     borderRadius: 8,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -475,7 +660,7 @@ const styles = StyleSheet.create({
   solveButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.white,
+    color: colors.darkText,
     letterSpacing: 0.5,
   },
 });

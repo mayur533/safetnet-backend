@@ -1,13 +1,14 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from users.models import SecurityOfficer
+# SecurityOfficer model removed - using User with role='security_officer' instead
+# from users.models import SecurityOfficer
 from security_app.models import OfficerProfile
 
 User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = 'Check user status, SecurityOfficer profile, and OfficerProfile'
+    help = 'Check user status, OfficerProfile, and User role (legacy SecurityOfficer model deprecated)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -54,61 +55,47 @@ class Command(BaseCommand):
         self.stdout.write(f'   Date Joined: {user.date_joined}')
         self.stdout.write(f'   Last Login: {user.last_login or "Never"}')
         
-        # Check SecurityOfficer profile
-        try:
-            officer = SecurityOfficer.objects.get(username=user.username)
-            self.stdout.write(f'\n👮 SecurityOfficer Profile:')
-            self.stdout.write(f'   ✅ EXISTS')
-            self.stdout.write(f'   Name: {officer.name}')
-            self.stdout.write(f'   Email: {officer.email}')
-            self.stdout.write(f'   Contact: {officer.contact}')
-            self.stdout.write(f'   Is Active (Officer): {"✅ YES" if officer.is_active else "❌ NO"}')
-            self.stdout.write(f'   Organization: {officer.organization.name if officer.organization else "None"}')
+        # Check User role instead of SecurityOfficer profile
+        if user.role == 'security_officer':
+            self.stdout.write(f'\n👮 Security Officer Status:')
+            self.stdout.write(f'   ✅ User has security_officer role')
+            self.stdout.write(f'   Name: {user.get_full_name() or user.username}')
+            self.stdout.write(f'   Email: {user.email}')
             
-            if officer.assigned_geofence:
-                self.stdout.write(f'   Assigned Geofence: {officer.assigned_geofence.name} (ID: {officer.assigned_geofence.id})')
-            else:
-                self.stdout.write(f'   Assigned Geofence: ❌ NONE')
-            
-            # Check OfficerProfile (from security_app)
+            # Check OfficerProfile
             try:
-                profile = OfficerProfile.objects.get(officer=officer)
-                self.stdout.write(f'\n📱 OfficerProfile (security_app):')
-                self.stdout.write(f'   ✅ EXISTS')
-                self.stdout.write(f'   On Duty: {"✅ YES" if profile.on_duty else "❌ NO"}')
-                self.stdout.write(f'   Last Location: ({profile.last_latitude}, {profile.last_longitude})' if profile.last_latitude and profile.last_longitude else '   Last Location: None')
-                self.stdout.write(f'   Last Seen: {profile.last_seen_at or "Never"}')
-                self.stdout.write(f'   Battery Level: {profile.battery_level or "N/A"}%')
+                profile = OfficerProfile.objects.get(officer=user)
+                self.stdout.write(f'   ✅ OfficerProfile exists')
+                self.stdout.write(f'   On Duty: {"Yes" if profile.on_duty else "No"}')
+                if profile.last_seen_at:
+                    self.stdout.write(f'   Last Seen: {profile.last_seen_at}')
+                else:
+                    self.stdout.write(f'   Last Seen: Never')
             except OfficerProfile.DoesNotExist:
-                self.stdout.write(f'\n📱 OfficerProfile (security_app):')
-                self.stdout.write(f'   ❌ DOES NOT EXIST')
+                self.stdout.write(f'   ❌ OfficerProfile DOES NOT EXIST')
                 self.stdout.write(self.style.WARNING('   ⚠️  OfficerProfile needs to be created!'))
-                
-        except SecurityOfficer.DoesNotExist:
-            self.stdout.write(f'\n👮 SecurityOfficer Profile:')
-            self.stdout.write(f'   ❌ DOES NOT EXIST')
-            self.stdout.write(self.style.ERROR('   ❌ SecurityOfficer record needs to be created!'))
+        else:
+            self.stdout.write(f'\n👮 Security Officer Status:')
+            self.stdout.write(f'   ❌ User is not a security officer (role: {user.role})')
         
         # Summary
         self.stdout.write(f'\n📊 Summary:')
+        
         issues = []
         if not user.is_active:
             issues.append("User is not active")
-        try:
-            officer = SecurityOfficer.objects.get(username=user.username)
-            if not officer.is_active:
-                issues.append("SecurityOfficer is not active")
-            if not officer.assigned_geofence:
-                issues.append("No geofence assigned")
+        
+        if user.role == 'security_officer':
             try:
-                profile = OfficerProfile.objects.get(officer=officer)
+                profile = OfficerProfile.objects.get(officer=user)
+                if not profile.on_duty:
+                    issues.append("Officer is not on duty")
             except OfficerProfile.DoesNotExist:
                 issues.append("OfficerProfile missing")
-        except SecurityOfficer.DoesNotExist:
-            issues.append("SecurityOfficer profile missing")
+        else:
+            issues.append(f"User is not a security officer (role: {user.role})")
         
         if issues:
             self.stdout.write(self.style.ERROR(f'   ❌ Issues found: {", ".join(issues)}'))
         else:
             self.stdout.write(self.style.SUCCESS(f'   ✅ All checks passed!'))
-

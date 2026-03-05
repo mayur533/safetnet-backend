@@ -55,4 +55,10 @@ urlpatterns = [
     
     # Analytics
     path('analytics/data/', views.analytics_data, name='analytics_data'),
+    
+    # ==================== SUBADMIN GEOFENCE ASSIGNMENT APIS ====================
+    # These are action methods on SecurityOfficerViewSet, registered via router
+    # POST /api/subadmin/officers/{officer_id}/assign_geofence/ - Assign geofence to officer
+    # GET /api/subadmin/officers/{officer_id}/geofences/ - Get officer's assigned geofences
+    # PATCH /api/subadmin/officers/{officer_id}/geofences/{geofence_id}/ - Deactivate assignment
 ]

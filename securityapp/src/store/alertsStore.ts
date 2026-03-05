@@ -3,7 +3,7 @@ import { Alert } from '../types/alert.types';
 
 interface AlertsState {
   // State
-  alerts: Alert[];
+  alerts: Alert[]; // Keep as array, handle undefined in component
   isLoading: boolean;
   error: string | null;
   lastUpdated: string | null;
@@ -11,12 +11,13 @@ interface AlertsState {
   // Actions
   fetchAlerts: () => Promise<void>;
   createAlert: (alertData: {
-    alert_type: 'emergency' | 'security' | 'general';
+    alert_type: 'emergency' | 'security' | 'general' | 'area_user_alert';
     message: string;
     description?: string;
-    latitude?: number;
-    longitude?: number;
-    location?: string;
+    location_lat?: number;
+    location_long?: number;
+    priority?: 'high' | 'medium' | 'low';
+    expires_at?: string; // For area-based alerts
   }) => Promise<Alert>;
   updateAlert: (id: string | number, updateData: Partial<Alert>) => Promise<void>;
   deleteAlert: (id: string | number) => Promise<void>;
@@ -30,58 +31,85 @@ interface AlertsState {
   // Computed properties
   getRecentAlerts: (limit?: number) => Alert[];
   getAlertById: (id: string | number) => Alert | undefined;
+  getPendingAlertsCount: () => number;
+  getResolvedAlertsCount: () => number;
 }
 
 export const useAlertsStore = create<AlertsState>((set, get) => ({
-  // Initial state
+  // Initial state - start with empty array
   alerts: [],
   isLoading: false,
   error: null,
   lastUpdated: null,
 
-  // Fetch alerts from API
+  // Fetch alerts from API with backend-authoritative area filtering
   fetchAlerts: async () => {
+    const { alerts, lastUpdated } = get();
+    
+    // Skip fetch if we have recent data (less than 30 seconds old)
+    const now = new Date();
+    const lastUpdateTime = lastUpdated ? new Date(lastUpdated) : new Date(0);
+    const timeSinceLastUpdate = now.getTime() - lastUpdateTime.getTime();
+    const thirtySeconds = 30 * 1000;
+    
+    if (alerts.length > 0 && timeSinceLastUpdate < thirtySeconds) {
+      console.log('📋 Using cached alerts data (recently updated)');
+      return;
+    }
+
     set({ isLoading: true, error: null });
 
     try {
-      console.log('🔄 Fetching alerts from API...');
-      const { alertService } = await import('../api/services/alertService');
-      const alerts = await alertService.getAlerts();
+      console.log('🔄 Fetching alerts from API with backend-authoritative area filtering...');
+      console.log(`🔐 Backend will identify officer from authentication context`);
+      
+      // Use the new backend-authoritative alert service
+      const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
+      const alerts = await alertServiceWithGeofenceFilter.getAlerts();
 
+      // Store the full alerts list returned from API without filtering
       set({
-        alerts,
+        alerts: alerts,
         isLoading: false,
         error: null,
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Fetched ${alerts.length} alerts from API`);
-      if (alerts.length > 0) {
-        console.log('📋 Sample alerts from API:');
-        alerts.slice(0, 3).forEach((alert, index) => {
-          console.log(`   ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 30)}..." (${alert.status})`);
-        });
-      }
+      console.log(`✅ Fetched ${alerts.length} alerts, stored all alerts including officer-created`);
     } catch (error: any) {
-      console.error('❌ Failed to fetch alerts:', error);
+      console.error('❌ Failed to fetch alerts with backend-authoritative filtering:', error);
+      
+      // Handle specific error cases
+      let errorMessage = 'Failed to fetch alerts';
+      if (error?.message?.includes('401') || error?.message?.includes('Authentication')) {
+        errorMessage = 'Authentication expired. Please login again.';
+      } else if (error?.message?.includes('403')) {
+        errorMessage = 'Access denied. Please check your permissions.';
+      } else if (error?.message?.includes('404')) {
+        errorMessage = 'Alerts service not found. Please check server connection.';
+      } else if (error?.message?.includes('500')) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       // IMPORTANT: Do NOT clear existing alerts on fetch error
       // Keep existing alerts so they don't disappear from UI
       set({
         isLoading: false,
-        error: error.message || 'Failed to fetch alerts'
+        error: errorMessage
       });
     }
   },
-
 
   // Create alert with optimistic update
   createAlert: async (alertData) => {
     console.log('🚀 Creating alert via API:', alertData);
 
     try {
-      // Make API call first (no optimistic updates)
-      const { alertService } = await import('../api/services/alertService');
-      const createdAlert = await alertService.createAlert(alertData);
+      // Make API call first (no optimistic updates) - use backend-authoritative service
+      const { alertServiceWithGeofenceFilter } = await import('../api/services/alertServiceWithGeofenceFilter');
+      const createdAlert = await alertServiceWithGeofenceFilter.createAlert(alertData);
       console.log('✅ Alert created successfully via API:', createdAlert.id);
 
       // Add the real alert to the store
@@ -92,16 +120,33 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       }));
 
       console.log('📦 Alert added to store with real data');
+      console.log('🔄 Total alerts in store after creation:', get().alerts.length);
+      
+      // Log area-based alert specific information
+      if (createdAlert.alert_type === 'area_user_alert') {
+        console.log('📊 Area-based alert created:', {
+          id: createdAlert.id,
+          affected_users: createdAlert.affected_users_count,
+          notification_sent: createdAlert.notification_sent,
+          expires_at: createdAlert.expires_at
+        });
+      }
+      
+      // IMPORTANT: Fetch fresh data to ensure store is fully synchronized
+      // This prevents issues where some alerts might be missing from the UI
+      console.log('🔄 Fetching fresh alerts after creation to ensure synchronization...');
+      setTimeout(() => {
+        get().fetchAlerts();
+      }, 500); // Small delay to ensure backend has processed the creation
+      
       return createdAlert;
 
     } catch (error: any) {
       console.error('❌ Alert creation failed:', error);
       console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
-
-      set((state) => ({
-        error: error?.message || error?.response?.data?.detail || error?.response?.data?.message || 'Failed to create alert'
-      }));
-
+      
+      // Don't update store on error to keep existing alerts visible
+      set({ error: error.message || 'Failed to create alert' });
       throw error;
     }
   },
@@ -115,6 +160,14 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
 
     if (!originalAlert) {
       throw new Error(`Alert with id ${id} not found`);
+    }
+
+    // SAFETY GUARD: Only allow updates to USER-created alerts
+    if (originalAlert.created_by_role !== 'USER') {
+      console.warn(`🛡️ SAFETY GUARD: Blocked update attempt on ${originalAlert.created_by_role}-created alert ${id}`);
+      console.warn('   Only USER-created alerts can be updated');
+      // Abort locally without API call
+      return;
     }
 
     // Store original for rollback
@@ -190,29 +243,34 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       // Make actual API call for delete
       console.log('📡 Making API call to delete alert:', id);
       const { alertService } = await import('../api/services/alertService');
-      await alertService.deleteAlert(id);
+      const alertId = typeof id === 'string' ? parseInt(id) : id;
+      await alertService.deleteAlert(alertId);
       console.log('✅ Alert deleted successfully via API');
 
+      // Mark deletion as complete - no need to refresh since we already removed it
       set((state) => ({
         lastUpdated: new Date().toISOString()
       }));
 
     } catch (error: any) {
-      console.error('❌ Alert deletion failed, rolling back:', error);
-      console.error('Error details:', { message: error?.message, response: error?.response, stack: error?.stack });
-
-      // Handle specific backend limitation
-      let errorMessage = error?.message || 'Failed to delete alert';
-      if (error?.message?.includes('not yet available')) {
-        errorMessage = 'Delete functionality is not yet implemented on the backend. This feature will be available in a future update.';
+      // If it's a 404 error (alert doesn't exist), treat it as success
+      if (error?.response?.status === 404 || 
+          error?.status === 404 ||
+          (error?.message && error.message.includes('No SOSAlert matches the given query'))) {
+        console.log('✅ Alert already deleted - treating as success');
+        // Don't rollback since the alert is already gone
+        set((state) => ({
+          lastUpdated: new Date().toISOString()
+        }));
+        return;
       }
-
-      // Rollback: Add alert back
+      
+      // For any other error, rollback and show error
+      console.error('❌ Alert deletion failed, rolling back:', error);
       set((state) => ({
         alerts: [rollbackAlert, ...state.alerts],
-        error: errorMessage
+        error: error?.message || 'Failed to delete alert'
       }));
-
       throw error;
     }
   },
@@ -251,7 +309,8 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
       // Make actual API call for resolve
       console.log('📡 Making API call to resolve alert:', id);
       const { alertService } = await import('../api/services/alertService');
-      const resolvedAlert = await alertService.resolveAlert(id);
+      const alertId = typeof id === 'string' ? String(id) : id;
+      const resolvedAlert = await alertService.resolveAlert(alertId);
       console.log('✅ Alert resolved successfully via API:', resolvedAlert.id);
 
       // Replace optimistic update with real API response
@@ -292,109 +351,51 @@ export const useAlertsStore = create<AlertsState>((set, get) => ({
     const { alerts } = get();
     return alerts.find(alert => alert.id === id);
   },
+
+  getPendingAlertsCount: () => {
+    const { alerts } = get();
+    return alerts.filter(alert => alert.status === 'pending').length;
+  },
+
+  getResolvedAlertsCount: () => {
+    const { alerts } = get();
+    return alerts.filter(alert => 
+      alert.status === 'completed' || alert.status === 'resolved' || alert.status === 'accepted'
+    ).length;
+  },
 }));
 
-// Test function to verify error handling in alert operations
-export const testAlertErrorHandling = async () => {
-  console.log('🧪 TESTING ALERT ERROR HANDLING');
-
-  try {
-    // Test with invalid alert ID to trigger error
-    console.log('Testing update with invalid ID...');
-    await useAlertsStore.getState().updateAlert('invalid-id', { status: 'accepted' });
-  } catch (error) {
-    console.log('✅ Error handling test passed - error caught properly:', error?.message);
-  }
-
-  try {
-    console.log('Testing delete with invalid ID...');
-    await useAlertsStore.getState().deleteAlert('invalid-id');
-  } catch (error) {
-    console.log('✅ Error handling test passed - error caught properly:', error?.message);
-  }
-
-  return { success: true, message: 'Error handling tests completed' };
-};
-
-
-// Debug function to check current alert state
-export const debugAlertState = () => {
+// Debug function to track alert persistence issue
+export const debugAlertPersistence = () => {
   const state = useAlertsStore.getState();
-  console.log('🐛 DEBUG ALERT STATE:');
-  console.log(`   Total alerts: ${state.alerts.length}`);
-  console.log(`   Is loading: ${state.isLoading}`);
-  console.log(`   Error: ${state.error || 'none'}`);
-  console.log(`   Last updated: ${state.lastUpdated || 'never'}`);
-
+  console.log('🔍 ALERT PERSISTENCE DEBUG:');
+  console.log(`📊 Total alerts in store: ${state.alerts.length}`);
+  console.log(`🕒 Last updated: ${state.lastUpdated || 'never'}`);
+  console.log(`⚠️ Is loading: ${state.isLoading}`);
+  console.log(`❌ Error: ${state.error || 'none'}`);
+  
   if (state.alerts.length > 0) {
-    console.log('   📋 All alerts:');
+    console.log('📋 All alerts in store:');
     state.alerts.forEach((alert, index) => {
-      console.log(`      ${index + 1}. ID:${alert.id} "${alert.message?.substring(0, 40)}..." (${alert.status})`);
+      console.log(`   ${index + 1}. ID:${alert.id} Status:${alert.status} Type:${alert.alert_type} Created:${alert.created_at}`);
+    });
+    
+    // Check for duplicates
+    const ids = state.alerts.map(a => a.id);
+    const uniqueIds = Array.from(new Set(ids));
+    if (ids.length !== uniqueIds.length) {
+      console.log('⚠️ DUPLICATE ALERTS DETECTED!');
+    }
+    
+    // Sort by creation time to see newest
+    const sortedByCreated = [...state.alerts].sort((a, b) => 
+      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+    console.log('🕒 Newest 5 alerts:');
+    sortedByCreated.slice(0, 5).forEach((alert, index) => {
+      console.log(`   ${index + 1}. ID:${alert.id} Created:${alert.created_at}`);
     });
   } else {
-    console.log('   📋 No alerts in store');
-  }
-};
-
-// Test function to verify complete alert flow with instant UI updates
-export const testCompleteAlertFlow = async () => {
-  console.log('🧪 TESTING COMPLETE ALERT FLOW WITH INSTANT UI UPDATES');
-
-  try {
-    // Step 1: Check initial state
-    console.log('📊 STEP 1: Checking initial alerts state...');
-    const initialAlerts = useAlertsStore.getState().alerts;
-    console.log(`   Initial alerts count: ${initialAlerts.length}`);
-
-    // Step 2: Create alert (should appear instantly via optimistic update)
-    console.log('⚡ STEP 2: Creating alert with optimistic update...');
-    const createPromise = useAlertsStore.getState().createAlert({
-      alert_type: 'security',
-      message: 'Test Alert - Complete Flow Verification',
-      description: 'Testing instant UI updates across Dashboard and Alerts screens',
-    });
-
-    // Check immediate optimistic update
-    await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for optimistic update
-    const afterCreateAlerts = useAlertsStore.getState().alerts;
-    console.log(`   Alerts after optimistic create: ${afterCreateAlerts.length}`);
-    const optimisticAlert = afterCreateAlerts.find(a => a.message.includes('Complete Flow Verification'));
-    console.log(`   Optimistic alert found: ${!!optimisticAlert}`);
-
-    // Step 3: Wait for API completion
-    console.log('⏳ STEP 3: Waiting for API completion...');
-    const finalAlert = await createPromise;
-    console.log(`   Final alert created with ID: ${finalAlert.id}`);
-
-    // Step 4: Verify alert appears in recent alerts
-    console.log('📋 STEP 4: Checking recent alerts...');
-    const recentAlerts = useAlertsStore.getState().getRecentAlerts(5);
-    const alertInRecent = recentAlerts.find(a => a.id === finalAlert.id);
-    console.log(`   Alert appears in recent alerts: ${!!alertInRecent}`);
-
-    // Step 5: Simulate screen refresh (like navigating between screens)
-    console.log('🔄 STEP 5: Simulating screen refresh...');
-    await useAlertsStore.getState().fetchAlerts();
-    const refreshedAlerts = useAlertsStore.getState().alerts;
-    const alertPersists = refreshedAlerts.find(a => a.id === finalAlert.id);
-    console.log(`   Alert persists after refresh: ${!!alertPersists}`);
-
-    // Step 6: Final verification
-    const success = !!optimisticAlert && !!alertInRecent && !!alertPersists;
-    console.log(`🎯 TEST RESULT: ${success ? '✅ PASSED' : '❌ FAILED'}`);
-
-    return {
-      success,
-      initialCount: initialAlerts.length,
-      optimisticCount: afterCreateAlerts.length,
-      finalCount: refreshedAlerts.length,
-      alertId: finalAlert.id,
-      inRecent: !!alertInRecent,
-      persists: !!alertPersists
-    };
-
-  } catch (error) {
-    console.error('❌ COMPLETE FLOW TEST FAILED:', error);
-    return { success: false, error: error.message };
+    console.log('📋 No alerts in store');
   }
 };

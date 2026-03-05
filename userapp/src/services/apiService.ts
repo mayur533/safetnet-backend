@@ -19,7 +19,7 @@ getAsyncStorage().then((storage) => {
 });
 
 // API Base URL configuration - use live server
-const API_BASE_URL = 'https://safetnet-backend.onrender.com/api/user';
+const API_BASE_URL = 'https://safetnet.onrender.com/api/user';
 
 // Get the working API base URL
 let cachedApiBaseUrl: string | null = null;
@@ -224,9 +224,9 @@ class ApiService {
     options: RequestInit = {}
   ): Promise<any> {
     const url = `${API_BASE_URL}${endpoint}`;
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     };
 
     if (this.accessToken) {
@@ -611,18 +611,17 @@ class ApiService {
   async getAlerts(): Promise<any> {
     const cacheKey = 'user_alerts';
     try {
-      // Use the admin alerts endpoint which filters by user's geofences
-      // The endpoint is at /api/auth/admin/alerts/
+      // Use the unified alerts endpoint at /api/user/alerts/
+      // This now returns alerts from the users_alert table filtered by user's geofences
       const baseUrl = await getApiBaseUrl();
-      const adminApiUrl = baseUrl.replace('/api/user', '/api/auth');
-      const url = `${adminApiUrl}/admin/alerts/`;
-      
+      const url = `${baseUrl}/alerts/`;
+
       console.log('[getAlerts] Fetching alerts from:', url);
-      
+
       return await cacheService.getOrFetch(
         cacheKey,
         async () => {
-          const headers: HeadersInit = {
+          const headers: Record<string, string> = {
             'Content-Type': 'application/json',
           };
           if (this.accessToken) {
@@ -631,14 +630,14 @@ class ApiService {
           } else {
             console.warn('[getAlerts] No access token available');
           }
-          
+
           const response = await fetch(url, {
             method: 'GET',
             headers,
           });
-          
+
           console.log('[getAlerts] Response status:', response.status);
-          
+
           if (!response.ok) {
             const text = await response.text();
             let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -651,11 +650,11 @@ class ApiService {
             console.error('[getAlerts] Error response:', errorMessage);
             throw new Error(errorMessage);
           }
-          
+
           const data = await response.json();
           console.log('[getAlerts] Response data type:', Array.isArray(data) ? 'array' : typeof data);
           console.log('[getAlerts] Has results field:', 'results' in data);
-          
+
           // Handle paginated response (results field) or direct array
           const alerts = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
           console.log('[getAlerts] Returning', alerts.length, 'alerts');
@@ -878,7 +877,7 @@ class ApiService {
     return cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/nearby_help/?latitude=${latitude}&longitude=${longitude}&radius=${radius}`),
-      { compareByHash: true, ttlMinutes: 30 } // Cache for 30 minutes as locations don't change frequently
+      { compareByHash: true, ttl: 30 * 60 * 1000 } // Cache for 30 minutes as locations don't change frequently
     );
   }
 
@@ -890,7 +889,7 @@ class ApiService {
     return cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/security_officers/?latitude=${latitude}&longitude=${longitude}`),
-      {compareByHash: true, ttlMinutes: 5},
+      {compareByHash: true, ttl: 5 * 60 * 1000},
     );
   }
 
@@ -902,7 +901,7 @@ class ApiService {
     return cacheService.getOrFetch(
       cacheKey,
       () => this.request('/safety_tips/'),
-      { compareByHash: true, ttlMinutes: 60 } // Cache for 1 hour
+      { compareByHash: true, ttl: 60 * 60 * 1000 } // Cache for 1 hour
     );
   }
 
@@ -935,7 +934,7 @@ class ApiService {
       return await cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/available_users/?${params.toString()}`),
-      { compareByHash: true, ttlMinutes: 2 } // Cache for 2 minutes (shorter due to search)
+      { compareByHash: true, ttl: 2 * 60 * 1000 } // Cache for 2 minutes (shorter due to search)
     );
     } catch (error: any) {
       console.error('Error fetching available users:', error);
@@ -1014,7 +1013,7 @@ class ApiService {
     return cacheService.getOrFetch(
       cacheKey,
       () => this.request(`/${userId}/chat_groups/${groupId}/messages/`),
-      { compareByHash: true, ttlMinutes: 0 } // Don't cache messages for long
+      { compareByHash: true, ttl: 0 } // Don't cache messages for long
     );
   }
 
@@ -1040,7 +1039,7 @@ class ApiService {
   async sendChatMessageWithFile(userId: number, groupId: number, formData: FormData): Promise<any> {
     const baseUrl = await getApiBaseUrl();
     const url = `${baseUrl}/${userId}/chat_groups/${groupId}/messages/`;
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
 
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;

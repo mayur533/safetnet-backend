@@ -5,12 +5,14 @@ import { AuthNavigator } from './AuthNavigator';
 import { MainNavigator } from './MainNavigator';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { clearNavigateToSOS, logout } from '../store/slices/authSlice';
+import { useTheme } from '../contexts/ThemeContext';
 
 export const AppNavigator = () => {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const shouldNavigateToSOS = useAppSelector((state) => state.auth.shouldNavigateToSOS || false);
   const dispatch = useAppDispatch();
   const navigationRef = useRef<any>(null);
+  const { colors, currentTheme } = useTheme();
 
   console.log('[AppNavigator] isAuthenticated:', isAuthenticated, 'shouldNavigateToSOS:', shouldNavigateToSOS);
 
@@ -47,7 +49,38 @@ export const AppNavigator = () => {
   }, [dispatch]);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer 
+      ref={navigationRef}
+      theme={{
+        dark: currentTheme === 'dark',
+        colors: {
+          primary: colors.primary,
+          background: colors.background,
+          card: colors.white,
+          text: colors.darkText,
+          border: colors.border,
+          notification: colors.primary,
+        },
+        fonts: {
+          regular: {
+            fontFamily: 'System',
+            fontWeight: '400' as const,
+          },
+          medium: {
+            fontFamily: 'System',
+            fontWeight: '500' as const,
+          },
+          bold: {
+            fontFamily: 'System',
+            fontWeight: '700' as const,
+          },
+          heavy: {
+            fontFamily: 'System',
+            fontWeight: '700' as const,
+          },
+        },
+      }}
+    >
       {isAuthenticated ? <MainNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );

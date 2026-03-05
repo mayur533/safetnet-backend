@@ -1,5 +1,6 @@
 export interface SecurityOfficer {
-  security_id: string;
+  id: number; // Backend User.id (numeric)
+  security_id: string; // Security officer ID (string)
   name: string | undefined;
   email_id: string;
   mobile: string;
@@ -17,6 +18,9 @@ export interface SecurityOfficer {
     id?: string | number;
     name?: string;
   };
+  // Additional fields from backend
+  date_joined?: string;
+  last_login?: string;
 }
 
 export interface OfficerStats {

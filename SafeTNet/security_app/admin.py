@@ -1,11 +1,11 @@
 from django.contrib import admin
-from .models import SOSAlert, Case, Incident, OfficerProfile, Notification
+from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, OfficerAlert, AlertRead
 
 
 @admin.register(SOSAlert)
 class SOSAlertAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'geofence', 'status', 'priority', 'assigned_officer', 'is_deleted', 'created_at')
-    list_filter = ('status', 'priority', 'is_deleted')
+    list_display = ('id', 'user', 'created_by_role', 'geofence', 'status', 'priority', 'assigned_officer', 'is_deleted', 'created_at')
+    list_filter = ('status', 'priority', 'created_by_role', 'is_deleted')
     search_fields = ('user__username', 'assigned_officer__name')
 
 
@@ -36,3 +36,11 @@ class NotificationAdmin(admin.ModelAdmin):
     search_fields = ('title', 'message', 'officer__name')
     readonly_fields = ('created_at', 'read_at')
 
+@admin.register(OfficerAlert)
+class OfficerAlertAdmin(admin.ModelAdmin):
+    list_display = ['title', 'alert_type', 'officer', 'is_broadcast', 'created_at', 'is_active']
+    # ... (Paste the rest of the OfficerAlertAdmin class from 4_urls_and_admin.py)
+
+@admin.register(AlertRead)
+class AlertReadAdmin(admin.ModelAdmin):
+    list_display = ['user', 'officer_alert', 'read_at']

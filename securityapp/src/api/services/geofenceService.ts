@@ -1,21 +1,14 @@
 import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
+import { Geofence } from '../../types/alert.types';
 
-export interface Geofence {
-  id: string;
-  name: string;
-  description?: string;
-  center_latitude: number;
-  center_longitude: number;
-  radius?: number; // For circular geofences
-  polygon_json?: {
-    type: string;
-    coordinates: number[][][];
-  }; // For polygon geofences
-  geofence_type: 'circle' | 'polygon';
-  status: 'active' | 'inactive';
-  created_at: string;
-  updated_at?: string;
+// Location data interface for backend responses only
+export interface LocationData {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  timestamp?: string;
+  address?: string;
 }
 
 export interface UserInArea {
@@ -29,6 +22,7 @@ export interface UserInArea {
   is_inside: boolean;
 }
 
+// Live location session interface for backend responses only
 export interface LiveLocationSession {
   id: string;
   officer_id: string;
@@ -39,86 +33,52 @@ export interface LiveLocationSession {
   last_location?: LocationData;
 }
 
-// Location service methods for live location tracking
+// Location tracking disabled - frontend no longer handles GPS
 export const locationService = {
-  // Start a live location session
+  // Start live location - disabled (backend handles location tracking)
   startLiveLocation: async (geofenceId: string): Promise<LiveLocationSession> => {
-    try {
-      const payload = {
-        geofence_id: geofenceId,
-        officer_id: 'current_officer' // This should come from auth context
-      };
-
-      const response = await apiClient.post(API_ENDPOINTS.START_LIVE_LOCATION, payload);
-      return response.data;
-    } catch (error: any) {
-      console.error('Failed to start live location:', error.message || error);
-      throw error;
-    }
+    console.log('🚫 Location tracking disabled - frontend no longer handles live location');
+    // Return neutral session object instead of throwing
+    return {
+      id: 'disabled',
+      officer_id: 'disabled',
+      geofence_id: geofenceId,
+      start_time: new Date().toISOString(),
+      status: 'stopped' as const,
+    };
   },
 
-  // Update live location
+  // Update live location - disabled (backend handles location tracking)
   updateLiveLocation: async (sessionId: string, locationData: LocationData): Promise<LiveLocationSession> => {
-    try {
-      const payload = {
-        latitude: locationData.latitude,
-        longitude: locationData.longitude,
-        accuracy: locationData.accuracy,
-        timestamp: locationData.timestamp || new Date().toISOString(),
-        address: locationData.address
-      };
-
-      const response = await apiClient.patch(
-        API_ENDPOINTS.UPDATE_LIVE_LOCATION.replace('{session_id}', sessionId),
-        payload
-      );
-      return response.data;
-    } catch (error: any) {
-      console.error('Failed to update live location:', error.message || error);
-      throw error;
-    }
+    console.log('🚫 Location tracking disabled - frontend no longer handles live location');
+    // Return neutral session object instead of throwing
+    return {
+      id: sessionId,
+      officer_id: 'disabled',
+      geofence_id: 'disabled',
+      start_time: new Date().toISOString(),
+      status: 'stopped' as const,
+    };
   },
 
-  // Stop live location session
+  // Stop live location - disabled (backend handles location tracking)
   stopLiveLocation: async (sessionId: string): Promise<LiveLocationSession> => {
-    try {
-      const response = await apiClient.delete(
-        API_ENDPOINTS.STOP_LIVE_LOCATION.replace('{session_id}', sessionId)
-      );
-      return response.data;
-    } catch (error: any) {
-      console.error('Failed to stop live location:', error.message || error);
-      throw error;
-    }
+    console.log('🚫 Location tracking disabled - frontend no longer handles live location');
+    // Return neutral session object instead of throwing
+    return {
+      id: sessionId,
+      officer_id: 'disabled',
+      geofence_id: 'disabled',
+      start_time: new Date().toISOString(),
+      status: 'stopped' as const,
+    };
   },
 
-  // Get current location (client-side GPS)
-  getCurrentLocation: async (): Promise<LocationData> => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported'));
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: new Date().toISOString()
-          });
-        },
-        (error) => {
-          reject(new Error(`Geolocation error: ${error.message}`));
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 30000
-        }
-      );
-    });
+  // Get current location - disabled (frontend no longer handles GPS)
+  getCurrentLocation: async (): Promise<LocationData | null> => {
+    console.log('🚫 GPS tracking disabled - frontend no longer handles location acquisition');
+    // Return null instead of throwing
+    return null;
   },
 };
 
@@ -183,51 +143,28 @@ export const geofenceService = {
     }
   },
 
-  // Check if point is inside geofence
+  // Check if point is inside geofence - disabled (backend handles geofence logic)
   isPointInGeofence: (latitude: number, longitude: number, geofence: Geofence): boolean => {
-    if (geofence.geofence_type === 'circle' && geofence.radius) {
-      // Circular geofence - calculate distance
-      const distance = geofenceService.calculateDistance(
-        { latitude, longitude },
-        { latitude: geofence.center_latitude, longitude: geofence.center_longitude }
-      );
-      return distance <= geofence.radius;
-    } else if (geofence.geofence_type === 'polygon' && geofence.polygon_json) {
-      // Polygon geofence - use point-in-polygon algorithm
-      return geofenceService.isPointInPolygon(latitude, longitude, geofence.polygon_json.coordinates[0]);
-    }
+    console.log('🚫 Geofence detection disabled - frontend no longer handles geofence calculations');
+    // Backend handles all geofence logic, frontend should not perform calculations
+    // Return false instead of throwing
     return false;
   },
 
-  // Point-in-polygon algorithm (Ray casting algorithm)
+  // Point-in-polygon algorithm - disabled (backend handles geofence logic)
   isPointInPolygon: (lat: number, lon: number, polygon: number[][]): boolean => {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i][1], yi = polygon[i][0]; // Note: GeoJSON uses [lng, lat]
-      const xj = polygon[j][1], yj = polygon[j][0];
-
-      if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
-        inside = !inside;
-      }
-    }
-    return inside;
+    console.log('🚫 Geofence detection disabled - frontend no longer handles polygon calculations');
+    // Backend handles all geofence logic, frontend should not perform calculations
+    // Return false instead of throwing
+    return false;
   },
 
-  // Calculate distance between two points (Haversine formula)
+  // Calculate distance between two points - disabled (backend handles location calculations)
   calculateDistance: (from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }): number => {
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = (to.latitude - from.latitude) * Math.PI / 180;
-    const dLon = (to.longitude - from.longitude) * Math.PI / 180;
-
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(from.latitude * Math.PI / 180) * Math.cos(to.latitude * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = R * c; // Distance in kilometers
-
-    return distance * 1000; // Convert to meters
+    console.log('🚫 Distance calculation disabled - frontend no longer handles location calculations');
+    // Backend handles all location calculations, frontend should not perform distance calculations
+    // Return 0 instead of throwing
+    return 0;
   },
 
   // Legacy methods for backward compatibility

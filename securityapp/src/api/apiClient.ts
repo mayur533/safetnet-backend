@@ -37,6 +37,19 @@ apiClient.interceptors.request.use(
         config.headers.Authorization = `Bearer ${token}`;
       }
 
+      // Debug logging for profile updates
+      if (config.url?.includes('/profile/') && config.method === 'patch') {
+        console.log(' [API] Profile Update Request:', JSON.stringify({
+          url: config.baseURL + config.url,
+          method: config.method,
+          data: config.data,
+          headers: {
+            ...config.headers,
+            Authorization: config.headers.Authorization ? '[REDACTED]' : 'NONE'
+          }
+        }, null, 2));
+      }
+
       return config;
     } catch (error) {
       console.error('[API] Error in request interceptor:', error);
@@ -49,6 +62,15 @@ apiClient.interceptors.request.use(
 // Response interceptor - Handle token refresh and errors
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
+    // Debug logging for profile updates
+    if (response.config.url?.includes('/profile/') && response.config.method === 'patch') {
+      console.log(' [API] Profile Update Response:', {
+        status: response.status,
+        data: response.data,
+        headers: response.headers
+      });
+    }
+    
     // Return clean response format
     return {
       ...response,
@@ -125,14 +147,14 @@ const formatApiError = (error: AxiosError): ApiError => {
 
     if (typeof data === 'string') {
       message = data;
-    } else if (data?.message) {
-      message = data.message;
-    } else if (data?.detail) {
-      message = data.detail;
-    } else if (data?.error) {
-      message = data.error;
-    } else if (status === 400 && data?.non_field_errors?.[0]) {
-      message = data.non_field_errors[0];
+    } else if (data && typeof data === 'object' && 'message' in data) {
+      message = String(data.message);
+    } else if (data && typeof data === 'object' && 'detail' in data) {
+      message = String(data.detail);
+    } else if (data && typeof data === 'object' && 'error' in data) {
+      message = String(data.error);
+    } else if (status === 400 && data && typeof data === 'object' && 'non_field_errors' in data && Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
+      message = String((data.non_field_errors[0] as string));
     } else if (status === 404) {
       message = 'Resource not found';
     } else if (status === 403) {
@@ -205,7 +227,9 @@ export const apiHelpers = {
 
   // Generic DELETE request
   delete: async (url: string): Promise<ApiResponse<null>> => {
-    const response = await apiClient.delete(url);
+    // Explicitly pass empty config to ensure NO request body is sent
+    // This prevents any data (including created_by_role) from being included
+    const response = await apiClient.delete(url, {});
     return {
       data: null,
       status: response.status,

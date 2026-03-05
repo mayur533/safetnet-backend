@@ -1,3 +1,18 @@
+export interface Geofence {
+  id: string;
+  name: string;
+  description?: string;
+  center_latitude: number;
+  center_longitude: number;
+  center_point?: number[]; // [latitude, longitude] from backend
+  radius?: number;
+  polygon_json?: number[][]; // [[lat, lng], [lat, lng], ...] - array format from backend
+  geofence_type: 'circle' | 'polygon';
+  status: 'active' | 'inactive';
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface Alert {
   id: number; // Backend returns integer IDs
   log_id: string;
@@ -6,21 +21,32 @@ export interface Alert {
   user_email: string;
   user_phone: string;
   user_image?: string;
-  alert_type: 'emergency' | 'normal' | 'security';
-  original_alert_type?: 'general' | 'warning' | 'emergency';
+  first_name?: string; // User's first name from backend
+  last_name?: string; // User's last name from backend
+  created_by_role?: 'USER' | 'OFFICER'; // Role of the user who created this alert (optional)
+  alert_type: 'emergency' | 'normal' | 'security' | 'area_user_alert';
+  original_alert_type?: 'general' | 'warning' | 'emergency' | 'area_user_alert';
   priority: 'high' | 'medium' | 'low';
   message: string;
+  description?: string; // Optional description field
   location: {
     latitude: number;
     longitude: number;
     address: string;
   };
+  location_lat: number;
+  location_long: number;
   distance?: number;
   timestamp: string;
-  status: 'pending' | 'accepted' | 'completed' | 'cancelled';
+  status: 'pending' | 'accepted' | 'completed' | 'resolved' | 'cancelled';
   geofence_id: string;
+  geofence?: Geofence; // Optional full geofence object
   created_at: string;
   updated_at?: string;
+  // Area-based alert specific fields
+  affected_users_count?: number;
+  notification_sent?: boolean;
+  expires_at?: string;
 }
 
 export interface AlertResponse {

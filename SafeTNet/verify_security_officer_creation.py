@@ -12,7 +12,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'SafeTNet.settings')
 django.setup()
 
 from django.contrib.auth import get_user_model
-from users.models import SecurityOfficer, Organization
+# SecurityOfficer model removed - using User with role='security_officer' instead
+# from users.models import SecurityOfficer, Organization
+from users.models import Organization
 from security_app.models import OfficerProfile
 
 User = get_user_model()
@@ -57,41 +59,29 @@ def verify_security_officer(username):
         print(f"   ⚠️  This officer cannot login via the security app")
         all_checks_passed = False
     
-    # Step 2: Check SecurityOfficer record
-    print("\n📋 STEP 2: Checking SecurityOfficer Record...")
-    try:
-        officer = SecurityOfficer.objects.get(username=username)
-        print(f"   ✅ SecurityOfficer record found:")
-        print(f"      - ID: {officer.id}")
-        print(f"      - Username: {officer.username}")
-        print(f"      - Name: {officer.name}")
-        print(f"      - Email: {officer.email}")
-        print(f"      - Contact: {officer.contact}")
-        print(f"      - Organization: {officer.organization.name if officer.organization else 'None'}")
-        print(f"      - Is Active: {officer.is_active}")
-        print(f"      - Created By: {officer.created_by.username if officer.created_by else 'None'}")
-        print(f"      - Created At: {officer.created_at}")
-        
-        # Verify organization matches (only if user exists)
-        if user:
-            if user.organization != officer.organization:
-                print(f"      ❌ ERROR: User and SecurityOfficer have different organizations")
-                all_checks_passed = False
-            else:
-                print(f"      ✅ Organization matches User record")
-        else:
-            print(f"      ⚠️  Cannot verify organization match - User record not found")
-            
-    except SecurityOfficer.DoesNotExist:
-        print(f"   ❌ ERROR: SecurityOfficer record NOT found for username '{username}'")
-        print(f"   ⚠️  This means the security officer creation failed at SecurityOfficer creation step")
+    # Step 2: Check User role (replacing SecurityOfficer record)
+    print("\n📋 STEP 2: Checking User Role (Security Officer)...")
+    if user and user.role == 'security_officer':
+        print(f"   ✅ User has security_officer role:")
+        print(f"      - ID: {user.id}")
+        print(f"      - Username: {user.username}")
+        print(f"      - Name: {user.get_full_name() or 'N/A'}")
+        print(f"      - Email: {user.email}")
+        print(f"      - Phone: {user.phone or 'N/A'}")
+        print(f"      - Organization: {user.organization.name if user.organization else 'None'}")
+        print(f"      - Is Active: {user.is_active}")
+        print(f"      - Created At: {user.created_at}")
+        print(f"      - Role: {user.role}")
+    else:
+        print(f"   ❌ ERROR: User with security_officer role NOT found for username '{username}'")
+        print(f"   ⚠️  This means the security officer creation failed or user doesn't have correct role")
         all_checks_passed = False
     
     # Step 3: Check OfficerProfile record
     print("\n📋 STEP 3: Checking OfficerProfile Record...")
     try:
-        if 'officer' in locals():
-            profile = OfficerProfile.objects.get(officer=officer)
+        if user and user.role == 'security_officer':
+            profile = OfficerProfile.objects.get(officer=user)
             print(f"   ✅ OfficerProfile record found:")
             print(f"      - Officer ID: {profile.officer.id}")
             print(f"      - On Duty: {profile.on_duty}")
@@ -100,41 +90,32 @@ def verify_security_officer(username):
             print(f"      - Last Latitude: {profile.last_latitude if hasattr(profile, 'last_latitude') else 'N/A'}")
             print(f"      - Last Longitude: {profile.last_longitude if hasattr(profile, 'last_longitude') else 'N/A'}")
         else:
-            print(f"   ⚠️  Skipping: SecurityOfficer record not found")
+            print(f"   ⚠️  Skipping: User with security_officer role not found")
             all_checks_passed = False
     except OfficerProfile.DoesNotExist:
-        print(f"   ❌ ERROR: OfficerProfile record NOT found for officer ID {officer.id if 'officer' in locals() else 'N/A'}")
+        print(f"   ❌ ERROR: OfficerProfile record NOT found for user {user.username if user else 'N/A'}")
         print(f"   ⚠️  This means the security officer creation failed at OfficerProfile creation step")
         all_checks_passed = False
     
-    # Step 4: Verify relationships
-    print("\n📋 STEP 4: Verifying Relationships...")
-    if user and 'officer' in locals():
-        # Check username match
-        if user.username != officer.username:
-            print(f"   ❌ ERROR: Username mismatch - User: '{user.username}', SecurityOfficer: '{officer.username}'")
+    # Step 4: Verify OfficerProfile relationship
+    print("\n📋 STEP 4: Verifying OfficerProfile Relationship...")
+    if user and user.role == 'security_officer':
+        try:
+            profile = OfficerProfile.objects.get(officer=user)
+            print(f"   ✅ OfficerProfile correctly linked to User:")
+            print(f"      - User ID: {user.id}")
+            print(f"      - OfficerProfile ID: {profile.id}")
+            print(f"      - OfficerProfile.officer ID: {profile.officer.id}")
+            if user.id == profile.officer.id:
+                print(f"   ✅ User and OfficerProfile IDs match")
+            else:
+                print(f"   ❌ ERROR: User and OfficerProfile IDs don't match")
+                all_checks_passed = False
+        except OfficerProfile.DoesNotExist:
+            print(f"   ❌ ERROR: OfficerProfile not found for user")
             all_checks_passed = False
-        else:
-            print(f"   ✅ Usernames match: '{user.username}'")
-        
-        # Check email match (if both have emails)
-        if user.email and officer.email and user.email != officer.email:
-            print(f"   ⚠️  WARNING: Email mismatch - User: '{user.email}', SecurityOfficer: '{officer.email}'")
-            print(f"      (This might be okay if emails are optional)")
-        elif user.email == officer.email:
-            print(f"   ✅ Emails match: '{user.email}'")
-        
-        # Check organization match
-        if user.organization and officer.organization and user.organization != officer.organization:
-            print(f"   ❌ ERROR: Organization mismatch")
-            all_checks_passed = False
-        else:
-            print(f"   ✅ Organizations match")
     else:
-        if not user:
-            print(f"   ⚠️  Skipping relationship checks - User record not found")
-        if 'officer' not in locals():
-            print(f"   ⚠️  Skipping relationship checks - SecurityOfficer record not found")
+        print(f"   ⚠️  Skipping relationship checks - User with security_officer role not found")
         all_checks_passed = False
     
     # Step 5: Test login capability
@@ -155,7 +136,7 @@ def verify_security_officer(username):
     print("\n" + "=" * 70)
     if all_checks_passed:
         print("✅ VERIFICATION SUCCESSFUL!")
-        print("   All required records (User, SecurityOfficer, OfficerProfile) exist")
+        print("   All required records (User with security_officer role, OfficerProfile) exist")
         print("   Relationships are correctly established")
         print("   Security officer can login via the security app")
     else:
@@ -172,26 +153,20 @@ def list_all_security_officers():
     print("📋 ALL SECURITY OFFICERS IN DATABASE")
     print("=" * 70)
     
-    officers = SecurityOfficer.objects.select_related('organization', 'created_by').all()
+    officers = User.objects.filter(role='security_officer').select_related('organization').all()
     
     if not officers.exists():
         print("\n   ⚠️  No security officers found in database")
         return
     
     for idx, officer in enumerate(officers, 1):
-        print(f"\n{idx}. {officer.name} (Username: {officer.username})")
+        print(f"\n{idx}. {officer.get_full_name() or officer.username} (Username: {officer.username})")
         print(f"   - ID: {officer.id}")
         print(f"   - Email: {officer.email}")
+        print(f"   - Phone: {officer.phone or 'N/A'}")
         print(f"   - Organization: {officer.organization.name if officer.organization else 'None'}")
-        print(f"   - Created By: {officer.created_by.username if officer.created_by else 'None'}")
         print(f"   - Is Active: {officer.is_active}")
-        
-        # Check if User record exists
-        try:
-            user = User.objects.get(username=officer.username)
-            print(f"   - User Record: ✅ Exists (Role: {user.role}, Active: {user.is_active})")
-        except User.DoesNotExist:
-            print(f"   - User Record: ❌ MISSING")
+        print(f"   - Created At: {officer.created_at}")
         
         # Check if OfficerProfile exists
         try:

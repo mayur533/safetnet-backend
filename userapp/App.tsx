@@ -58,7 +58,7 @@ function App(): React.JSX.Element {
       const requestPermissions = async () => {
         try {
           // Wait a bit to ensure Activity is ready
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(() => resolve(undefined), 500));
           
           const permissions = [
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
@@ -71,7 +71,7 @@ function App(): React.JSX.Element {
           ];
 
           // Add storage permissions based on Android version
-          if (Platform.Version < 33) {
+          if (Number(Platform.Version) < 33) {
             permissions.push(
               PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
               PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE

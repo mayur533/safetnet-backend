@@ -64,6 +64,36 @@ class User(AbstractUser):
 class Geofence(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    geofence_type = models.CharField(
+        max_length=10,
+        choices=[
+            ('circle', 'Circle'),
+            ('polygon', 'Polygon'),
+        ],
+        default='circle',
+        help_text='Type of geofence: circle or polygon'
+    )
+    # Fields for circle geofences
+    center_latitude = models.DecimalField(
+        max_digits=10, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text='Center latitude for circle geofences'
+    )
+    center_longitude = models.DecimalField(
+        max_digits=11, 
+        decimal_places=8, 
+        null=True, 
+        blank=True,
+        help_text='Center longitude for circle geofences'
+    )
+    radius = models.IntegerField(
+        null=True, 
+        blank=True,
+        help_text='Radius in meters for circle geofences'
+    )
+    # Fields for polygon geofences
     polygon_json = models.JSONField(help_text="GeoJSON polygon coordinates")
     organization = models.ForeignKey(
         Organization,
@@ -128,55 +158,87 @@ class Geofence(models.Model):
 
 class Alert(models.Model):
     ALERT_TYPES = [
-        ('GEOFENCE_ENTER', 'Geofence Enter'),
-        ('GEOFENCE_EXIT', 'Geofence Exit'),
+        ('USER_SOS', 'User SOS Emergency'),
+        ('OFFICER_ALERT', 'Officer Alert'),
+        ('SYSTEM_ALERT', 'System Alert'),
         ('GEOFENCE_VIOLATION', 'Geofence Violation'),
-        ('SYSTEM_ERROR', 'System Error'),
         ('SECURITY_BREACH', 'Security Breach'),
-        ('MAINTENANCE', 'Maintenance'),
     ]
-    
+
     SEVERITY_CHOICES = [
         ('LOW', 'Low'),
         ('MEDIUM', 'Medium'),
         ('HIGH', 'High'),
         ('CRITICAL', 'Critical'),
     ]
-    
-    geofence = models.ForeignKey(
-        Geofence,
-        on_delete=models.CASCADE,
-        related_name='legacy_alerts',
-        null=True,
-        blank=True,
-        help_text='Legacy single geofence field (deprecated, use geofences instead)'
-    )
-    geofences = models.ManyToManyField(
-        Geofence,
-        blank=True,
-        related_name='alerts',
-        help_text='Geofences associated with this alert. All users, subadmins, and security officers associated with these geofences will see this alert.'
-    )
+
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('PENDING', 'Pending'),
+        ('ACCEPTED', 'Accepted'),
+        ('RESOLVED', 'Resolved'),
+    ]
+
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+
+    # Who created this alert
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='alerts',
-        null=True,
-        blank=True
+        related_name='alerts_created',
+        help_text="User who created this alert"
     )
+
+    # Alert type and metadata
     alert_type = models.CharField(
         max_length=20,
         choices=ALERT_TYPES,
-        default='GEOFENCE_ENTER'
+        default='USER_SOS',
+        help_text="Type of alert"
     )
     severity = models.CharField(
         max_length=10,
         choices=SEVERITY_CHOICES,
         default='MEDIUM'
     )
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default='medium'
+    )
+
+    # Content
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, null=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    message = models.TextField(blank=True, null=True, help_text="Additional message content")
+
+    # Location data (unified format)
+    location = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Location data: {'latitude': float, 'longitude': float, 'accuracy': float}"
+    )
+
+    # Geofence association (supports both single and multiple)
+    geofence = models.ForeignKey(
+        Geofence,
+        on_delete=models.CASCADE,
+        related_name='alerts',
+        null=True,
+        blank=True,
+        help_text='Geofence associated with this alert'
+    )
+
+    # Status and resolution
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='ACTIVE'
+    )
     is_resolved = models.BooleanField(default=False)
     resolved_at = models.DateTimeField(null=True, blank=True)
     resolved_by = models.ForeignKey(
@@ -186,74 +248,111 @@ class Alert(models.Model):
         blank=True,
         related_name='resolved_alerts'
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        verbose_name = 'Alert'
-        verbose_name_plural = 'Alerts'
-        ordering = ['-created_at']
-    
-    def __str__(self):
-        return f"{self.title} ({self.severity})"
-    
-    def resolve(self, resolved_by_user):
-        """Mark alert as resolved"""
-        self.is_resolved = True
-        self.resolved_at = timezone.now()
-        self.resolved_by = resolved_by_user
-        self.save()
 
-
-class SecurityOfficer(models.Model):
-    username = models.CharField(max_length=150, unique=True, blank=True, null=True, help_text="Unique username for security officer")
-    name = models.CharField(max_length=100)
-    contact = models.CharField(max_length=20, help_text="Phone number or contact info")
-    email = models.EmailField(blank=True, null=True)
-    password = models.CharField(max_length=128, blank=True, null=True, help_text="Hashed password for security officer")
-    assigned_geofence = models.ForeignKey(
-        Geofence,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='legacy_assigned_officers'  # Changed to avoid conflicts - this model is deprecated
-    )
-    organization = models.ForeignKey(
-        Organization,
-        on_delete=models.CASCADE,
-        related_name='legacy_security_officers'  # Changed to avoid conflicts - this model is deprecated
-    )
-    is_active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(
+    # Officer assignment (for officer alerts)
+    assigned_officer = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='legacy_created_officers',  # Changed to avoid conflicts - this model is deprecated
-        limit_choices_to={'role': 'SUB_ADMIN'}
+        related_name='assigned_alerts',
+        limit_choices_to={'role': 'security_officer'},
+        help_text="Security officer assigned to this alert"
     )
+
+    # Read tracking (like SOSEvent)
+    read_by = models.ManyToManyField(
+        User,
+        related_name='read_alerts',
+        blank=True,
+        help_text="Users who have read this alert"
+    )
+    read_timestamps = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Timestamps when each user read this alert. Format: {'user_id': 'ISO_timestamp'}"
+    )
+
+    # Additional metadata
+    metadata = models.JSONField(default=dict, blank=True)
+
+    # Legacy fields (deprecated, but keeping for backward compatibility)
+    geofences = models.ManyToManyField(
+        Geofence,
+        blank=True,
+        related_name='legacy_alerts',
+        help_text='Legacy multiple geofences field (deprecated, use geofence instead)'
+    )
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
-        verbose_name = 'Security Officer'
-        verbose_name_plural = 'Security Officers'
+        managed = False
+        db_table = 'users_alert'
+        verbose_name = 'Alert'
+        verbose_name_plural = 'Alerts'
         ordering = ['-created_at']
-        managed = False  # Table has been deleted - using User model with role='security_officer' instead
-        db_table = 'users_securityofficer'  # Legacy table name (no longer exists)
-    
-    def set_password(self, raw_password):
-        """Hash and set password"""
-        from django.contrib.auth.hashers import make_password
-        self.password = make_password(raw_password)
-    
-    def check_password(self, raw_password):
-        """Check if the provided password is correct"""
-        from django.contrib.auth.hashers import check_password
-        return check_password(raw_password, self.password)
-    
+        indexes = [
+            models.Index(fields=['alert_type', 'status']),
+            models.Index(fields=['geofence', 'created_at']),
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['assigned_officer', 'status']),
+        ]
+
     def __str__(self):
-        return f"{self.name} ({self.organization.name})"
+        return f"{self.title} ({self.alert_type}) - {self.status}"
+
+    def resolve(self, resolved_by_user):
+        """Mark alert as resolved"""
+        self.is_resolved = True
+        self.status = 'RESOLVED'
+        self.resolved_at = timezone.now()
+        self.resolved_by = resolved_by_user
+        self.save()
+
+    def mark_as_read(self, user):
+        """
+        Mark this alert as read by a user.
+        Returns True if newly marked, False if already read.
+        """
+        from django.utils import timezone
+
+        if not user or not user.id:
+            return False
+
+        # Check if already read
+        if self.read_by.filter(id=user.id).exists():
+            return False
+
+        # Add to read_by
+        self.read_by.add(user)
+
+        # Add timestamp
+        if not isinstance(self.read_timestamps, dict):
+            self.read_timestamps = {}
+
+        self.read_timestamps[str(user.id)] = timezone.now().isoformat()
+        self.save(update_fields=['read_timestamps'])
+
+        return True
+
+    def is_read_by(self, user):
+        """Check if this alert has been read by the given user."""
+        if not user or not user.id:
+            return False
+        return self.read_by.filter(id=user.id).exists()
+
+    def get_read_timestamp(self, user):
+        """Get the timestamp when the user read this alert."""
+        if not user or not user.id:
+            return None
+        if isinstance(self.read_timestamps, dict):
+            return self.read_timestamps.get(str(user.id))
+        return None
+
+
 
 
 class Incident(models.Model):
@@ -687,3 +786,45 @@ class UserDetails(models.Model):
     
     def __str__(self):
         return f"{self.username} - {self.status} (${self.price})"
+
+
+class OfficerGeofenceAssignment(models.Model):
+    """Model to track geofence assignments to security officers"""
+    
+    officer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        limit_choices_to={'role': 'security_officer'},
+        related_name='geofence_assignments'
+    )
+    
+    geofence = models.ForeignKey(
+        'Geofence',
+        on_delete=models.CASCADE,
+        related_name='officer_assignments'
+    )
+    
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'role__in': ['SUPER_ADMIN', 'SUB_ADMIN']},
+        related_name='made_geofence_assignments'
+    )
+    
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        db_table = 'users_officer_geofence_assignment'
+        unique_together = ['officer', 'geofence', 'is_active']
+        ordering = ['-assigned_at']
+        indexes = [
+            models.Index(fields=['officer', 'is_active']),
+            models.Index(fields=['geofence', 'is_active']),
+            models.Index(fields=['assigned_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.officer.username} -> {self.geofence.name} ({'Active' if self.is_active else 'Inactive'})"

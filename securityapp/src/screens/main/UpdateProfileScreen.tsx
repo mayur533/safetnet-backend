@@ -13,12 +13,12 @@ import {
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { updateOfficerProfile } from '../../store/slices/authSlice';
 import { profileService } from '../../api/services/profileService';
-import { colors } from '../../utils/colors';
+import { useColors } from '../../utils/colors';
 import { shadows, spacing, typography } from '../../utils';
-import Toast from 'react-native-toast-message';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 export const UpdateProfileScreen = ({ navigation, route }: any) => {
+  const colors = useColors();
   const officer = useAppSelector((state) => state.auth.officer);
   const dispatch = useAppDispatch();
   const [isLoading, setIsLoading] = useState(false);
@@ -53,36 +53,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
         );
         setEmail(profile.email_id || profile.email || profile.officer_email || officer.email_id || '');
         
-        // Extract phone number from all possible backend fields (same as ProfileScreen)
-        const phoneNumber = 
-          // Direct profile fields
-          profile.mobile ||
-          profile.phone ||
-          profile.officer_phone ||
-          profile.phone_number ||
-          profile.contact_number ||
-          profile.contact_phone ||
-          profile.phone_no ||
-          profile.contact ||
-          // Nested user object fields
-          (profile.user && profile.user.mobile) ||
-          (profile.user && profile.user.phone) ||
-          (profile.user && profile.user.phone_number) ||
-          (profile.user && profile.user.contact_number) ||
-          // SecurityOfficer model fields
-          (profile.security_officer && profile.security_officer.mobile) ||
-          (profile.security_officer && profile.security_officer.phone) ||
-          // Officer profile fields
-          (profile.officer && profile.officer.mobile) ||
-          (profile.officer && profile.officer.phone) ||
-          // Fallback to Redux officer data
-          officer.mobile ||
-          '';
+        // Extract phone number - API returns it in 'phone' field
+        const phoneNumber = profile.phone || officer.mobile || '';
         
         console.log('[UpdateProfileScreen] Phone number extraction:', {
-          'profile.mobile': profile.mobile,
-          'profile.user.mobile': profile.user && profile.user.mobile,
-          'profile.security_officer.mobile': profile.security_officer && profile.security_officer.mobile,
+          'profile.phone': profile.phone,
           'officer.mobile': officer.mobile,
           'extracted_phone': phoneNumber,
         });
@@ -108,107 +83,65 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
   const handleSave = async () => {
     if (!(officer && officer.security_id)) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Officer ID not found',
-      });
+      Alert.alert('Error', 'Officer ID not found');
       return;
     }
 
     // Basic validation
     if (!name.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Name is required',
-      });
+      Alert.alert('Validation Error', 'Name is required');
       return;
     }
 
     if (!email.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Email is required',
-      });
+      Alert.alert('Validation Error', 'Email is required');
       return;
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Please enter a valid email address',
-      });
+      Alert.alert('Validation Error', 'Please enter a valid email address');
       return;
     }
 
+    setIsSaving(true);
+
     try {
-      setIsSaving(true);
-      console.log('[UpdateProfileScreen] Updating profile with:', {
-        security_id: officer.security_id,
-        name: name.trim(),
-        email_id: email.trim(),
-        mobile: mobile.trim(),
-        badge_number: badgeNumber.trim(),
-        shift_schedule: shiftSchedule.trim(),
-      });
-
-      // Prepare update payload
-      const updateData: any = {
-        name: name.trim(),
-        email_id: email.trim(),
-      };
-
-      if (mobile.trim()) {
-        updateData.mobile = mobile.trim();
-      }
-      if (badgeNumber.trim()) {
-        updateData.badge_number = badgeNumber.trim();
-      }
-      if (shiftSchedule.trim()) {
-        updateData.shift_schedule = shiftSchedule.trim();
-      }
-
-      // Call update API
-      const response = await profileService.updateProfile(officer.security_id, updateData);
+      console.log('[UpdateProfileScreen] Starting profile update...');
+      console.log('[UpdateProfileScreen] Officer data:', officer);
       
-      console.log('[UpdateProfileScreen] Profile update response:', response);
-
-      // Update Redux store with the new profile data
-      dispatch(updateOfficerProfile({
+      const updateData = {
         name: name.trim(),
-        email_id: email.trim(),
-        mobile: mobile.trim() || '',
-        badge_number: badgeNumber.trim() || '',
+        email: email.trim(),
+        phone: mobile.trim(),  // Send as 'phone' field for backend
+        badge_number: badgeNumber.trim(),
         shift_schedule: shiftSchedule.trim() || '',
-      }));
+      };
+      
+      console.log('[UpdateProfileScreen] Sending update data:', JSON.stringify(updateData, null, 2));
 
-      Toast.show({
-        type: 'success',
-        text1: 'Success',
-        text2: 'Profile updated successfully',
-      });
+      await profileService.updateProfile(officer.security_id, updateData);
+      
+      console.log('[UpdateProfileScreen] Update successful!');
 
-      // Navigate back after a short delay to allow toast to show
-      setTimeout(() => {
-        navigation.goBack();
-      }, 1000);
+      Alert.alert('Success', 'Profile updated successfully', [
+        { 
+          text: 'OK', 
+          onPress: () => {
+            // Navigate back and trigger refresh
+            navigation.goBack();
+          }
+        }
+      ]);
+
     } catch (error: any) {
       console.error('[UpdateProfileScreen] Error updating profile:', error);
-      const errorMessage = (error.response && error.response.data && error.response.data.message) ||
-                          (error.response && error.response.data && error.response.data.error) ||
-                          error.message ||
+      const errorMessage = error?.response?.data?.message ||
+                          error?.message ||
                           'Failed to update profile';
       
-      Toast.show({
-        type: 'error',
-        text1: 'Update Failed',
-        text2: errorMessage,
-      });
+      Alert.alert('Update Failed', errorMessage);
     } finally {
       setIsSaving(false);
     }
@@ -217,7 +150,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
@@ -226,10 +159,10 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.white, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { backgroundColor: colors.cardBackground, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -248,11 +181,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
       >
         {/* Name Field */}
         <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.darkText }]}>Full Name *</Text>
+          <Text style={[styles.label, { color: '#1F2937' }]}>Full Name *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
+            style={[styles.input, { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB', color: '#1F2937' }]}
             placeholder="Enter your full name"
-            placeholderTextColor={colors.inputPlaceholder}
+            placeholderTextColor="#9CA3AF"
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
@@ -261,11 +194,11 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Email Field */}
         <View style={styles.section}>
-          <Text style={[styles.label, { color: colors.darkText }]}>Email *</Text>
+          <Text style={[styles.label, { color: '#1F2937' }]}>Email *</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.darkText }]}
+            style={[styles.input, { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB', color: '#1F2937' }]}
             placeholder="Enter your email"
-            placeholderTextColor={colors.inputPlaceholder}
+            placeholderTextColor="#9CA3AF"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -280,7 +213,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="Enter your phone number"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={mobile}
             onChangeText={setMobile}
             keyboardType="phone-pad"
@@ -293,7 +226,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="Enter badge number"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={badgeNumber}
             onChangeText={setBadgeNumber}
             autoCapitalize="characters"
@@ -306,7 +239,7 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
           <TextInput
             style={styles.input}
             placeholder="e.g., Morning Shift (6 AM - 2 PM)"
-            placeholderTextColor={colors.mediumGray}
+            placeholderTextColor="#6B7280"
             value={shiftSchedule}
             onChangeText={setShiftSchedule}
             multiline
@@ -316,15 +249,15 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 
         {/* Save Button */}
         <TouchableOpacity
-          style={[styles.saveButton, { backgroundColor: isSaving ? colors.buttonDisabled : colors.buttonPrimary }, isSaving && styles.saveButtonDisabled]}
+          style={[styles.saveButton, { backgroundColor: isSaving ? '#E5E7EB' : '#2563EB' }, isSaving && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={isSaving}
           activeOpacity={0.8}
         >
           {isSaving ? (
-            <ActivityIndicator size="small" color={colors.textOnPrimary} />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={[styles.saveButtonText, { color: colors.textOnPrimary }]}>SAVE CHANGES</Text>
+            <Text style={[styles.saveButtonText, { color: '#FFFFFF' }]}>SAVE CHANGES</Text>
           )}
         </TouchableOpacity>
 
@@ -344,18 +277,18 @@ export const UpdateProfileScreen = ({ navigation, route }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: colors.darkText,
+    color: '#1F2937',
     fontWeight: '500',
   },
   header: {
@@ -365,9 +298,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 50,
     paddingBottom: 16,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#E5E7EB',
+    borderBottomColor: '#E5E7EB',
     ...shadows.sm,
   },
   backButton: {
@@ -378,7 +311,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typography.screenHeader,
-    color: colors.darkText,
+    color: '#1F2937',
     fontSize: 18,
   },
   placeholder: {
@@ -397,22 +330,22 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.darkText,
+    color: '#1F2937',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.lightGrayBg || '#F9FAFB',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: colors.darkText,
+    color: '#1F2937',
     borderWidth: 1,
-    borderColor: colors.border || '#E5E7EB',
+    borderColor: '#E5E7EB',
   },
   saveButton: {
     height: 52,
-    backgroundColor: colors.primary,
+    backgroundColor: '#2563EB',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -426,22 +359,22 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.white,
+    color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   cancelButton: {
     height: 52,
-    backgroundColor: colors.white,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.border || '#E5E7EB',
+    borderColor: '#E5E7EB',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.darkText,
+    color: '#1F2937',
     letterSpacing: 0.5,
   },
 });
