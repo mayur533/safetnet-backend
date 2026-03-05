@@ -1,7 +1,7 @@
 import logging
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, LiveLocation  # new models for security_app
+from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, LiveLocation, OfficerAlert, AlertRead
 from users.models import Geofence
 import math
 
@@ -607,3 +607,62 @@ class LiveLocationSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'sos_alert', 'user', 'updated_at', 'sos_alert_status')
 
+
+class UnifiedAlertSerializer(serializers.Serializer):
+    """
+    Unified format for all alert types.
+    This is what gets returned to the frontend.
+    """
+    id = serializers.CharField()  # Composite ID like "officer_123" or "sos_456"
+    alert_type = serializers.CharField()  # 'emergency', 'warning', 'info', 'all_clear'
+    alert_source = serializers.CharField()  # 'officer', 'sos', 'community', 'system'
+    title = serializers.CharField()
+    message = serializers.CharField()
+    location = serializers.CharField(required=False, allow_null=True)
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+    created_at = serializers.DateTimeField()
+    time_ago = serializers.CharField()
+    is_read = serializers.BooleanField(default=False)
+    
+    # Optional fields
+    officer_name = serializers.CharField(required=False, allow_null=True)
+    status = serializers.CharField(required=False, allow_null=True)
+
+
+class OfficerAlertSerializer(serializers.ModelSerializer):
+    """Serializer for officer broadcasts"""
+    
+    officer_name = serializers.CharField(source='officer.get_full_name', read_only=True)
+    time_ago = serializers.SerializerMethodField()
+    is_read = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = OfficerAlert
+        fields = [
+            'id',
+            'alert_type',
+            'title',
+            'message',
+            'location',
+            'latitude',
+            'longitude',
+            'officer_name',
+            'is_broadcast',
+            'created_at',
+            'time_ago',
+            'is_read',
+        ]
+    
+    def get_time_ago(self, obj):
+        from django.utils.timesince import timesince
+        return f"{timesince(obj.created_at)} ago"
+    
+    def get_is_read(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return AlertRead.objects.filter(
+                user=request.user,
+                officer_alert=obj
+            ).exists()
+        return False

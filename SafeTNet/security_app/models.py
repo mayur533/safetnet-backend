@@ -394,3 +394,68 @@ class LiveLocation(models.Model):
 
     def __str__(self):
         return f"LiveLocation for Alert #{self.sos_alert_id}"
+
+
+class OfficerAlert(models.Model):
+    """
+    Alerts/broadcasts sent by security officers to users.
+    This is what officers send to warn/inform users.
+    """
+    ALERT_TYPES = (
+        ('warning', 'Warning'),
+        ('emergency', 'Emergency'),
+        ('info', 'Information'),
+        ('all_clear', 'All Clear'),
+    )
+    
+    officer = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='sent_alerts',
+        help_text="Security officer who sent the alert"
+    )
+    
+    # Target users (can be specific users or broadcast to all)
+    users = models.ManyToManyField(
+        User, 
+        related_name='received_alerts', 
+        blank=True,
+        help_text="Specific users. Leave empty for broadcast to all."
+    )
+    
+    alert_type = models.CharField(max_length=20, choices=ALERT_TYPES, default='info')
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    location = models.CharField(max_length=255, blank=True, null=True)
+    latitude = models.FloatField(blank=True, null=True)
+    longitude = models.FloatField(blank=True, null=True)
+    
+    is_broadcast = models.BooleanField(
+        default=False,
+        help_text="If True, alert is sent to all users"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        
+    def __str__(self):
+        return f"{self.alert_type.upper()}: {self.title}"
+
+
+class AlertRead(models.Model):
+    """Track which users have read which alerts"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    officer_alert = models.ForeignKey(
+        OfficerAlert, 
+        on_delete=models.CASCADE, 
+        blank=True, 
+        null=True
+    )
+    read_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['user', 'officer_alert']

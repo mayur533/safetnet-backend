@@ -1,10 +1,11 @@
 import logging
 import traceback
-
+from .models import OfficerAlert, AlertRead # Ensure these are included
+from .serializers import UnifiedAlertSerializer, OfficerAlertSerializer
 # Set up logger
 logger = logging.getLogger(__name__)
 
-from rest_framework import viewsets, status, serializers
+from rest_framework import viewsets, status, serializers,permissions
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -22,6 +23,8 @@ from .models import SOSAlert, Case, Incident, OfficerProfile, Notification, Live
 # from users.models import SecurityOfficer, Geofence
 from django.contrib.auth import get_user_model
 from users.models import Geofence
+from .models import OfficerAlert, AlertRead
+from .serializers import UnifiedAlertSerializer, OfficerAlertSerializer
 
 User = get_user_model()
 from django.shortcuts import get_object_or_404
@@ -1405,3 +1408,155 @@ class GeofenceDetailView(OfficerOnlyMixin, APIView):
             return [IsAuthenticated(), IsLiveLocationOwner()]
         return [IsAuthenticated()]
 
+class UserAlertViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Unified alerts endpoint - returns officer alerts + safety notifications
+    
+    Endpoints created:
+    GET  /api/user/alerts/              - All alerts
+    GET  /api/user/alerts/unread/       - Unread only
+    POST /api/user/alerts/{id}/mark_read/ - Mark as read
+    """
+    
+    serializer_class = UnifiedAlertSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return []  # We override list() instead
+    
+    def list(self, request, *args, **kwargs):
+        """Return unified list of all alerts"""
+        user = request.user
+        all_alerts = []
+        
+        # 1. OFFICER ALERTS (Primary - broadcasts + targeted)
+        officer_alerts = OfficerAlert.objects.filter(
+            is_active=True
+        ).filter(
+            models.Q(is_broadcast=True) | models.Q(users=user)
+        ).distinct()
+        
+        for alert in officer_alerts:
+            is_read = AlertRead.objects.filter(
+                user=user,
+                officer_alert=alert
+            ).exists()
+            
+            all_alerts.append({
+                'id': f"officer_{alert.id}",
+                'alert_type': alert.alert_type,
+                'alert_source': 'officer',
+                'title': alert.title,
+                'message': alert.message,
+                'location': alert.location,
+                'latitude': alert.latitude,
+                'longitude': alert.longitude,
+                'created_at': alert.created_at,
+                'time_ago': self._time_ago(alert.created_at),
+                'is_read': is_read,
+                'officer_name': alert.officer.get_full_name(),
+            })
+        
+        # 2. SOS SAFETY NOTIFICATIONS (User's SOS status updates)
+        sos_alerts = SOSAlert.objects.filter(user=user).order_by('-created_at')[:10]
+        
+        for sos in sos_alerts:
+            all_alerts.append({
+                'id': f"sos_{sos.id}",
+                'alert_type': 'emergency' if sos.status == 'active' else 'info',
+                'alert_source': 'sos',
+                'title': f"SOS Alert - {sos.status.title()}",
+                'message': f"Your SOS alert is {sos.status}",
+                'location': None,
+                'latitude': sos.latitude,
+                'longitude': sos.longitude,
+                'created_at': sos.created_at,
+                'time_ago': self._time_ago(sos.created_at),
+                'is_read': False,
+                'status': sos.status,
+            })
+        
+        # 3. COMMUNITY ALERTS (if you have CommunityAlert model)
+        # Uncomment if you have community alerts:
+        """
+        try:
+            from users_profile.models import CommunityAlert
+            community_alerts = CommunityAlert.objects.filter(
+                user=user
+            ).order_by('-created_at')[:10]
+            
+            for comm in community_alerts:
+                all_alerts.append({
+                    'id': f"community_{comm.id}",
+                    'alert_type': 'warning',
+                    'alert_source': 'community',
+                    'title': 'Community Alert',
+                    'message': comm.message,
+                    'created_at': comm.created_at,
+                    'time_ago': self._time_ago(comm.created_at),
+                    'is_read': False,
+                })
+        except ImportError:
+            pass
+        """
+        
+        # Sort by most recent
+        all_alerts.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        serializer = UnifiedAlertSerializer(all_alerts, many=True)
+        return Response(serializer.data)
+    
+    def _time_ago(self, dt):
+        """Helper for human-readable time"""
+        from django.utils.timesince import timesince
+        return f"{timesince(dt)} ago"
+    
+    @action(detail=False, methods=['get'])
+    def unread(self, request):
+        """Get only unread officer alerts"""
+        user = request.user
+        
+        officer_alerts = OfficerAlert.objects.filter(
+            is_active=True
+        ).filter(
+            models.Q(is_broadcast=True) | models.Q(users=user)
+        ).exclude(
+            id__in=AlertRead.objects.filter(user=user).values_list('officer_alert_id', flat=True)
+        ).distinct()
+        
+        alerts = []
+        for alert in officer_alerts:
+            alerts.append({
+                'id': f"officer_{alert.id}",
+                'alert_type': alert.alert_type,
+                'alert_source': 'officer',
+                'title': alert.title,
+                'message': alert.message,
+                'created_at': alert.created_at,
+                'time_ago': self._time_ago(alert.created_at),
+                'is_read': False,
+            })
+        
+        serializer = UnifiedAlertSerializer(alerts, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        """Mark officer alert as read"""
+        if not pk or '_' not in pk:
+            return Response({'error': 'Invalid ID'}, status=400)
+        
+        alert_source, alert_id = pk.split('_', 1)
+        
+        if alert_source == 'officer':
+            try:
+                officer_alert = OfficerAlert.objects.get(id=alert_id)
+                AlertRead.objects.get_or_create(
+                    user=request.user,
+                    officer_alert=officer_alert
+                )
+                return Response({'status': 'marked as read'})
+            except OfficerAlert.DoesNotExist:
+                return Response({'error': 'Not found'}, status=404)
+        
+        return Response({'status': 'ok'})
